@@ -1,0 +1,2 @@
+C:\mingw64\bin\ar.exe qc libSanguoshaModel.a CMakeFiles/SanguoshaModel.dir/src/Model/GameState.cpp.obj CMakeFiles/SanguoshaModel.dir/src/Model/Card.cpp.obj CMakeFiles/SanguoshaModel.dir/src/Model/Character.cpp.obj CMakeFiles/SanguoshaModel.dir/src/Model/Player.cpp.obj CMakeFiles/SanguoshaModel.dir/src/Model/CardManager.cpp.obj CMakeFiles/SanguoshaModel.dir/src/Model/GameRule.cpp.obj
+C:\mingw64\bin\ranlib.exe libSanguoshaModel.a
