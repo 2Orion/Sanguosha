@@ -1,5 +1,0 @@
-D:/Sanguosha/build/CMakeFiles/SanguoshaModel.dir
-D:/Sanguosha/build/CMakeFiles/ModelSmokeTest.dir
-D:/Sanguosha/build/CMakeFiles/test.dir
-D:/Sanguosha/build/CMakeFiles/edit_cache.dir
-D:/Sanguosha/build/CMakeFiles/rebuild_cache.dir
