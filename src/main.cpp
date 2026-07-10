@@ -2,6 +2,10 @@
 #include <string>
 #include <vector>
 #include <limits>
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#endif
 
 #include "ViewModel/GameViewModel.h"
 #include "ViewModel/PlayerViewModel.h"
@@ -275,6 +279,11 @@ static void discardPhase(GameViewModel& gvm)
 
 int main()
 {
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#endif
+
     std::cout << "========================================\n";
     std::cout << "      三国杀 Console Version v1.0\n";
     std::cout << "========================================\n";

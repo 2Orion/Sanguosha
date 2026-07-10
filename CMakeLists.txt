@@ -4,6 +4,11 @@ project(Sanguosha VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# MSVC: 强制使用 UTF-8 编译和输出，解决中文乱码
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
+
 # Model层源文件
 set(MODEL_SOURCES
     src/Model/GameState.cpp
@@ -62,6 +67,7 @@ add_executable(Sanguosha
 target_include_directories(Sanguosha
     PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/Model
 )
 
 target_link_libraries(Sanguosha
