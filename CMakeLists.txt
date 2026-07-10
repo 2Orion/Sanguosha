@@ -37,15 +37,37 @@ target_include_directories(SanguoshaModel
     ${CMAKE_SOURCE_DIR}/src
 )
 
-# 主程序（暂时注释，等待ViewModel和View完成）
-# add_executable(Sanguosha
-#     src/main.cpp
-# )
+# ViewModel层源文件
+set(VIEWMODEL_SOURCES
+    src/ViewModel/CardViewModel.cpp
+    src/ViewModel/PlayerViewModel.cpp
+    src/ViewModel/ActionViewModel.cpp
+    src/ViewModel/GameViewModel.cpp
+)
 
-# target_link_libraries(Sanguosha
-#     PRIVATE
-#     SanguoshaModel
-# )
+set(VIEWMODEL_HEADERS
+    src/ViewModel/CardViewModel.h
+    src/ViewModel/PlayerViewModel.h
+    src/ViewModel/ActionViewModel.h
+    src/ViewModel/GameViewModel.h
+)
+
+# 主程序（控制台版三国杀）
+add_executable(Sanguosha
+    src/main.cpp
+    ${VIEWMODEL_SOURCES}
+    ${VIEWMODEL_HEADERS}
+)
+
+target_include_directories(Sanguosha
+    PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(Sanguosha
+    PRIVATE
+    SanguoshaModel
+)
 
 # Model层冒烟测试
 enable_testing()

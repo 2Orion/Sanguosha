@@ -6,7 +6,9 @@
 
 - ✅ **Model 层**：已完整实现，且已从 Qt 依赖改造为纯 C++17 标准库实现（不再需要 Qt/vcpkg 才能编译运行 Model 层）。
 - ✅ **Model 层冒烟测试**：`tests/smoke_test.cpp`，覆盖牌堆管理、杀/闪/桃/酒、南蛮入侵/万箭齐发连锁响应、濒死求救链、胜负判定等核心流程，共 95 项检查。
-- ⬜ **ViewModel 层 / View 层**：尚未实现（`src/main.cpp` 及对应可执行目标暂未添加）。
+- ✅ **ViewModel 层**：已实现（纯 C++17），包含 `GameViewModel`、`PlayerViewModel`、`CardViewModel`、`ActionViewModel`，完整的回合状态机和操作逻辑。
+- ✅ **控制台版游戏**：`src/main.cpp` 提供了可交互的控制台版三国杀，用于端到端验证。
+- ⬜ **View 层（Qt）**：尚未实现。
 
 ## 架构
 
@@ -33,16 +35,22 @@ Sanguosha/
 ├── plan.md              # 架构与规则设计文档
 ├── interface.md          # Model 层接口契约文档
 ├── src/
-│   └── Model/
-│       ├── CommonTypes.h     # 公共枚举（卡牌/阶段/事件等类型）
-│       ├── Event.h           # EventListener 观察者模式（替代 Qt 信号槽）
-│       ├── RandomUtils.h     # 随机数工具（替代 QRandomGenerator）
-│       ├── GameState.h/cpp   # 游戏状态、待定动作（PendingActionInfo）
-│       ├── Player.h/cpp      # 玩家对象（手牌、体力、武将）
-│       ├── Character.h/cpp   # 武将基类及具体武将（曹操/关羽/张飞/赵云）
-│       ├── Card.h/cpp        # 卡牌基类及具体卡牌
-│       ├── CardManager.h/cpp # 牌堆管理（洗牌、摸牌、弃牌）
-│       └── GameRule.h/cpp    # 规则引擎（杀闪判定、伤害结算、技能触发）
+│   ├── main.cpp              # 控制台版游戏入口
+│   ├── Model/
+│   │   ├── CommonTypes.h     # 公共枚举（卡牌/阶段/事件等类型）
+│   │   ├── Event.h           # EventListener 观察者模式（替代 Qt 信号槽）
+│   │   ├── RandomUtils.h     # 随机数工具（替代 QRandomGenerator）
+│   │   ├── GameState.h/cpp   # 游戏状态、待定动作（PendingActionInfo）
+│   │   ├── Player.h/cpp      # 玩家对象（手牌、体力、武将）
+│   │   ├── Character.h/cpp   # 武将基类及具体武将（曹操/关羽/张飞/赵云）
+│   │   ├── Card.h/cpp        # 卡牌基类及具体卡牌
+│   │   ├── CardManager.h/cpp # 牌堆管理（洗牌、摸牌、弃牌）
+│   │   └── GameRule.h/cpp    # 规则引擎（杀闪判定、伤害结算、技能触发）
+│   └── ViewModel/
+│       ├── CardViewModel.h/cpp    # 卡牌 VM（展示状态：选中/可打出/高亮）
+│       ├── PlayerViewModel.h/cpp  # 玩家 VM（体力/手牌数/状态转发）
+│       ├── ActionViewModel.h/cpp  # 操作 VM（出牌/响应/目标选择/弃牌）
+│       └── GameViewModel.h/cpp    # 游戏 VM（回合管理、阶段调度、生命周期）
 └── tests/
     └── smoke_test.cpp   # Model 层冒烟测试
 ```
@@ -64,7 +72,27 @@ cmake .. -G "MinGW Makefiles"      # 或你平台上惯用的生成器
 cmake --build .
 ```
 
-产物：`build/libSanguoshaModel.a`（静态库）、`build/ModelSmokeTest.exe`（冒烟测试可执行文件）。
+产物：
+- `build/libSanguoshaModel.a`（Model 静态库）
+- `build/ModelSmokeTest.exe`（冒烟测试）
+- `build/Sanguosha.exe`（控制台版游戏）
+
+也可直接用 g++ 一行编译（无需 CMake）：
+
+```bash
+g++ -std=c++17 -Isrc -Isrc/Model -Isrc/ViewModel \
+  src/Model/*.cpp src/ViewModel/*.cpp src/main.cpp \
+  -o Sanguosha.exe
+```
+
+## 运行控制台版游戏
+
+```bash
+cd build
+./Sanguosha.exe
+```
+
+交互方式：输入数字选择武将、选择手牌、选择目标，输入 `-1` 结束出牌阶段。
 
 ## 运行测试
 
