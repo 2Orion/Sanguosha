@@ -293,6 +293,14 @@ void GameBoardWidget::onPendingActionCreated(const PendingActionInfo& info)
         std::vector<Card*> responseCards =
             avm->getResponseCards(info.target, info.requiredCardType);
 
+        // 如果没有可用的响应牌，自动跳过/扣血推进游戏
+        if (responseCards.empty()) {
+            showLog(QString::fromStdString(
+                info.target->displayName() + " 无牌可响应，自动推进"));
+            avm->skipResponse(info.target, true);  // forceNoCard=true
+            return;
+        }
+
         // 获取 target 的手牌并标记可响应的
         auto cardVMs = m_gvm->getPlayerCardVMs(info.target);
         for (auto& cvm : cardVMs) {
@@ -346,6 +354,16 @@ void GameBoardWidget::onCardClicked(Card* card)
         // 出牌阶段 — 尝试使用牌
         if (state->currentPhase() != PhaseType::Play) return;
         if (state->hasPendingAction()) return;
+
+        // 只能使用当前玩家自己的手牌
+        bool isOwnCard = false;
+        for (Card* c : curPlayer->handCards()) {
+            if (c == card) { isOwnCard = true; break; }
+        }
+        if (!isOwnCard) {
+            showLog(QStringLiteral("不能使用对方的牌"));
+            return;
+        }
 
         ActionViewModel* avm = m_gvm->actionVM();
 
