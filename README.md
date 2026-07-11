@@ -8,13 +8,13 @@
 - ✅ **Model 层冒烟测试**：`tests/smoke_test.cpp`，覆盖牌堆管理、杀/闪/桃/酒、南蛮入侵/万箭齐发连锁响应、濒死求救链、胜负判定等核心流程，共 95 项检查。
 - ✅ **ViewModel 层**：已实现（纯 C++17），包含 `GameViewModel`、`PlayerViewModel`、`CardViewModel`、`ActionViewModel`，完整的回合状态机和操作逻辑。
 - ✅ **控制台版游戏**：`src/main.cpp` 提供了可交互的控制台版三国杀，用于端到端验证。
-- ⬜ **View 层（Qt）**：尚未实现。
+- ✅ **View 层（Qt 图形界面）**：已实现，包含选将界面、游戏桌面（手牌区、玩家信息、操作按钮）、卡牌控件，支持完整的双人本地对战流程。
 
 ## 架构
 
 ```
-View 层 (待实现)          界面绘制、用户交互
-ViewModel 层 (待实现)     状态管理、View↔Model 桥梁
+View 层 (Qt Widgets)      界面绘制、用户交互（Qt 6/5）
+ViewModel 层 (纯 C++17)   状态管理、View↔Model 桥梁
 Model 层 (纯 C++17)       数据结构、游戏规则、卡牌/武将数据
 ```
 
@@ -51,6 +51,14 @@ Sanguosha/
 │       ├── PlayerViewModel.h/cpp  # 玩家 VM（体力/手牌数/状态转发）
 │       ├── ActionViewModel.h/cpp  # 操作 VM（出牌/响应/目标选择/弃牌）
 │       └── GameViewModel.h/cpp    # 游戏 VM（回合管理、阶段调度、生命周期）
+│   └── View/                     # Qt 图形界面
+│       ├── main_qt.cpp           # Qt 版入口
+│       ├── MainWindow.h/cpp      # 主窗口（选将界面 ↔ 游戏界面）
+│       ├── GameBoardWidget.h/cpp # 游戏桌面总布局
+│       ├── CardWidget.h/cpp      # 单张卡牌控件（绘制 + 交互）
+│       ├── PlayerInfoWidget.h/cpp    # 玩家信息面板
+│       ├── HandCardAreaWidget.h/cpp  # 手牌区域
+│       └── ActionPanelWidget.h/cpp   # 操作按钮面板
 └── tests/
     └── smoke_test.cpp   # Model 层冒烟测试
 ```
@@ -64,12 +72,13 @@ Sanguosha/
 
 ## 构建
 
-需要支持 C++17 的编译器（已用 MinGW-W64 g++ 8.1.0 验证）和 CMake ≥ 3.16，**不需要安装 Qt**。
+需要支持 C++17 的编译器（已用 MinGW-W64 g++ 13.2.0 验证）和 CMake ≥ 3.16。
+
+**编译图形界面版需要安装 Qt 6（或 Qt 5.15+）**，Model 层和 ViewModel 层以及控制台版则不需要。
 
 ```bash
 mkdir build && cd build
 cmake .. -G "MinGW Makefiles"      # 或你平台上惯用的生成器
-# cmake --build .
 make -j
 ```
 
@@ -77,8 +86,9 @@ make -j
 - `build/libSanguoshaModel.a`（Model 静态库）
 - `build/ModelSmokeTest.exe`（冒烟测试）
 - `build/Sanguosha.exe`（控制台版游戏）
+- `build/SanguoshaQt.exe`（Qt 图形界面版游戏）
 
-也可直接用 g++ 一行编译（无需 CMake）：
+也可直接用 g++ 编译控制台版（无需 CMake、无需 Qt）：
 
 ```bash
 g++ -std=c++17 -Isrc -Isrc/Model -Isrc/ViewModel \
@@ -86,7 +96,18 @@ g++ -std=c++17 -Isrc -Isrc/Model -Isrc/ViewModel \
   -o Sanguosha.exe
 ```
 
-## 运行控制台版游戏
+## 运行游戏
+
+### 图形界面版（推荐）
+
+```bash
+cd build
+./SanguoshaQt.exe
+```
+
+交互方式：选将界面点击选择武将 → 开始对战 → 游戏界面中双击/单击卡牌出牌，点击「结束出牌」或「确认弃牌」推进回合。双方同屏操作。
+
+### 控制台版
 
 ```bash
 cd build
