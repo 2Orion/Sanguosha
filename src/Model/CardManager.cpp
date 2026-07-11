@@ -109,7 +109,7 @@ Card* CardManager::drawCard()
     if (m_drawPile.empty()) {
         reshuffleDiscardPile();
         if (m_drawPile.empty()) {
-            drawPileEmpty.emit();
+            drawPileEmpty.notify();
             return nullptr;
         }
     }
@@ -147,7 +147,7 @@ void CardManager::discard(Card* card)
 {
     if (card && std::find(m_discardPile.begin(), m_discardPile.end(), card) == m_discardPile.end()) {
         m_discardPile.push_back(card);
-        cardDiscarded.emit(card);
+        cardDiscarded.notify(card);
     }
 }
 
@@ -173,7 +173,7 @@ void CardManager::reshuffleDiscardPile()
     m_discardPile.clear();
     shuffle();
 
-    reshuffled.emit();
+    reshuffled.notify();
 }
 
 Card* CardManager::findCardById(int id) const

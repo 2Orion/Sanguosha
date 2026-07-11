@@ -162,29 +162,29 @@ void PlayerViewModel::connectModelEvents()
     if (!m_player) return;
 
     m_conn.hpChangedId = m_player->hpChanged.connect(
-        [this](int hp) { this->hpChanged.emit(hp); });
+        [this](int hp) { this->hpChanged.notify(hp); });
 
     m_conn.maxHpChangedId = m_player->maxHpChanged.connect(
-        [this](int maxHp) { this->maxHpChanged.emit(maxHp); });
+        [this](int maxHp) { this->maxHpChanged.notify(maxHp); });
 
     m_conn.dyingId = m_player->dying.connect(
-        [this](Player* p) { this->dying.emit(p); });
+        [this](Player* p) { this->dying.notify(p); });
 
     m_conn.diedId = m_player->died.connect(
-        [this](Player* p) { this->died.emit(p); });
+        [this](Player* p) { this->died.notify(p); });
 
     m_conn.revivedId = m_player->revived.connect(
-        [this](Player* p) { this->revived.emit(p); });
+        [this](Player* p) { this->revived.notify(p); });
 
     m_conn.handCardAddedId = m_player->handCardAdded.connect(
-        [this](Card* c) { this->handCardAdded.emit(c); });
+        [this](Card* c) { this->handCardAdded.notify(c); });
 
     m_conn.handCardRemovedId = m_player->handCardRemoved.connect(
-        [this](Card* c) { this->handCardRemoved.emit(c); });
+        [this](Card* c) { this->handCardRemoved.notify(c); });
 
     m_conn.handCardsChangedId = m_player->handCardsChanged.connect(
-        [this]() { this->handCardsChanged.emit(); });
+        [this]() { this->handCardsChanged.notify(); });
 
     m_conn.stateChangedId = m_player->stateChanged.connect(
-        [this]() { this->stateChanged.emit(); });
+        [this]() { this->stateChanged.notify(); });
 }

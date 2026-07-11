@@ -64,7 +64,7 @@ ActionResult ActionViewModel::playCard(Card* card, Player* user,
     emitLog(user->displayName() + " 使用了【" + card->cardName() + "】" +
             (targetStr.empty() ? "" : " → " + targetStr));
 
-    actionCompleted.emit();
+    actionCompleted.notify();
     return result;
 }
 
@@ -145,7 +145,7 @@ void ActionViewModel::respondCard(Card* card, Player* responder)
         break;
     }
 
-    actionCompleted.emit();
+    actionCompleted.notify();
 }
 
 void ActionViewModel::skipResponse(Player* responder)
@@ -175,7 +175,7 @@ void ActionViewModel::skipResponse(Player* responder)
         break;
     }
 
-    actionCompleted.emit();
+    actionCompleted.notify();
 }
 
 // ==================== 弃牌阶段 ====================
@@ -201,5 +201,5 @@ int ActionViewModel::getDiscardCount(Player* player) const
 
 void ActionViewModel::emitLog(const std::string& msg)
 {
-    logMessage.emit(msg);
+    logMessage.notify(msg);
 }

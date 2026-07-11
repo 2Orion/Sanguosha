@@ -3,10 +3,20 @@ project(Sanguosha VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_AUTOMOC ON)
 
 # MSVC: 强制使用 UTF-8 编译和输出，解决中文乱码
 if(MSVC)
     add_compile_options(/utf-8)
+endif()
+
+# Qt包查找
+find_package(Qt6 QUIET COMPONENTS Widgets)
+if(NOT Qt6_FOUND)
+    find_package(Qt5 5.15 REQUIRED COMPONENTS Widgets)
+    set(QT_VERSION_MAJOR 5)
+else()
+    set(QT_VERSION_MAJOR 6)
 endif()
 
 # Model层源文件
@@ -55,6 +65,43 @@ set(VIEWMODEL_HEADERS
     src/ViewModel/PlayerViewModel.h
     src/ViewModel/ActionViewModel.h
     src/ViewModel/GameViewModel.h
+)
+
+# View层源文件
+set(VIEW_SOURCES
+    src/View/main_qt.cpp
+    src/View/CardWidget.cpp
+    src/View/PlayerInfoWidget.cpp
+    src/View/HandCardAreaWidget.cpp
+    src/View/ActionPanelWidget.cpp
+    src/View/GameBoardWidget.cpp
+    src/View/MainWindow.cpp
+)
+
+set(VIEW_HEADERS
+    src/View/CardWidget.h
+    src/View/PlayerInfoWidget.h
+    src/View/HandCardAreaWidget.h
+    src/View/ActionPanelWidget.h
+    src/View/GameBoardWidget.h
+    src/View/MainWindow.h
+)
+
+# Qt 版可执行程序
+add_executable(SanguoshaQt
+    ${VIEW_SOURCES}
+    ${VIEW_HEADERS}
+    ${VIEWMODEL_SOURCES}
+    ${VIEWMODEL_HEADERS}
+)
+target_include_directories(SanguoshaQt PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/Model
+    ${CMAKE_SOURCE_DIR}/src/ViewModel
+)
+target_link_libraries(SanguoshaQt PRIVATE
+    SanguoshaModel
+    Qt${QT_VERSION_MAJOR}::Widgets
 )
 
 # 主程序（控制台版三国杀）

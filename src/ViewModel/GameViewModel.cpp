@@ -239,10 +239,10 @@ void GameViewModel::initGame(Character* char1, Character* char2)
 
     // 5. 监听 Model 事件
     m_modelConn.phaseChangedId = m_state->phaseChanged.connect(
-        [this](PhaseType p) { this->phaseChanged.emit(p); });
+        [this](PhaseType p) { this->phaseChanged.notify(p); });
 
     m_modelConn.currentPlayerChangedId = m_state->currentPlayerChanged.connect(
-        [this](int idx) { this->currentPlayerChanged.emit(idx); });
+        [this](int idx) { this->currentPlayerChanged.notify(idx); });
 
     m_modelConn.pendingActionCreatedId = m_state->pendingActionCreated.connect(
         [this](const PendingActionInfo& info) { this->onPendingActionCreated(info); });
@@ -254,7 +254,7 @@ void GameViewModel::initGame(Character* char1, Character* char2)
         [this](Player* w) { this->onGameOver(w); });
 
     m_modelConn.stateRefreshedId = m_state->stateRefreshed.connect(
-        [this]() { this->stateChanged.emit(); });
+        [this]() { this->stateChanged.notify(); });
 
     // 6. 监听玩家死亡
     for (Player* p : m_state->allPlayers()) {
@@ -348,7 +348,7 @@ void GameViewModel::setNextPhase(PhaseType phase)
 {
     m_state->setCurrentPhase(phase);
     emitLog("→ " + phaseName(phase));
-    stateChanged.emit();
+    stateChanged.notify();
 }
 
 void GameViewModel::switchToNextPlayer()
@@ -375,7 +375,7 @@ void GameViewModel::switchToNextPlayer()
 
 void GameViewModel::emitLog(const std::string& msg)
 {
-    logMessage.emit(msg);
+    logMessage.notify(msg);
 }
 
 // ==================== Model 事件回调 ====================
@@ -384,12 +384,12 @@ void GameViewModel::onPendingActionCreated(const PendingActionInfo& info)
 {
     // 转发描述给 View 显示
     emitLog(info.description);
-    stateChanged.emit();
+    stateChanged.notify();
 }
 
 void GameViewModel::onPendingActionCleared()
 {
-    stateChanged.emit();
+    stateChanged.notify();
 }
 
 void GameViewModel::onGameOver(Player* winner)
@@ -400,7 +400,7 @@ void GameViewModel::onGameOver(Player* winner)
     } else {
         emitLog("游戏结束！平局！");
     }
-    gameOver.emit(winner);
+    gameOver.notify(winner);
 }
 
 void GameViewModel::onPlayerDied(Player* player)

@@ -69,7 +69,8 @@ Sanguosha/
 ```bash
 mkdir build && cd build
 cmake .. -G "MinGW Makefiles"      # 或你平台上惯用的生成器
-cmake --build .
+# cmake --build .
+make -j
 ```
 
 产物：
