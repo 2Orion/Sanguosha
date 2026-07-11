@@ -54,6 +54,12 @@ ActionResult ActionViewModel::playCard(Card* card, Player* user,
 
     ActionResult result = card->execute(m_state, user, targets);
 
+    // 使用后从手牌移除并放入弃牌堆
+    user->removeHandCard(card);
+    if (m_state->cardManager()) {
+        m_state->cardManager()->discard(card);
+    }
+
     // 记录日志
     std::string targetStr;
     for (size_t i = 0; i < targets.size(); ++i) {
