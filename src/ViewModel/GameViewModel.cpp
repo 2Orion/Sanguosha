@@ -2,8 +2,6 @@
 #include "PlayerViewModel.h"
 #include "ActionViewModel.h"
 #include "CardViewModel.h"
-
-#include "GameState.h"
 #include "GameRule.h"
 #include "CardManager.h"
 #include "Player.h"
@@ -100,26 +98,30 @@ void GameViewModel::endPlayPhase()
     setNextPhase(PhaseType::Discard);
 }
 
-// ==================== 状态查询 ====================
-
-GameState* GameViewModel::gameState() const
+void GameViewModel::advanceToInteractivePhase()
 {
-    return m_state.get();
-}
+    if (m_state->isGameOver()) return;
 
-Player* GameViewModel::currentPlayer() const
-{
-    return m_state->currentPlayer();
-}
-
-Player* GameViewModel::opponentPlayer() const
-{
-    Player* cur = currentPlayer();
-    if (!cur) return nullptr;
-    for (Player* p : m_state->allPlayers()) {
-        if (p && p != cur && p->isAlive()) return p;
+    // 跳过非交互阶段，直接推进到 Play 或 Discard
+    while (m_state->currentPhase() != PhaseType::Play &&
+           m_state->currentPhase() != PhaseType::Discard &&
+           !m_state->isGameOver()) {
+        advancePhase();
     }
-    return nullptr;
+}
+
+// ==================== 状态查询（值类型） ====================
+
+int GameViewModel::currentPlayerId() const
+{
+    Player* p = currentPlayer();
+    return p ? p->playerId() : -1;
+}
+
+int GameViewModel::opponentPlayerId() const
+{
+    Player* p = opponentPlayer();
+    return p ? p->playerId() : -1;
 }
 
 PhaseType GameViewModel::currentPhase() const
@@ -137,9 +139,10 @@ bool GameViewModel::isGameOver() const
     return m_state->isGameOver();
 }
 
-Player* GameViewModel::winner() const
+int GameViewModel::winnerId() const
 {
-    return m_state->winner();
+    Player* w = m_state->winner();
+    return w ? w->playerId() : -1;
 }
 
 std::string GameViewModel::phaseName(PhaseType phase)
@@ -153,6 +156,31 @@ std::string GameViewModel::phaseName(PhaseType phase)
     case PhaseType::End:     return "结束阶段";
     }
     return "未知";
+}
+
+// ==================== 待定动作（值类型翻译） ====================
+
+bool GameViewModel::hasPendingAction() const
+{
+    return m_state ? m_state->hasPendingAction() : false;
+}
+
+PendingActionVM GameViewModel::pendingActionVM() const
+{
+    PendingActionVM result;
+    if (!m_state || !m_state->hasPendingAction()) return result;
+
+    const PendingActionInfo& info = m_state->pendingActionInfo();
+    result.sourceId      = info.source      ? info.source->playerId()      : -1;
+    result.targetId      = info.target      ? info.target->playerId()      : -1;
+    result.sourceCardId  = info.sourceCard  ? info.sourceCard->id()        : -1;
+    result.requiredCardType = info.requiredCardType;
+    result.description   = info.description;
+    result.canSkip       = info.canSkip;
+    for (Player* p : info.remainingTargets) {
+        if (p) result.remainingTargetIds.push_back(p->playerId());
+    }
+    return result;
 }
 
 // ==================== 子 ViewModel ====================
@@ -174,25 +202,26 @@ ActionViewModel* GameViewModel::actionVM() const
 
 std::vector<std::unique_ptr<CardViewModel>> GameViewModel::getCurrentPlayerCardVMs() const
 {
-    return getPlayerCardVMs(currentPlayer());
+    return getPlayerCardVMs(currentPlayerId());
 }
 
-std::vector<std::unique_ptr<CardViewModel>> GameViewModel::getPlayerCardVMs(Player* player) const
+std::vector<std::unique_ptr<CardViewModel>> GameViewModel::getPlayerCardVMs(int playerIndex) const
 {
     std::vector<std::unique_ptr<CardViewModel>> result;
+    Player* player = playerByIndex(playerIndex);
     if (!player || !m_state) return result;
 
-    // 获取可打出的牌列表
-    std::vector<Card*> playable = m_actionVM->getPlayableCards(player);
+    // 获取可打出的牌 ID 列表（只用公开接口）
+    std::vector<int> playableIds = m_actionVM->getPlayableCardIds(playerIndex);
 
     for (Card* card : player->handCards()) {
         if (!card) continue;
         auto cvm = std::make_unique<CardViewModel>(card);
 
-        // 标记可打出的牌
+        // 标记可打出的牌（通过 ID 匹配）
         bool isPlayable = false;
-        for (Card* pc : playable) {
-            if (pc == card) {
+        for (int pid : playableIds) {
+            if (pid == card->id()) {
                 isPlayable = true;
                 break;
             }
@@ -202,6 +231,33 @@ std::vector<std::unique_ptr<CardViewModel>> GameViewModel::getPlayerCardVMs(Play
         result.push_back(std::move(cvm));
     }
     return result;
+}
+
+// ==================== 显示数据查找辅助 ====================
+
+std::string GameViewModel::cardDisplayString(int cardId) const
+{
+    Card* card = findCard(cardId);
+    if (!card) return std::string();
+    return card->suitSymbol() + card->numberString() + " " + card->cardName();
+}
+
+std::string GameViewModel::cardNameById(int cardId) const
+{
+    Card* card = findCard(cardId);
+    return card ? card->cardName() : std::string();
+}
+
+CardType GameViewModel::cardTypeById(int cardId) const
+{
+    Card* card = findCard(cardId);
+    return card ? card->cardType() : CardType::Kill;
+}
+
+std::string GameViewModel::playerDisplayName(int playerId) const
+{
+    Player* p = playerByIndex(playerId);
+    return p ? p->displayName() : std::string();
 }
 
 // ==================== 初始化 ====================
@@ -382,13 +438,26 @@ void GameViewModel::emitLog(const std::string& msg)
 
 void GameViewModel::onPendingActionCreated(const PendingActionInfo& info)
 {
-    // 转发描述给 View 显示
+    // 翻译为 ViewModel 层结构后转发给 View
+    PendingActionVM vm;
+    vm.sourceId      = info.source      ? info.source->playerId()      : -1;
+    vm.targetId      = info.target      ? info.target->playerId()      : -1;
+    vm.sourceCardId  = info.sourceCard  ? info.sourceCard->id()        : -1;
+    vm.requiredCardType = info.requiredCardType;
+    vm.description   = info.description;
+    vm.canSkip       = info.canSkip;
+    for (Player* p : info.remainingTargets) {
+        if (p) vm.remainingTargetIds.push_back(p->playerId());
+    }
+
+    pendingActionCreated.notify(vm);
     emitLog(info.description);
     stateChanged.notify();
 }
 
 void GameViewModel::onPendingActionCleared()
 {
+    pendingActionCleared.notify();
     stateChanged.notify();
 }
 
@@ -400,11 +469,51 @@ void GameViewModel::onGameOver(Player* winner)
     } else {
         emitLog("游戏结束！平局！");
     }
-    gameOver.notify(winner);
+    // 发送 winnerId（-1 表示平局）
+    gameOver.notify(winner ? winner->playerId() : -1);
 }
 
 void GameViewModel::onPlayerDied(Player* player)
 {
     if (!player) return;
     emitLog(player->displayName() + "（" + player->characterName() + "）阵亡！");
+}
+
+// ==================== 内部 Model 访问 ====================
+
+GameState* GameViewModel::gameState() const
+{
+    return m_state.get();
+}
+
+Player* GameViewModel::currentPlayer() const
+{
+    return m_state->currentPlayer();
+}
+
+Player* GameViewModel::opponentPlayer() const
+{
+    Player* cur = currentPlayer();
+    if (!cur) return nullptr;
+    for (Player* p : m_state->allPlayers()) {
+        if (p && p != cur && p->isAlive()) return p;
+    }
+    return nullptr;
+}
+
+Player* GameViewModel::playerByIndex(int index) const
+{
+    return m_state->player(index);
+}
+
+Card* GameViewModel::findCard(int cardId) const
+{
+    if (!m_state) return nullptr;
+    for (Player* p : m_state->allPlayers()) {
+        if (!p) continue;
+        for (Card* c : p->handCards()) {
+            if (c && c->id() == cardId) return c;
+        }
+    }
+    return nullptr;
 }

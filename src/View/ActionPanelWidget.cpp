@@ -1,5 +1,5 @@
 #include "ActionPanelWidget.h"
-#include "GameState.h"
+#include "GameViewModel.h"
 
 #include <QFont>
 
@@ -137,7 +137,7 @@ void ActionPanelWidget::updateForPhase(PhaseType phase, bool hasPendingAction)
     }
 }
 
-void ActionPanelWidget::updateForPendingAction(const PendingActionInfo& info)
+void ActionPanelWidget::updateForPendingAction(const PendingActionVM& info)
 {
     hideAllButtons();
 

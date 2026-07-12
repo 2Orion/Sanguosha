@@ -5,7 +5,6 @@
 #include <vector>
 #include <memory>
 
-class Card;
 class CardViewModel;
 class CardWidget;
 
@@ -24,16 +23,20 @@ public:
     /// 刷新所有卡牌的可打出状态（从 CardViewModel 读取）
     void refreshPlayableState();
 
-    /// 获取当前选中的卡牌
-    Card* selectedCard() const;
+    /// 获取当前选中卡牌的 ID，-1 表示无选中
+    int selectedCardId() const;
     void clearSelection();
 
     bool isOpponent() const { return m_isOpponent; }
 
+    /// 通过 cardId 查找 CardViewModel（供外部显示查询）
+    CardViewModel* cardVM(int cardId) const;
+
 signals:
-    void cardClicked(Card* card);
-    void cardDoubleClicked(Card* card);
-    void selectionChanged(Card* card);
+    /// 所有卡牌交互信号均使用 int cardId（不暴露 Model 指针）
+    void cardClicked(int cardId);
+    void cardDoubleClicked(int cardId);
+    void selectionChanged(int cardId);
 
 protected:
     void resizeEvent(QResizeEvent* event) override;

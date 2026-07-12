@@ -7,10 +7,6 @@
 #include "PlayerViewModel.h"
 #include "CardViewModel.h"
 #include "ActionViewModel.h"
-#include "GameState.h"
-#include "Player.h"
-#include "Card.h"
-#include "GameRule.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -38,7 +34,9 @@ GameBoardWidget::GameBoardWidget(GameViewModel* gvm, QWidget* parent)
 
     // 立即推进到出牌阶段，不卡在自动阶段
     QMetaObject::invokeMethod(this, [this]() {
-        processInitialAutoPhases();
+        m_gvm->advanceToInteractivePhase();
+        showLog(QStringLiteral("出牌阶段 — 双击卡牌快速打出"));
+        refreshDisplay();
     }, Qt::QueuedConnection);
 }
 
@@ -116,7 +114,7 @@ void GameBoardWidget::connectViewModel()
     });
     m_connectionIds.push_back(id1);
 
-    // currentPlayerChanged → 玩家切换
+    // currentPlayerChanged → 玩家切换（int playerIndex）
     auto id2 = m_gvm->currentPlayerChanged.connect([this](int idx) {
         QMetaObject::invokeMethod(this, [this, idx]() {
             onPlayerChanged(idx);
@@ -124,10 +122,10 @@ void GameBoardWidget::connectViewModel()
     });
     m_connectionIds.push_back(id2);
 
-    // gameOver → 游戏结束
-    auto id3 = m_gvm->gameOver.connect([this](Player* winner) {
-        QMetaObject::invokeMethod(this, [this, winner]() {
-            onGameOver(winner);
+    // gameOver → 游戏结束（int winnerId）
+    auto id3 = m_gvm->gameOver.connect([this](int winnerId) {
+        QMetaObject::invokeMethod(this, [this, winnerId]() {
+            onGameOver(winnerId);
         }, Qt::QueuedConnection);
     });
     m_connectionIds.push_back(id3);
@@ -148,25 +146,23 @@ void GameBoardWidget::connectViewModel()
     });
     m_connectionIds.push_back(id5);
 
-    // pendingActionCreated → 响应模式
-    if (m_gvm->gameState()) {
-        auto id6 = m_gvm->gameState()->pendingActionCreated.connect(
-            [this](const PendingActionInfo& info) {
-                QMetaObject::invokeMethod(this, [this, info]() {
-                    onPendingActionCreated(info);
-                }, Qt::QueuedConnection);
-            });
-        m_connectionIds.push_back(id6);
+    // pendingActionCreated → 响应模式（PendingActionVM）
+    auto id6 = m_gvm->pendingActionCreated.connect(
+        [this](const PendingActionVM& info) {
+            QMetaObject::invokeMethod(this, [this, info]() {
+                onPendingActionCreated(info);
+            }, Qt::QueuedConnection);
+        });
+    m_connectionIds.push_back(id6);
 
-        // pendingActionCleared → 退出响应模式
-        auto id7 = m_gvm->gameState()->pendingActionCleared.connect(
-            [this]() {
-                QMetaObject::invokeMethod(this, [this]() {
-                    onPendingActionCleared();
-                }, Qt::QueuedConnection);
-            });
-        m_connectionIds.push_back(id7);
-    }
+    // pendingActionCleared → 退出响应模式
+    auto id7 = m_gvm->pendingActionCleared.connect(
+        [this]() {
+            QMetaObject::invokeMethod(this, [this]() {
+                onPendingActionCleared();
+            }, Qt::QueuedConnection);
+        });
+    m_connectionIds.push_back(id7);
 
     // 子控件信号
     connect(m_bottomHandArea, &HandCardAreaWidget::cardClicked,
@@ -203,10 +199,8 @@ void GameBoardWidget::disconnectViewModel()
         m_gvm->gameOver.disconnect(id);
         m_gvm->stateChanged.disconnect(id);
         m_gvm->logMessage.disconnect(id);
-        if (m_gvm->gameState()) {
-            m_gvm->gameState()->pendingActionCreated.disconnect(id);
-            m_gvm->gameState()->pendingActionCleared.disconnect(id);
-        }
+        m_gvm->pendingActionCreated.disconnect(id);
+        m_gvm->pendingActionCleared.disconnect(id);
     }
     m_connectionIds.clear();
 }
@@ -222,7 +216,7 @@ void GameBoardWidget::onPhaseChanged(PhaseType phase)
         return;
     }
 
-    m_actionPanel->updateForPhase(phase, m_gvm->gameState()->hasPendingAction());
+    m_actionPanel->updateForPhase(phase, m_gvm->hasPendingAction());
 
     // 非交互阶段自动推进（使用极短延迟让事件循环先处理完当前事件）
     switch (phase) {
@@ -241,8 +235,8 @@ void GameBoardWidget::onPhaseChanged(PhaseType phase)
     {
         // 检查是否需要弃牌
         ActionViewModel* avm = m_gvm->actionVM();
-        Player* cur = m_gvm->currentPlayer();
-        int discardCount = avm->getDiscardCount(cur);
+        int curId = m_gvm->currentPlayerId();
+        int discardCount = avm->getDiscardCount(curId);
         if (discardCount <= 0) {
             // 不需要弃牌，自动跳过
             QMetaObject::invokeMethod(this, "autoAdvancePhase", Qt::QueuedConnection);
@@ -265,13 +259,10 @@ void GameBoardWidget::onPlayerChanged(int /*playerIndex*/)
     if (m_gvm->playerVM(0)) m_bottomPlayerInfo->bindViewModel(m_gvm->playerVM(0));
     if (m_gvm->playerVM(1)) m_topPlayerInfo->bindViewModel(m_gvm->playerVM(1));
 
-    Player* cur = m_gvm->currentPlayer();
-    if (cur) {
-        // 确定当前玩家是哪个 index，设置对应的面板标记
-        int curIdx = cur->playerId();
-        m_bottomPlayerInfo->setCurrentPlayer(curIdx == 0);
-        m_topPlayerInfo->setCurrentPlayer(curIdx == 1);
-    }
+    // 确定当前玩家，设置对应的面板标记
+    int curId = m_gvm->currentPlayerId();
+    m_bottomPlayerInfo->setCurrentPlayer(curId == 0);
+    m_topPlayerInfo->setCurrentPlayer(curId == 1);
 
     // 刷新手牌
     refreshHandCards();
@@ -280,7 +271,7 @@ void GameBoardWidget::onPlayerChanged(int /*playerIndex*/)
 
 // ==================== 待定动作处理 ====================
 
-void GameBoardWidget::onPendingActionCreated(const PendingActionInfo& info)
+void GameBoardWidget::onPendingActionCreated(const PendingActionVM& info)
 {
     m_state = State::Responding;
 
@@ -288,37 +279,35 @@ void GameBoardWidget::onPendingActionCreated(const PendingActionInfo& info)
     m_actionPanel->updateForPendingAction(info);
 
     // 刷新响应方可用的手牌
-    if (info.target) {
-        ActionViewModel* avm = m_gvm->actionVM();
-        std::vector<Card*> responseCards =
-            avm->getResponseCards(info.target, info.requiredCardType);
+    ActionViewModel* avm = m_gvm->actionVM();
 
-        // 如果没有可用的响应牌，自动跳过/扣血推进游戏
-        if (responseCards.empty()) {
-            showLog(QString::fromStdString(
-                info.target->displayName() + " 无牌可响应，自动推进"));
-            avm->skipResponse(info.target, true);  // forceNoCard=true
-            return;
-        }
+    // 获取可响应的牌 ID 列表
+    std::vector<int> responseCardIds =
+        avm->getResponseCardIds(info.targetId, info.requiredCardType);
 
-        // 获取 target 的手牌并标记可响应的
-        auto cardVMs = m_gvm->getPlayerCardVMs(info.target);
-        for (auto& cvm : cardVMs) {
-            for (Card* rc : responseCards) {
-                if (cvm->card() == rc) {
-                    cvm->setPlayable(true);
-                    break;
-                }
-            }
-        }
+    // 如果没有可用的响应牌，自动跳过/扣血推进游戏
+    if (responseCardIds.empty()) {
+        // 通过 ViewModel 获取显示名
+        std::string name = m_gvm->playerDisplayName(info.targetId);
+        showLog(QString::fromStdString(name + " 无牌可响应，自动推进"));
+        avm->skipResponse(info.targetId, true);  // forceNoCard=true
+        return;
+    }
 
-        // 显示到对应玩家的手牌区
-        if (info.target->playerId() == 0) {
-            m_bottomHandArea->setCards(std::move(cardVMs), false);
-            m_bottomHandArea->refreshPlayableState();
-        } else {
-            m_topHandArea->setCards(std::move(cardVMs), false);
+    // 获取 target 的手牌 CardViewModel 并标记可响应的
+    auto cardVMs = m_gvm->getPlayerCardVMs(info.targetId);
+    for (auto& cvm : cardVMs) {
+        if (avm->isValidResponseCard(cvm->id(), info.targetId, info.requiredCardType)) {
+            cvm->setPlayable(true);
         }
+    }
+
+    // 显示到对应玩家的手牌区
+    if (info.targetId == 0) {
+        m_bottomHandArea->setCards(std::move(cardVMs), false);
+        m_bottomHandArea->refreshPlayableState();
+    } else {
+        m_topHandArea->setCards(std::move(cardVMs), false);
     }
 
     showLog(QString::fromStdString(info.description));
@@ -332,8 +321,8 @@ void GameBoardWidget::onPendingActionCleared()
     m_actionPanel->updateForPhase(m_gvm->currentPhase(), false);
 
     // 检查是否有后续待定动作
-    if (m_gvm->gameState()->hasPendingAction()) {
-        onPendingActionCreated(m_gvm->gameState()->pendingActionInfo());
+    if (m_gvm->hasPendingAction()) {
+        onPendingActionCreated(m_gvm->pendingActionVM());
     }
 
     refreshDisplay();
@@ -341,56 +330,55 @@ void GameBoardWidget::onPendingActionCleared()
 
 // ==================== 交互处理 ====================
 
-void GameBoardWidget::onCardClicked(Card* card)
+void GameBoardWidget::onCardClicked(int cardId)
 {
-    if (!card || !m_gvm) return;
+    if (cardId < 0 || !m_gvm) return;
 
-    GameState* state = m_gvm->gameState();
-    Player* curPlayer = state->currentPlayer();
+    int curPlayerId = m_gvm->currentPlayerId();
 
     switch (m_state) {
     case State::Idle:
     {
         // 出牌阶段 — 尝试使用牌
-        if (state->currentPhase() != PhaseType::Play) return;
-        if (state->hasPendingAction()) return;
+        if (m_gvm->currentPhase() != PhaseType::Play) return;
+        if (m_gvm->hasPendingAction()) return;
 
         // 只能使用当前玩家自己的手牌
-        bool isOwnCard = false;
-        for (Card* c : curPlayer->handCards()) {
-            if (c == card) { isOwnCard = true; break; }
-        }
-        if (!isOwnCard) {
+        ActionViewModel* avm = m_gvm->actionVM();
+        if (!avm->isOwnCard(cardId, curPlayerId)) {
             showLog(QStringLiteral("不能使用对方的牌"));
             return;
         }
 
-        ActionViewModel* avm = m_gvm->actionVM();
-
-        // 检查 canUse + canPlayCard
-        if (!card->canUse(state, curPlayer) ||
-            !GameRule::canPlayCard(state, curPlayer, card)) {
+        // 综合检查：卡牌自身可用性 + 游戏规则
+        if (!avm->canPlayCard(cardId, curPlayerId)) {
             showLog(QStringLiteral("这张牌不能使用"));
             return;
         }
 
-        // 获取合法目标
-        std::vector<Player*> targets = avm->getValidTargets(card, curPlayer);
+        // 获取合法目标（int IDs）
+        std::vector<int> targetIds = avm->getValidTargetIds(cardId, curPlayerId);
 
-        if (targets.empty()) {
+        // 获取卡牌名用于日志（通过 CardViewModel）
+        CardViewModel* cvm = findCardVM(cardId);
+        QString cardName = cvm ? QString::fromStdString(cvm->cardName())
+                               : QStringLiteral("未知");
+
+        if (targetIds.empty()) {
             // 无目标，直接使用（桃/酒/无中生有）
-            showLog(QStringLiteral("使用: ") + QString::fromStdString(card->cardName()));
-            avm->playCard(card, curPlayer, {});
+            showLog(QStringLiteral("使用: ") + cardName);
+            avm->playCard(cardId, curPlayerId, {});
             refreshDisplay();
-        } else if (targets.size() == 1) {
-            // 单一日标，自动选择
-            showLog(QStringLiteral("使用: ") + QString::fromStdString(card->cardName())
-                    + QStringLiteral(" → ") + QString::fromStdString(targets[0]->displayName()));
-            avm->playCard(card, curPlayer, {targets[0]});
+        } else if (targetIds.size() == 1) {
+            // 单一目标，自动选择
+            std::string targetName = m_gvm->playerDisplayName(targetIds[0]);
+            showLog(QStringLiteral("使用: ") + cardName
+                    + QStringLiteral(" → ") + QString::fromStdString(targetName));
+            avm->playCard(cardId, curPlayerId, {targetIds[0]});
             refreshDisplay();
         } else {
             // 多目标，进入目标选择模式
-            enterTargetSelection(card, curPlayer, targets);
+            enterTargetSelection(cardId, curPlayerId, targetIds);
         }
         break;
     }
@@ -398,38 +386,25 @@ void GameBoardWidget::onCardClicked(Card* card)
     case State::Responding:
     {
         // 响应模式 — 打出这张牌作为响应
-        if (!state->hasPendingAction()) return;
+        if (!m_gvm->hasPendingAction()) return;
 
-        const PendingActionInfo& info = state->pendingActionInfo();
+        const PendingActionVM& info = m_gvm->pendingActionVM();
         ActionViewModel* avm = m_gvm->actionVM();
-        Player* responder = info.target;
+        int responderId = info.targetId;
 
-        if (!responder) return;
-
-        // 检查这张牌是否符合响应要求
-        std::vector<Card*> responseCards =
-            avm->getResponseCards(responder, info.requiredCardType);
-        bool valid = false;
-        for (Card* rc : responseCards) {
-            if (rc == card) { valid = true; break; }
-        }
-
-        if (!valid) {
+        // 使用 ViewModel 方法检查响应是否有效
+        if (!avm->isValidResponseCard(cardId, responderId, info.requiredCardType)) {
             showLog(QStringLiteral("这张牌不能用于响应"));
             return;
         }
 
-        avm->respondCard(card, responder);
+        avm->respondCard(cardId, responderId);
         break;
     }
 
     case State::Discarding:
     {
         // 弃牌阶段 — 切换选牌状态
-        Player* cur = m_gvm->currentPlayer();
-        if (!cur) return;
-
-        // 在 HandCardAreaWidget 中切换选中
         // 已选中的牌会通过 CardWidget 的 selected 状态显示
         // 确认弃牌时收集所有选中的牌一起弃置
         break;
@@ -440,24 +415,28 @@ void GameBoardWidget::onCardClicked(Card* card)
     }
 }
 
-void GameBoardWidget::onCardDoubleClicked(Card* card)
+void GameBoardWidget::onCardDoubleClicked(int cardId)
 {
     // 双击等同于单击出牌
-    onCardClicked(card);
+    onCardClicked(cardId);
 }
 
 void GameBoardWidget::onTargetClicked(int playerIndex)
 {
-    if (m_state != State::SelectingTarget || !m_pendingCard) return;
+    if (m_state != State::SelectingTarget || m_pendingCardId < 0) return;
 
     // 检查点击的目标是否在合法列表中
-    for (Player* t : m_pendingTargets) {
-        if (t && t->playerId() == playerIndex) {
+    for (int tid : m_pendingTargetIds) {
+        if (tid == playerIndex) {
             // 找到目标，执行出牌
             ActionViewModel* avm = m_gvm->actionVM();
-            showLog(QStringLiteral("使用: ") + QString::fromStdString(m_pendingCard->cardName())
-                    + QStringLiteral(" → ") + QString::fromStdString(t->displayName()));
-            avm->playCard(m_pendingCard, m_pendingCardUser, {t});
+            CardViewModel* cvm = findCardVM(m_pendingCardId);
+            QString cardName = cvm ? QString::fromStdString(cvm->cardName())
+                                   : QStringLiteral("未知");
+            std::string targetName = m_gvm->playerDisplayName(tid);
+            showLog(QStringLiteral("使用: ") + cardName
+                    + QStringLiteral(" → ") + QString::fromStdString(targetName));
+            avm->playCard(m_pendingCardId, m_pendingCardUserId, {tid});
             exitTargetSelection();
             refreshDisplay();
             return;
@@ -470,7 +449,7 @@ void GameBoardWidget::onTargetClicked(int playerIndex)
 
 void GameBoardWidget::onPlayPhaseEnded()
 {
-    if (m_gvm->gameState()->hasPendingAction()) return;
+    if (m_gvm->hasPendingAction()) return;
     if (m_gvm->currentPhase() != PhaseType::Play) return;
 
     m_gvm->endPlayPhase();
@@ -478,13 +457,13 @@ void GameBoardWidget::onPlayPhaseEnded()
 
 void GameBoardWidget::onResponseSkipped()
 {
-    if (!m_gvm->gameState()->hasPendingAction()) return;
+    if (!m_gvm->hasPendingAction()) return;
 
-    const PendingActionInfo& info = m_gvm->gameState()->pendingActionInfo();
+    const PendingActionVM& info = m_gvm->pendingActionVM();
     if (!info.canSkip) return;
 
     ActionViewModel* avm = m_gvm->actionVM();
-    avm->skipResponse(info.target);
+    avm->skipResponse(info.targetId);
 }
 
 void GameBoardWidget::onDiscardConfirmed()
@@ -492,21 +471,21 @@ void GameBoardWidget::onDiscardConfirmed()
     if (m_state != State::Discarding) return;
     if (!m_gvm) return;
 
-    Player* cur = m_gvm->currentPlayer();
+    int curId = m_gvm->currentPlayerId();
     ActionViewModel* avm = m_gvm->actionVM();
 
-    // 收集当前所有选中的牌
-    Card* selected = m_bottomHandArea->selectedCard();
-    if (!selected) {
+    // 收集当前所有选中的牌（通过 cardId）
+    int selectedId = m_bottomHandArea->selectedCardId();
+    if (selectedId < 0) {
         showLog(QStringLiteral("请先选择要弃置的牌"));
         return;
     }
 
-    avm->discardCard(selected, cur);
+    avm->discardCard(selectedId, curId);
     refreshHandCards();
 
     // 检查是否还需要弃牌
-    int remaining = avm->getDiscardCount(cur);
+    int remaining = avm->getDiscardCount(curId);
     if (remaining <= 0) {
         showLog(QStringLiteral("弃牌完成"));
         m_gvm->advancePhase();  // 进入结束阶段
@@ -516,16 +495,20 @@ void GameBoardWidget::onDiscardConfirmed()
     }
 }
 
-void GameBoardWidget::onGameOver(Player* winner)
+void GameBoardWidget::onGameOver(int winnerId)
 {
     m_autoAdvanceTimer->stop();
     m_state = State::Idle;
 
     QString msg;
-    if (winner) {
-        msg = QStringLiteral("游戏结束！%1（%2）获胜！")
-              .arg(QString::fromStdString(winner->displayName()))
-              .arg(QString::fromStdString(winner->characterName()));
+    if (winnerId >= 0) {
+        // 通过 PlayerViewModel 获取显示信息
+        PlayerViewModel* pvm = m_gvm->playerVM(winnerId);
+        if (pvm) {
+            msg = QStringLiteral("游戏结束！%1（%2）获胜！")
+                  .arg(QString::fromStdString(pvm->displayName()))
+                  .arg(QString::fromStdString(pvm->characterName()));
+        }
     } else {
         msg = QStringLiteral("游戏结束！平局！");
     }
@@ -542,7 +525,7 @@ void GameBoardWidget::onGameOver(Player* winner)
 void GameBoardWidget::autoAdvancePhase()
 {
     if (!m_gvm || m_gvm->isGameOver()) return;
-    if (m_gvm->gameState()->hasPendingAction()) return;
+    if (m_gvm->hasPendingAction()) return;
 
     m_gvm->advancePhase();
 }
@@ -552,36 +535,26 @@ void GameBoardWidget::showLog(const QString& msg)
     m_logLabel->setText(msg);
 }
 
-void GameBoardWidget::processInitialAutoPhases()
+CardViewModel* GameBoardWidget::findCardVM(int cardId) const
 {
-    if (!m_gvm || m_gvm->isGameOver()) return;
-
-    // 直接推进到出牌阶段（执行 Prepare→Judge→Draw→Play 的完整逻辑）
-    while (m_gvm->currentPhase() != PhaseType::Play &&
-           m_gvm->currentPhase() != PhaseType::Discard &&
-           !m_gvm->isGameOver()) {
-        m_gvm->advancePhase();
-    }
-
-    // 确保显示刷新到最终状态
-    showLog(QStringLiteral("出牌阶段 — 双击卡牌快速打出"));
-    refreshDisplay();
+    // 先在己方手牌区查找
+    if (auto* cvm = m_bottomHandArea->cardVM(cardId)) return cvm;
+    // 再在对手手牌区查找
+    return m_topHandArea->cardVM(cardId);
 }
 
 void GameBoardWidget::enterTargetSelection(
-    Card* card, Player* user, const std::vector<Player*>& targets)
+    int cardId, int userId, const std::vector<int>& targetIds)
 {
     m_state = State::SelectingTarget;
-    m_pendingCard = card;
-    m_pendingCardUser = user;
-    m_pendingTargets = targets;
+    m_pendingCardId = cardId;
+    m_pendingCardUserId = userId;
+    m_pendingTargetIds = targetIds;
 
     // 高亮可点击的目标
-    for (Player* t : targets) {
-        if (!t) continue;
-        int idx = t->playerId();
-        if (idx == 0) m_bottomPlayerInfo->setTargetable(true);
-        if (idx == 1) m_topPlayerInfo->setTargetable(true);
+    for (int tid : targetIds) {
+        if (tid == 0) m_bottomPlayerInfo->setTargetable(true);
+        if (tid == 1) m_topPlayerInfo->setTargetable(true);
     }
 
     m_actionPanel->setHint(QStringLiteral("请选择目标"));
@@ -591,18 +564,13 @@ void GameBoardWidget::enterTargetSelection(
 void GameBoardWidget::exitTargetSelection()
 {
     m_state = State::Idle;
-    m_pendingCard = nullptr;
-    m_pendingCardUser = nullptr;
-    m_pendingTargets.clear();
+    m_pendingCardId = -1;
+    m_pendingCardUserId = -1;
+    m_pendingTargetIds.clear();
 
     // 取消高亮
-    for (int i = 0; i < 2; ++i) {
-        auto* pvm = m_gvm ? m_gvm->playerVM(i) : nullptr;
-        if (pvm) {
-            if (i == 0) m_bottomPlayerInfo->setTargetable(false);
-            if (i == 1) m_topPlayerInfo->setTargetable(false);
-        }
-    }
+    m_bottomPlayerInfo->setTargetable(false);
+    m_topPlayerInfo->setTargetable(false);
 }
 
 void GameBoardWidget::refreshHandCards()
@@ -614,9 +582,9 @@ void GameBoardWidget::refreshHandCards()
     m_bottomHandArea->setCards(std::move(ownCards), false);
 
     // 对手手牌（正面朝上，双人本地模式双方可见）
-    Player* opponent = m_gvm->opponentPlayer();
-    if (opponent) {
-        auto oppCards = m_gvm->getPlayerCardVMs(opponent);
+    int oppId = m_gvm->opponentPlayerId();
+    if (oppId >= 0) {
+        auto oppCards = m_gvm->getPlayerCardVMs(oppId);
         m_topHandArea->setCards(std::move(oppCards), false);
     }
 }
@@ -632,12 +600,9 @@ void GameBoardWidget::refreshDisplay()
     if (pvm1) m_topPlayerInfo->bindViewModel(pvm1);
 
     // 确认当前玩家
-    Player* cur = m_gvm->currentPlayer();
-    if (cur) {
-        int curIdx = cur->playerId();
-        m_bottomPlayerInfo->setCurrentPlayer(curIdx == 0);
-        m_topPlayerInfo->setCurrentPlayer(curIdx == 1);
-    }
+    int curId = m_gvm->currentPlayerId();
+    m_bottomPlayerInfo->setCurrentPlayer(curId == 0);
+    m_topPlayerInfo->setCurrentPlayer(curId == 1);
 
     // 刷新手牌
     refreshHandCards();
