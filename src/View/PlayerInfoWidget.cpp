@@ -222,7 +222,7 @@ void PlayerInfoWidget::connectViewModelEvents()
     m_connectionIds.push_back(id3);
 
     // dying → 显示濒死效果
-    auto id4 = m_pvm->dying.connect([this](Player* /*p*/) {
+    auto id4 = m_pvm->dying.connect([this]() {
         QMetaObject::invokeMethod(this, [this]() { onDying(); }, Qt::QueuedConnection);
     });
     m_connectionIds.push_back(id4);

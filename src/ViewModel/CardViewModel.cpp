@@ -111,7 +111,8 @@ void CardViewModel::resetUIState()
     setHighlighted(false);
 }
 
-Card* CardViewModel::card() const
+std::string CardViewModel::cardTypeName(CardType type)
 {
-    return m_card;
+    return Card::cardTypeName(type);
 }
+

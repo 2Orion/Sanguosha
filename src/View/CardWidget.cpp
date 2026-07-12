@@ -1,7 +1,6 @@
 #include "CardWidget.h"
 #include "CardViewModel.h"
-#include "Card.h"
-#include "CommonTypes.h"
+#include "Core/CommonTypes.h"
 
 #include <QPainter>
 #include <QMouseEvent>

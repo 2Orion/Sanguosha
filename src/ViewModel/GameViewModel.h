@@ -5,10 +5,10 @@
 #include <vector>
 #include <memory>
 #include <cstddef>
-#include "CommonTypes.h"
-#include "Event.h"
+#include "Core/CommonTypes.h"
+#include "Core/Event.h"
+#include "GameState.h"  // 内部使用：PendingActionInfo, GameState
 
-class GameState;
 class CardManager;
 class Player;
 class Card;
@@ -16,7 +16,17 @@ class Character;
 class PlayerViewModel;
 class ActionViewModel;
 class CardViewModel;
-struct PendingActionInfo;
+
+/// ViewModel 层的待定动作信息（无原始 Model 指针）
+struct PendingActionVM {
+    int sourceId = -1;            // 动作来源玩家 ID
+    int targetId = -1;            // 需要响应的玩家 ID
+    int sourceCardId = -1;        // 触发动作的卡牌 ID
+    CardType requiredCardType = CardType::Kill;
+    std::string description;      // 界面提示文字
+    bool canSkip = false;         // 是否可以跳过响应
+    std::vector<int> remainingTargetIds; // AOE/链式响应中尚未询问的后续目标 ID
+};
 
 /// 游戏 ViewModel — 中央协调器
 /// 管理游戏生命周期、阶段状态机、回合流转
@@ -37,18 +47,31 @@ public:
     /// 当前玩家结束出牌（Play→Discard 的快捷方式）
     void endPlayPhase();
 
-    // ==================== 状态查询 ====================
+    /// 跳过非交互阶段，直接推进到需要玩家操作的阶段（Play/Discard）
+    void advanceToInteractivePhase();
 
-    GameState* gameState() const;
-    Player* currentPlayer() const;
-    Player* opponentPlayer() const;
+    // ==================== 状态查询（仅值类型） ====================
+
+    /// 当前玩家 ID（0 或 1），-1 表示无当前玩家
+    int currentPlayerId() const;
+
+    /// 对手玩家 ID（0 或 1），-1 表示无对手
+    int opponentPlayerId() const;
+
     PhaseType currentPhase() const;
     int turnCount() const;
     bool isGameOver() const;
-    Player* winner() const;
+
+    /// 获胜者 ID，-1 表示无（平局或游戏未结束）
+    int winnerId() const;
 
     /// 获取阶段的中文名称
     static std::string phaseName(PhaseType phase);
+
+    // ==================== 待定动作（响应系统） ====================
+
+    bool hasPendingAction() const;
+    PendingActionVM pendingActionVM() const;
 
     // ==================== 子 ViewModel ====================
 
@@ -60,15 +83,31 @@ public:
     /// 获取当前玩家手牌的 CardViewModel 列表（重置 UI 状态后计算可打出的牌）
     std::vector<std::unique_ptr<CardViewModel>> getCurrentPlayerCardVMs() const;
 
-    /// 获取某玩家手牌的 CardViewModel 列表
-    std::vector<std::unique_ptr<CardViewModel>> getPlayerCardVMs(Player* player) const;
+    /// 获取指定玩家手牌的 CardViewModel 列表（按玩家 ID）
+    std::vector<std::unique_ptr<CardViewModel>> getPlayerCardVMs(int playerIndex) const;
+
+    // ==================== 显示数据查找辅助（给 View 用，只返回值类型） ====================
+
+    /// 通过卡牌 ID 查找完整显示字符串（如 "♠A 杀"）
+    std::string cardDisplayString(int cardId) const;
+
+    /// 通过卡牌 ID 查找卡牌名称
+    std::string cardNameById(int cardId) const;
+
+    /// 通过卡牌 ID 查找卡牌类型
+    CardType cardTypeById(int cardId) const;
+
+    /// 通过玩家 ID 获取玩家显示名
+    std::string playerDisplayName(int playerId) const;
 
     // ==================== 事件 ====================
 
     EventListener<PhaseType> phaseChanged;
-    EventListener<int> currentPlayerChanged;
-    EventListener<Player*> gameOver;
+    EventListener<int> currentPlayerChanged;                // int = playerIndex
+    EventListener<int> gameOver;                            // int = winnerId, -1 = 平局
     EventListener<const std::string&> logMessage;
+    EventListener<const PendingActionVM&> pendingActionCreated;
+    EventListener<> pendingActionCleared;
     EventListener<> stateChanged;
 
 private:
@@ -92,6 +131,15 @@ private:
     void onPendingActionCleared();
     void onGameOver(Player* winner);
     void onPlayerDied(Player* player);
+
+    // ---- 内部 Model 访问（仅 ViewModel 层内部使用） ----
+    GameState* gameState() const;
+    Player* currentPlayer() const;
+    Player* opponentPlayer() const;
+    Player* playerByIndex(int index) const;
+
+    /// 通过 cardId 查找卡牌（遍历所有玩家手牌）
+    Card* findCard(int cardId) const;
 
     // ---- 成员 ----
     std::unique_ptr<GameState> m_state;

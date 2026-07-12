@@ -6,15 +6,14 @@
 #include <QTimer>
 #include <vector>
 #include <cstddef>
-#include "CommonTypes.h"
+#include "Core/CommonTypes.h"
 
 class GameViewModel;
-class Player;
-class Card;
+class CardViewModel;
 class PlayerInfoWidget;
 class HandCardAreaWidget;
 class ActionPanelWidget;
-struct PendingActionInfo;
+struct PendingActionVM;
 
 /// 游戏桌面总布局 — 组合所有子控件，连接 ViewModel 事件
 class GameBoardWidget : public QWidget {
@@ -41,27 +40,27 @@ private:
     void onPlayerChanged(int playerIndex);
 
     // ---- 待定动作（响应流程） ----
-    void onPendingActionCreated(const PendingActionInfo& info);
+    void onPendingActionCreated(const PendingActionVM& info);
     void onPendingActionCleared();
 
-    // ---- 交互处理 ----
-    void onCardClicked(Card* card);
-    void onCardDoubleClicked(Card* card);
+    // ---- 交互处理（全部使用 int ID） ----
+    void onCardClicked(int cardId);
+    void onCardDoubleClicked(int cardId);
     void onTargetClicked(int playerIndex);
     void onPlayPhaseEnded();
     void onResponseSkipped();
     void onDiscardConfirmed();
-    void onGameOver(Player* winner);
+    void onGameOver(int winnerId);
 
     // ---- 辅助 ----
-    /// 跳过初始自动阶段（Prepare→Judge→Draw→Play），直接进入出牌阶段
-    void processInitialAutoPhases();
     void showLog(const QString& msg);
-    void enterTargetSelection(Card* card, Player* user,
-                               const std::vector<Player*>& targets);
+    void enterTargetSelection(int cardId, int userId,
+                               const std::vector<int>& targetIds);
     void exitTargetSelection();
     void refreshHandCards();
-    void setInteractionState(int state);
+
+    /// 通过 cardId 查找 CardViewModel（遍历两个手牌区）
+    CardViewModel* findCardVM(int cardId) const;
 
     // ---- 成员 ----
     GameViewModel* m_gvm;  // 不持有，由 MainWindow 持有
@@ -76,19 +75,17 @@ private:
     QLabel*             m_logLabel;
     QTimer*             m_autoAdvanceTimer;
 
-    // ---- 交互状态 ----
+    // ---- 交互状态（全部使用 int ID） ----
     enum class State { Idle, SelectingTarget, Responding, Discarding };
     State m_state = State::Idle;
 
     // 目标选择暂存
-    Card* m_pendingCard = nullptr;
-    Player* m_pendingCardUser = nullptr;
-    std::vector<Player*> m_pendingTargets;
+    int m_pendingCardId = -1;
+    int m_pendingCardUserId = -1;
+    std::vector<int> m_pendingTargetIds;
 
     // 弃牌追踪
     int m_requiredDiscardCount = 0;
-
-    bool m_initialBatch = true;  // 首次加载时跳过计时器延迟
 };
 
 #endif // GAMEBOARDWIDGET_H

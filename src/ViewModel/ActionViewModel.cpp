@@ -1,4 +1,5 @@
 #include "ActionViewModel.h"
+#include "Core/CommonTypes.h"
 #include "GameState.h"
 #include "GameRule.h"
 #include "CardManager.h"
@@ -15,42 +16,86 @@ void ActionViewModel::setGameState(GameState* state)
     m_state = state;
 }
 
-GameState* ActionViewModel::gameState() const
+// ==================== 内部 Model 对象查找 ====================
+
+Player* ActionViewModel::findPlayer(int playerId) const
 {
-    return m_state;
+    if (!m_state) return nullptr;
+    return m_state->player(playerId);
 }
 
-// ==================== 出牌阶段 ====================
-
-std::vector<Card*> ActionViewModel::getPlayableCards(Player* player) const
+Card* ActionViewModel::findCard(int cardId) const
 {
-    std::vector<Card*> result;
-    if (!m_state || !player) return result;
+    if (!m_state) return nullptr;
+    for (Player* p : m_state->allPlayers()) {
+        if (!p) continue;
+        for (Card* c : p->handCards()) {
+            if (c && c->id() == cardId) return c;
+        }
+    }
+    return nullptr;
+}
 
-    for (Card* card : player->handCards()) {
-        if (!card) continue;
+// ==================== 出牌阶段（公共 ID 接口） ====================
 
-        // 检查卡牌自身的使用条件
-        if (!card->canUse(m_state, player)) continue;
+std::vector<int> ActionViewModel::getPlayableCardIds(int playerId) const
+{
+    std::vector<int> result;
+    Player* player = findPlayer(playerId);
+    if (!player) return result;
 
-        // 通用规则检查
-        if (!GameRule::canPlayCard(m_state, player, card)) continue;
-
-        result.push_back(card);
+    for (Card* card : getPlayableCards(player)) {
+        if (card) result.push_back(card->id());
     }
     return result;
 }
 
-std::vector<Player*> ActionViewModel::getValidTargets(Card* card, Player* user) const
+std::vector<int> ActionViewModel::getValidTargetIds(int cardId, int playerId) const
 {
+    Card* card = findCard(cardId);
+    Player* user = findPlayer(playerId);
     if (!m_state || !card || !user) return {};
-    return card->getValidTargets(m_state, user);
+
+    std::vector<Player*> targets = card->getValidTargets(m_state, user);
+    std::vector<int> result;
+    for (Player* t : targets) {
+        if (t) result.push_back(t->playerId());
+    }
+    return result;
 }
 
-ActionResult ActionViewModel::playCard(Card* card, Player* user,
-                                        const std::vector<Player*>& targets)
+bool ActionViewModel::isOwnCard(int cardId, int playerId) const
 {
+    Player* player = findPlayer(playerId);
+    if (!player) return false;
+    for (Card* c : player->handCards()) {
+        if (c && c->id() == cardId) return true;
+    }
+    return false;
+}
+
+bool ActionViewModel::canPlayCard(int cardId, int playerId) const
+{
+    Card* card = findCard(cardId);
+    Player* player = findPlayer(playerId);
+    if (!m_state || !card || !player) return false;
+    return card->canUse(m_state, player) &&
+           GameRule::canPlayCard(m_state, player, card);
+}
+
+ActionResult ActionViewModel::playCard(int cardId, int playerId,
+                                        const std::vector<int>& targetIds)
+{
+    Card* card = findCard(cardId);
+    Player* user = findPlayer(playerId);
     if (!m_state || !card || !user) return ActionResult::Completed;
+
+    // 将 target IDs 转为 Player* 列表
+    std::vector<Player*> targets;
+    for (int tid : targetIds) {
+        Player* t = findPlayer(tid);
+        if (t) targets.push_back(t);
+    }
 
     ActionResult result = card->execute(m_state, user, targets);
 
@@ -76,10 +121,11 @@ ActionResult ActionViewModel::playCard(Card* card, Player* user,
 
 // ==================== 响应阶段 ====================
 
-std::vector<Card*> ActionViewModel::getResponseCards(Player* player,
+std::vector<int> ActionViewModel::getResponseCardIds(int playerId,
                                                        CardType requiredType) const
 {
-    std::vector<Card*> result;
+    std::vector<int> result;
+    Player* player = findPlayer(playerId);
     if (!player) return result;
 
     for (Card* card : player->handCards()) {
@@ -87,7 +133,7 @@ std::vector<Card*> ActionViewModel::getResponseCards(Player* player,
 
         // 直接匹配
         if (card->cardType() == requiredType) {
-            result.push_back(card);
+            result.push_back(card->id());
             continue;
         }
 
@@ -95,11 +141,21 @@ std::vector<Card*> ActionViewModel::getResponseCards(Player* player,
         if (player->character()) {
             CardType transformed = player->character()->skillTransformCard(card);
             if (transformed == requiredType) {
-                result.push_back(card);
+                result.push_back(card->id());
             }
         }
     }
     return result;
+}
+
+bool ActionViewModel::isValidResponseCard(int cardId, int playerId,
+                                           CardType requiredType) const
+{
+    std::vector<int> responseCardIds = getResponseCardIds(playerId, requiredType);
+    for (int id : responseCardIds) {
+        if (id == cardId) return true;
+    }
+    return false;
 }
 
 bool ActionViewModel::canSkipPendingAction() const
@@ -109,8 +165,10 @@ bool ActionViewModel::canSkipPendingAction() const
     return m_state->pendingActionInfo().canSkip;
 }
 
-void ActionViewModel::respondCard(Card* card, Player* responder)
+void ActionViewModel::respondCard(int cardId, int playerId)
 {
+    Card* card = findCard(cardId);
+    Player* responder = findPlayer(playerId);
     if (!m_state || !card || !responder) return;
     if (!m_state->hasPendingAction()) return;
 
@@ -154,8 +212,9 @@ void ActionViewModel::respondCard(Card* card, Player* responder)
     actionCompleted.notify();
 }
 
-void ActionViewModel::skipResponse(Player* responder, bool forceNoCard)
+void ActionViewModel::skipResponse(int playerId, bool forceNoCard)
 {
+    Player* responder = findPlayer(playerId);
     if (!m_state || !responder) return;
     if (!m_state->hasPendingAction()) return;
 
@@ -198,8 +257,10 @@ void ActionViewModel::skipResponse(Player* responder, bool forceNoCard)
 
 // ==================== 弃牌阶段 ====================
 
-void ActionViewModel::discardCard(Card* card, Player* player)
+void ActionViewModel::discardCard(int cardId, int playerId)
 {
+    Card* card = findCard(cardId);
+    Player* player = findPlayer(playerId);
     if (!m_state || !card || !player) return;
 
     player->removeHandCard(card);
@@ -210,9 +271,31 @@ void ActionViewModel::discardCard(Card* card, Player* player)
     emitLog(player->displayName() + " 弃置了【" + card->cardName() + "】");
 }
 
-int ActionViewModel::getDiscardCount(Player* player) const
+int ActionViewModel::getDiscardCount(int playerId) const
 {
+    Player* player = findPlayer(playerId);
     return GameRule::getDiscardCount(player);
+}
+
+// ==================== 内部：Model 指针版本（供 ViewModel 层使用） ====================
+
+std::vector<Card*> ActionViewModel::getPlayableCards(Player* player) const
+{
+    std::vector<Card*> result;
+    if (!m_state || !player) return result;
+
+    for (Card* card : player->handCards()) {
+        if (!card) continue;
+
+        // 检查卡牌自身的使用条件
+        if (!card->canUse(m_state, player)) continue;
+
+        // 通用规则检查
+        if (!GameRule::canPlayCard(m_state, player, card)) continue;
+
+        result.push_back(card);
+    }
+    return result;
 }
 
 // ==================== 内部 ====================
