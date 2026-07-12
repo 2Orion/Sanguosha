@@ -1,0 +1,6 @@
+D:/sanguosha/Sanguosha/build_obj/CMakeFiles/SanguoshaModel.dir
+D:/sanguosha/Sanguosha/build_obj/CMakeFiles/Sanguosha.dir
+D:/sanguosha/Sanguosha/build_obj/CMakeFiles/ModelSmokeTest.dir
+D:/sanguosha/Sanguosha/build_obj/CMakeFiles/RUN_TESTS.dir
+D:/sanguosha/Sanguosha/build_obj/CMakeFiles/ALL_BUILD.dir
+D:/sanguosha/Sanguosha/build_obj/CMakeFiles/ZERO_CHECK.dir

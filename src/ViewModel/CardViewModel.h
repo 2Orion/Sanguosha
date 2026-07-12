@@ -38,6 +38,10 @@ public:
     bool isHighlighted() const;
     void setHighlighted(bool highlighted);
 
+    /// 是否为技能转化牌（如关羽红牌当杀、赵云杀闪互转）
+    bool isTransform() const;
+    void setIsTransform(bool isTransform);
+
     // 重置所有 UI 状态
     void resetUIState();
 
@@ -53,9 +57,10 @@ public:
 
 private:
     Card* m_card;
-    bool m_selected   = false;
-    bool m_playable   = false;
+    bool m_selected    = false;
+    bool m_playable    = false;
     bool m_highlighted = false;
+    bool m_isTransform = false;
 };
 
 #endif // CARDVIEWMODEL_H

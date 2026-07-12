@@ -1,0 +1,10 @@
+^D:\SANGUOSHA\SANGUOSHA\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SD:/sanguosha/Sanguosha -BD:/sanguosha/Sanguosha/build_obj --check-stamp-file D:/sanguosha/Sanguosha/build_obj/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
