@@ -1,0 +1,10 @@
+^D:\SANGUOSHA\SANGUOSHA\BUILD_OBJ\CMAKEFILES\0773A40996EB024094CFE3E3874EE727\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SD:/sanguosha/Sanguosha -BD:/sanguosha/Sanguosha/build_obj --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file D:/sanguosha/Sanguosha/build_obj/Sanguosha.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
