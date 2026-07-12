@@ -56,6 +56,11 @@ public:
     EventListener<> reshuffled;
     EventListener<Card*> cardDiscarded;
 
+    // just for test
+    const std::vector<Card*>& getDrawPile() const {
+        return this->m_drawPile;
+    }
+
 private:
     Card* createCard(CardType type, CardSuit suit, int number);
     CardSuit randomSuit() const;

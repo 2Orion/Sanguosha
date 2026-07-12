@@ -41,10 +41,10 @@ void Player::setCharacter(Character* character)
     m_character = character;
     if (m_character) {
         m_hp = m_character->maxHp();
-        maxHpChanged.emit(m_character->maxHp());
-        hpChanged.emit(m_hp);
+        maxHpChanged.notify(m_character->maxHp());
+        hpChanged.notify(m_hp);
     }
-    characterChanged.emit(character);
+    characterChanged.notify(character);
 }
 
 Character* Player::character() const
@@ -74,8 +74,8 @@ void Player::setHp(int value)
     int oldHp = m_hp;
     m_hp = std::max(0, value);
     if (m_hp != oldHp) {
-        hpChanged.emit(m_hp);
-        stateChanged.emit();
+        hpChanged.notify(m_hp);
+        stateChanged.notify();
     }
 }
 
@@ -100,7 +100,7 @@ void Player::heal(int value)
 
         if (m_dying && m_hp > 0) {
             m_dying = false;
-            revived.emit(this);
+            revived.notify(this);
         }
     }
 }
@@ -120,9 +120,9 @@ void Player::setDying(bool dying)
     if (m_dying != dying) {
         m_dying = dying;
         if (dying) {
-            this->dying.emit(this);
+            this->dying.notify(this);
         } else if (m_hp > 0) {
-            revived.emit(this);
+            revived.notify(this);
         }
     }
 }
@@ -164,9 +164,9 @@ void Player::addHandCard(Card* card)
 {
     if (card && std::find(m_handCards.begin(), m_handCards.end(), card) == m_handCards.end()) {
         m_handCards.push_back(card);
-        handCardAdded.emit(card);
-        handCardsChanged.emit();
-        stateChanged.emit();
+        handCardAdded.notify(card);
+        handCardsChanged.notify();
+        stateChanged.notify();
     }
 }
 
@@ -177,9 +177,9 @@ void Player::removeHandCard(Card* card)
     auto it = std::find(m_handCards.begin(), m_handCards.end(), card);
     if (it != m_handCards.end()) {
         m_handCards.erase(it);
-        handCardRemoved.emit(card);
-        handCardsChanged.emit();
-        stateChanged.emit();
+        handCardRemoved.notify(card);
+        handCardsChanged.notify();
+        stateChanged.notify();
     }
 }
 
@@ -213,7 +213,7 @@ void Player::addEquipCard(Card* card)
 {
     if (card && std::find(m_equipCards.begin(), m_equipCards.end(), card) == m_equipCards.end()) {
         m_equipCards.push_back(card);
-        stateChanged.emit();
+        stateChanged.notify();
     }
 }
 
@@ -224,7 +224,7 @@ void Player::removeEquipCard(Card* card)
         if (it != m_equipCards.end()) {
             m_equipCards.erase(it);
         }
-        stateChanged.emit();
+        stateChanged.notify();
     }
 }
 
@@ -244,7 +244,7 @@ void Player::addJudgmentCard(Card* card)
 {
     if (card && std::find(m_judgmentCards.begin(), m_judgmentCards.end(), card) == m_judgmentCards.end()) {
         m_judgmentCards.push_back(card);
-        stateChanged.emit();
+        stateChanged.notify();
     }
 }
 
@@ -255,7 +255,7 @@ void Player::removeJudgmentCard(Card* card)
         if (it != m_judgmentCards.end()) {
             m_judgmentCards.erase(it);
         }
-        stateChanged.emit();
+        stateChanged.notify();
     }
 }
 

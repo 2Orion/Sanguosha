@@ -70,7 +70,7 @@ ActionResult ActionViewModel::playCard(Card* card, Player* user,
     emitLog(user->displayName() + " 使用了【" + card->cardName() + "】" +
             (targetStr.empty() ? "" : " → " + targetStr));
 
-    actionCompleted.emit();
+    actionCompleted.notify();
     return result;
 }
 
@@ -151,22 +151,34 @@ void ActionViewModel::respondCard(Card* card, Player* responder)
         break;
     }
 
-    actionCompleted.emit();
+    actionCompleted.notify();
 }
 
-void ActionViewModel::skipResponse(Player* responder)
+void ActionViewModel::skipResponse(Player* responder, bool forceNoCard)
 {
     if (!m_state || !responder) return;
     if (!m_state->hasPendingAction()) return;
 
     const PendingActionInfo& info = m_state->pendingActionInfo();
 
-    if (!info.canSkip) return;  // 不能跳过
+    // forceNoCard=true: 玩家没有可用的响应牌，强制跳过（即使 canSkip=false）
+    if (!forceNoCard && !info.canSkip) return;
 
     switch (info.requiredCardType) {
     case CardType::Dodge:
+        if (info.canSkip) {
+            // AOE 闪避跳过（万箭齐发）
+            GameRule::handleAoeSkipResponse(m_state, responder);
+            emitLog(responder->displayName() + " 放弃了响应");
+        } else {
+            // 普通杀 — 无闪可出，直接扣血
+            GameRule::handleKillResponse(m_state, responder, nullptr);
+            emitLog(responder->displayName() + " 没有【闪】，受到伤害");
+        }
+        break;
+
     case CardType::Kill:
-        // AOE 跳过
+        // AOE 杀跳过（南蛮入侵）
         GameRule::handleAoeSkipResponse(m_state, responder);
         emitLog(responder->displayName() + " 放弃了响应");
         break;
@@ -181,7 +193,7 @@ void ActionViewModel::skipResponse(Player* responder)
         break;
     }
 
-    actionCompleted.emit();
+    actionCompleted.notify();
 }
 
 // ==================== 弃牌阶段 ====================
@@ -207,5 +219,5 @@ int ActionViewModel::getDiscardCount(Player* player) const
 
 void ActionViewModel::emitLog(const std::string& msg)
 {
-    logMessage.emit(msg);
+    logMessage.notify(msg);
 }

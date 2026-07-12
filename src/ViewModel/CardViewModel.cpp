@@ -74,7 +74,7 @@ void CardViewModel::setSelected(bool selected)
 {
     if (m_selected != selected) {
         m_selected = selected;
-        selectedChanged.emit(selected);
+        selectedChanged.notify(selected);
     }
 }
 
@@ -87,7 +87,7 @@ void CardViewModel::setPlayable(bool playable)
 {
     if (m_playable != playable) {
         m_playable = playable;
-        playableChanged.emit(playable);
+        playableChanged.notify(playable);
     }
 }
 
@@ -100,7 +100,7 @@ void CardViewModel::setHighlighted(bool highlighted)
 {
     if (m_highlighted != highlighted) {
         m_highlighted = highlighted;
-        highlightedChanged.emit(highlighted);
+        highlightedChanged.notify(highlighted);
     }
 }
 

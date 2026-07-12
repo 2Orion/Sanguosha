@@ -15,7 +15,7 @@ void GameState::setCurrentPhase(PhaseType phase)
 {
     if (m_currentPhase != phase) {
         m_currentPhase = phase;
-        phaseChanged.emit(phase);
+        phaseChanged.notify(phase);
     }
 }
 
@@ -28,7 +28,7 @@ void GameState::setCurrentPlayerIndex(int index)
 {
     if (m_currentPlayerIndex != index && index >= 0 && index < m_players.size()) {
         m_currentPlayerIndex = index;
-        currentPlayerChanged.emit(index);
+        currentPlayerChanged.notify(index);
     }
 }
 
@@ -103,14 +103,14 @@ void GameState::setPendingAction(const PendingActionInfo& info)
 {
     m_pendingAction = info;
     m_hasPendingAction = true;
-    pendingActionCreated.emit(info);
+    pendingActionCreated.notify(info);
 }
 
 void GameState::clearPendingAction()
 {
     m_hasPendingAction = false;
     m_pendingAction = PendingActionInfo();
-    pendingActionCleared.emit();
+    pendingActionCleared.notify();
 }
 
 CardManager* GameState::cardManager() const
@@ -137,5 +137,5 @@ void GameState::setGameOver(Player* winnerPlayer)
 {
     m_gameOver = true;
     m_winner = winnerPlayer;
-    gameOver.emit(winnerPlayer);
+    gameOver.notify(winnerPlayer);
 }

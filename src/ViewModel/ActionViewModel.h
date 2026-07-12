@@ -41,8 +41,8 @@ public:
     /// 响应出牌（如出闪响应杀、出杀响应南蛮、出桃救人）
     void respondCard(Card* card, Player* responder);
 
-    /// 跳过响应
-    void skipResponse(Player* responder);
+    /// 跳过响应（forceNoCard=true 时强制跳过，用于玩家无可用响应牌的情况）
+    void skipResponse(Player* responder, bool forceNoCard = false);
 
     // ==================== 弃牌阶段 ====================
 

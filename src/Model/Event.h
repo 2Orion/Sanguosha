@@ -31,7 +31,7 @@ public:
     }
 
     /// 发射事件，通知所有监听者
-    void emit(Args... args) const {
+    void notify(Args... args) const {
         for (const auto& pair : callbacks) {
             pair.second(args...);
         }

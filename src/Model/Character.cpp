@@ -91,7 +91,7 @@ void CaoCao::triggerSkill(GameState* state, Player* self)
     Card* card = state->cardManager()->drawCard();
     if (card) {
         self->addHandCard(card);
-        skillTriggered.emit(m_skillName);
+        skillTriggered.notify(m_skillName);
     }
 }
 
