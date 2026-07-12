@@ -39,42 +39,21 @@ public:
 
     // ==================== 状态查询 ====================
 
+    GameState* gameState() const;
+    Player* currentPlayer() const;
+    Player* opponentPlayer() const;
     PhaseType currentPhase() const;
     int turnCount() const;
     bool isGameOver() const;
-
-    /// 获胜者信息（游戏结束后查询）
-    std::string winnerDisplayName() const;
-    std::string winnerCharacterName() const;
+    Player* winner() const;
 
     /// 获取阶段的中文名称
     static std::string phaseName(PhaseType phase);
 
-    // ==================== 待定动作查询（封装 GameState，View 无需知道 Model）====================
-
-    bool hasPendingAction() const;
-    std::string pendingActionDescription() const;
-    bool canSkipPendingAction() const;
-    std::string pendingActionTargetName() const;
-
-    // ==================== 当前玩家查询（封装 Player，View 无需知道 Model）====================
-
-    std::string currentPlayerDisplayName() const;
-    std::string currentPlayerCharacterName() const;
-    int currentPlayerHp() const;
-    int currentPlayerMaxHp() const;
-    int currentPlayerHandCardCount() const;
-    int currentPlayerHandCardLimit() const;
-    bool currentPlayerHasHandCards() const;
-
-    // ==================== 玩家信息查询（按索引）====================
-
-    std::string playerDisplayName(int index) const;
-    std::string playerCharacterName(int index) const;
-
     // ==================== 子 ViewModel ====================
 
     PlayerViewModel* playerVM(int index) const;
+    ActionViewModel* actionVM() const;
 
     // ==================== 手牌展示辅助 ====================
 
@@ -84,45 +63,11 @@ public:
     /// 获取某玩家手牌的 CardViewModel 列表
     std::vector<std::unique_ptr<CardViewModel>> getPlayerCardVMs(Player* player) const;
 
-    // ==================== 出牌阶段操作 ====================
-
-    /// 检查当前玩家的第 cardIndex 张手牌是否可打出
-    bool canPlayCardByIndex(int cardIndex) const;
-
-    /// 获取第 cardIndex 张手牌的合法目标玩家下标列表
-    std::vector<int> getPlayTargetIndices(int cardIndex) const;
-
-    /// 打出第 cardIndex 张手牌（targetIndex: -1 表示无目标）
-    void executePlayCard(int cardIndex, int targetIndex);
-
-    // ==================== 响应阶段操作 ====================
-
-    /// 获取可响应的 CardViewModel 列表（已标记技能转化牌）
-    std::vector<std::unique_ptr<CardViewModel>> getResponseCardVMs() const;
-
-    /// 用第 cardIndex 张响应牌响应
-    void executeRespondCard(int cardIndex);
-
-    /// 跳过当前响应
-    void executeSkipResponse();
-
-    /// 尝试自动解决待定动作（无可响应牌且不能跳过时自动扣血/推进）
-    /// @return true 表示已自动解决，View 无需弹出交互
-    bool tryAutoResolvePendingAction();
-
-    // ==================== 弃牌阶段操作 ====================
-
-    /// 当前玩家需要弃置的张数（0 则不需要）
-    int getDiscardCount() const;
-
-    /// 弃置当前玩家的第 cardIndex 张手牌
-    void executeDiscardCard(int cardIndex);
-
     // ==================== 事件 ====================
 
     EventListener<PhaseType> phaseChanged;
     EventListener<int> currentPlayerChanged;
-    EventListener<> gameOver;
+    EventListener<Player*> gameOver;
     EventListener<const std::string&> logMessage;
     EventListener<> stateChanged;
 

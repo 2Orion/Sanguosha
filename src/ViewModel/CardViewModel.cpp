@@ -104,22 +104,11 @@ void CardViewModel::setHighlighted(bool highlighted)
     }
 }
 
-bool CardViewModel::isTransform() const
-{
-    return m_isTransform;
-}
-
-void CardViewModel::setIsTransform(bool isTransform)
-{
-    m_isTransform = isTransform;
-}
-
 void CardViewModel::resetUIState()
 {
     setSelected(false);
     setPlayable(false);
     setHighlighted(false);
-    m_isTransform = false;
 }
 
 Card* CardViewModel::card() const
