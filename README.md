@@ -1,30 +1,38 @@
 # 三国杀（Sanguosha）
 
-一个基于 MVVM 架构的双人本地对战三国杀简化实现。详细设计文档见 [`plan.md`](plan.md)（架构与规则设计）和 [`interface.md`](interface.md)（Model 层接口契约）。
+一个基于 **严格 MVVM** 架构的双人本地对战三国杀简化实现。
+
+- 架构设计：[`plan.md`](plan.md)
+- Model 层接口契约：[`interface.md`](interface.md)
+- 更新日志：[`CHANGELOG.md`](CHANGELOG.md)
 
 ## 当前进度
 
-- ✅ **Model 层**：已完整实现，且已从 Qt 依赖改造为纯 C++17 标准库实现（不再需要 Qt/vcpkg 才能编译运行 Model 层）。
-- ✅ **Model 层冒烟测试**：`tests/smoke_test.cpp`，覆盖牌堆管理、杀/闪/桃/酒、南蛮入侵/万箭齐发连锁响应、濒死求救链、胜负判定等核心流程，共 95 项检查。
-- ✅ **ViewModel 层**：已实现（纯 C++17），包含 `GameViewModel`、`PlayerViewModel`、`CardViewModel`、`ActionViewModel`，完整的回合状态机和操作逻辑。
-- ✅ **控制台版游戏**：`src/main.cpp` 提供了可交互的控制台版三国杀，用于端到端验证。
-- ⬜ **View 层（Qt）**：尚未实现。
+- ✅ **Model 层** — 完整实现，纯 C++ 标准库，零外部依赖
+- ✅ **ViewModel 层** — 完整实现，严格值类型 API（View 不接触 Model 指针）
+- ✅ **View 层（Qt GUI）** — 完整实现，选将界面 + 游戏桌面
+- ✅ **控制台版** — 可交互的控制台版三国杀
+- ✅ **冒烟测试** — 覆盖核心流程的 Model 层测试
 
 ## 架构
 
 ```
-View 层 (待实现)          界面绘制、用户交互
-ViewModel 层 (待实现)     状态管理、View↔Model 桥梁
-Model 层 (纯 C++17)       数据结构、游戏规则、卡牌/武将数据
+View (Qt Widgets)  →  ViewModel (值类型)  →  Model (纯 C++)  →  Core (共享类型)
 ```
 
-Model 层不再依赖 Qt：原先的信号槽机制由 `Event.h` 中的 `EventListener<Args...>` 观察者模式实现替代（用法与 Qt 的 `connect`/`emit` 类似，见下方示例）。
+| 层 | 职责 | 依赖方向 |
+|----|------|---------|
+| **Core** | 共享枚举、`EventListener` 观察者模式、随机工具 | 无依赖 |
+| **Model** | 卡牌/武将数据、游戏规则引擎、牌堆管理 | → Core |
+| **ViewModel** | 状态管理、回合调度、操作逻辑，**仅暴露值类型**（`int`、`std::string`） | → Model, Core |
+| **View** | Qt 界面绘制、用户交互，**不直接接触 Model** | → ViewModel, Core |
+
+跨层事件通过 `EventListener<Args...>` 观察者模式实现：
 
 ```cpp
 player->hpChanged.connect([](int hp) {
     std::cout << "HP changed to: " << hp << std::endl;
 });
-player->damage(1); // 触发 hpChanged 事件
 ```
 
 ## 目录结构
@@ -32,27 +40,37 @@ player->damage(1); // 触发 hpChanged 事件
 ```
 Sanguosha/
 ├── CMakeLists.txt
-├── plan.md              # 架构与规则设计文档
-├── interface.md          # Model 层接口契约文档
+├── plan.md                         # 架构与规则设计
+├── interface.md                    # Model 层接口契约
+├── CHANGELOG.md                    # 更新日志
 ├── src/
-│   ├── main.cpp              # 控制台版游戏入口
+│   ├── main.cpp                    # 控制台版入口
+│   ├── Core/
+│   │   ├── CommonTypes.h           # 共享枚举（CardType, PhaseType 等）
+│   │   ├── Event.h                 # EventListener 观察者模式
+│   │   └── RandomUtils.h           # 随机数工具
 │   ├── Model/
-│   │   ├── CommonTypes.h     # 公共枚举（卡牌/阶段/事件等类型）
-│   │   ├── Event.h           # EventListener 观察者模式（替代 Qt 信号槽）
-│   │   ├── RandomUtils.h     # 随机数工具（替代 QRandomGenerator）
-│   │   ├── GameState.h/cpp   # 游戏状态、待定动作（PendingActionInfo）
-│   │   ├── Player.h/cpp      # 玩家对象（手牌、体力、武将）
-│   │   ├── Character.h/cpp   # 武将基类及具体武将（曹操/关羽/张飞/赵云）
-│   │   ├── Card.h/cpp        # 卡牌基类及具体卡牌
-│   │   ├── CardManager.h/cpp # 牌堆管理（洗牌、摸牌、弃牌）
-│   │   └── GameRule.h/cpp    # 规则引擎（杀闪判定、伤害结算、技能触发）
-│   └── ViewModel/
-│       ├── CardViewModel.h/cpp    # 卡牌 VM（展示状态：选中/可打出/高亮）
-│       ├── PlayerViewModel.h/cpp  # 玩家 VM（体力/手牌数/状态转发）
-│       ├── ActionViewModel.h/cpp  # 操作 VM（出牌/响应/目标选择/弃牌）
-│       └── GameViewModel.h/cpp    # 游戏 VM（回合管理、阶段调度、生命周期）
+│   │   ├── Card.h/cpp              # 卡牌基类及具体卡牌（杀/闪/桃/酒/锦囊）
+│   │   ├── CardManager.h/cpp       # 牌堆管理（洗牌、摸牌、弃牌回收）
+│   │   ├── Character.h/cpp         # 武将基类（曹操/关羽/张飞/赵云）
+│   │   ├── GameRule.h/cpp          # 规则引擎（杀闪判定、伤害、AOE、濒死）
+│   │   ├── GameState.h/cpp         # 游戏状态、PendingActionInfo
+│   │   └── Player.h/cpp            # 玩家对象（手牌、体力、回合状态）
+│   ├── ViewModel/
+│   │   ├── GameViewModel.h/cpp     # 中央协调器（生命周期、阶段调度）
+│   │   ├── PlayerViewModel.h/cpp   # 玩家 VM（体力/手牌数/状态事件）
+│   │   ├── CardViewModel.h/cpp     # 卡牌 VM（展示属性 + UI 状态）
+│   │   └── ActionViewModel.h/cpp   # 操作 VM（出牌/响应/目标/弃牌）
+│   └── View/
+│       ├── main_qt.cpp             # Qt GUI 版入口
+│       ├── MainWindow.h/cpp        # 主窗口（选将 → 游戏切换）
+│       ├── GameBoardWidget.h/cpp   # 游戏桌面总布局
+│       ├── PlayerInfoWidget.h/cpp  # 玩家信息面板（体力/技能/手牌数）
+│       ├── HandCardAreaWidget.h/cpp# 手牌区域（卡牌排列/选中）
+│       ├── CardWidget.h/cpp        # 单张卡牌控件（绘制/悬停/选中）
+│       └── ActionPanelWidget.h/cpp # 操作按钮面板（出牌/响应/弃牌）
 └── tests/
-    └── smoke_test.cpp   # Model 层冒烟测试
+    └── smoke_test.cpp              # Model 层冒烟测试
 ```
 
 ## 已实现内容
@@ -60,52 +78,42 @@ Sanguosha/
 - **武将**：曹操（奸雄）、关羽（武圣）、张飞（咆哮）、赵云（龙胆）
 - **基本牌**：杀、闪、桃、酒
 - **锦囊牌**：过河拆桥、顺手牵羊、无中生有、南蛮入侵、万箭齐发、桃园结义
-- **核心规则**：出牌/响应阶段判定、伤害结算、濒死求救（含多人依次响应链）、AOE 锦囊的多目标链式响应、胜负判定
+- **核心规则**：出牌/响应判定、伤害结算、酒杀、濒死求救链、AOE 多目标链式响应、胜负判定
+- **GUI**：武将选择界面、双人对战桌面、卡牌绘制（牌面/牌背）、选中/高亮/悬停状态
 
 ## 构建
 
-需要支持 C++17 的编译器（已用 MinGW-W64 g++ 8.1.0 验证）和 CMake ≥ 3.16，**不需要安装 Qt**。
+需要 Qt 6、CMake ≥ 3.16、支持 C++14 的编译器。
 
 ```bash
 mkdir build && cd build
-cmake .. -G "MinGW Makefiles"      # 或你平台上惯用的生成器
-# cmake --build .
+cmake .. -G "MinGW Makefiles" -DCMAKE_PREFIX_PATH=<Qt6安装路径>
 make -j
 ```
 
 产物：
-- `build/libSanguoshaModel.a`（Model 静态库）
-- `build/ModelSmokeTest.exe`（冒烟测试）
-- `build/Sanguosha.exe`（控制台版游戏）
 
-也可直接用 g++ 一行编译（无需 CMake）：
+| 可执行文件 | 说明 |
+|-----------|------|
+| `build/sgs_console.exe` | 控制台版游戏（仅需 `Qt6::Core`） |
+| `build/sgs_qt.exe` | Qt GUI 版游戏 |
+| `build/sgs_test.exe` | Model 层冒烟测试 |
 
+## 运行
+
+**Qt GUI 版**：
 ```bash
-g++ -std=c++17 -Isrc -Isrc/Model -Isrc/ViewModel \
-  src/Model/*.cpp src/ViewModel/*.cpp src/main.cpp \
-  -o Sanguosha.exe
+./build/sgs_qt.exe
 ```
 
-## 运行控制台版游戏
-
+**控制台版**：
 ```bash
-cd build
-./Sanguosha.exe
+./build/sgs_console.exe
 ```
 
 交互方式：输入数字选择武将、选择手牌、选择目标，输入 `-1` 结束出牌阶段。
 
-## 运行测试
-
+**冒烟测试**：
 ```bash
-cd build
-./ModelSmokeTest.exe     # 直接运行
-# 或
-ctest --output-on-failure
-```
-
-全部通过时输出形如：
-
-```
-总检查项: 95，失败: 0
+./build/sgs_test.exe
 ```
