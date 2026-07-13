@@ -1,7 +1,6 @@
 #include "HandCardAreaWidget.h"
 #include "CardWidget.h"
 #include "CardViewModel.h"
-#include "Card.h"
 
 #include <QResizeEvent>
 #include <algorithm>
@@ -45,23 +44,25 @@ void HandCardAreaWidget::setCards(std::vector<std::unique_ptr<CardViewModel>> ca
 
 void HandCardAreaWidget::refreshPlayableState()
 {
-    for (auto* cw : m_cardWidgets) {
-        if (auto* cvm = findWidgetByCardId(cw->cardId())) {
-            // 用 CardWidget 的原始指针反查 CVM 比较麻烦，遍历
-        }
-    }
-    // 更简单的做法：遍历 CardWidget，从对应的 CardViewModel 同步 playable 状态
     for (size_t i = 0; i < m_cardWidgets.size() && i < m_cardViewModels.size(); ++i) {
         m_cardWidgets[i]->setPlayable(m_cardViewModels[i]->isPlayable());
     }
 }
 
-Card* HandCardAreaWidget::selectedCard() const
+int HandCardAreaWidget::selectedCardId() const
 {
     for (size_t i = 0; i < m_cardWidgets.size() && i < m_cardViewModels.size(); ++i) {
         if (m_cardWidgets[i]->isSelected()) {
-            return m_cardViewModels[i]->card();
+            return m_cardViewModels[i]->id();
         }
+    }
+    return -1;
+}
+
+CardViewModel* HandCardAreaWidget::cardVM(int cardId) const
+{
+    for (const auto& cvm : m_ownedCardVMs) {
+        if (cvm && cvm->id() == cardId) return cvm.get();
     }
     return nullptr;
 }
@@ -96,8 +97,8 @@ void HandCardAreaWidget::onCardWidgetClicked(int cardId)
                 }
             }
             m_cardWidgets[i]->setSelected(newlySelected);
-            emit selectionChanged(m_cardViewModels[i]->card());
-            emit cardClicked(m_cardViewModels[i]->card());
+            emit selectionChanged(cardId);
+            emit cardClicked(cardId);
             break;
         }
     }
@@ -105,12 +106,7 @@ void HandCardAreaWidget::onCardWidgetClicked(int cardId)
 
 void HandCardAreaWidget::onCardWidgetDoubleClicked(int cardId)
 {
-    for (size_t i = 0; i < m_cardWidgets.size() && i < m_cardViewModels.size(); ++i) {
-        if (m_cardWidgets[i]->cardId() == cardId) {
-            emit cardDoubleClicked(m_cardViewModels[i]->card());
-            break;
-        }
-    }
+    emit cardDoubleClicked(cardId);
 }
 
 // ==================== 内部方法 ====================

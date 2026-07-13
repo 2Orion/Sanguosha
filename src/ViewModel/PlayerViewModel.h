@@ -37,7 +37,6 @@ public:
     // ==================== 手牌 ====================
 
     int handCardCount() const;
-    const std::vector<Card*>& handCards() const;
     bool hasHandCards() const;
     int handCardLimit() const;
 
@@ -51,19 +50,15 @@ public:
     int equipCount() const;
     int judgmentCount() const;
 
-    // ==================== 原始指针访问 ====================
-
-    Player* player() const;
-
-    // ==================== 事件（从 Model 转发） ====================
+    // ==================== 事件（从 Model 转发，值类型） ====================
 
     EventListener<int> hpChanged;
     EventListener<int> maxHpChanged;
-    EventListener<Player*> dying;
-    EventListener<Player*> died;
-    EventListener<Player*> revived;
-    EventListener<Card*> handCardAdded;
-    EventListener<Card*> handCardRemoved;
+    EventListener<> dying;
+    EventListener<> died;
+    EventListener<> revived;
+    EventListener<int> handCardAdded;     // cardId
+    EventListener<int> handCardRemoved;   // cardId
     EventListener<> handCardsChanged;
     EventListener<> stateChanged;
 

@@ -1,21 +1,19 @@
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 #include <iostream>
 #include <string>
 #include <vector>
 #include <limits>
-#ifdef _WIN32
-#define NOMINMAX
-#include <windows.h>
-#endif
 
 #include "ViewModel/GameViewModel.h"
 #include "ViewModel/PlayerViewModel.h"
 #include "ViewModel/ActionViewModel.h"
 #include "ViewModel/CardViewModel.h"
-#include "Model/GameState.h"
-#include "Model/Player.h"
-#include "Model/Card.h"
-#include "Model/Character.h"
-#include "Model/GameRule.h"
 
 // ==================== 工具函数 ====================
 
@@ -124,35 +122,39 @@ static void showHandCards(const std::vector<std::unique_ptr<CardViewModel>>& car
 /// 处理待定动作（响应请求），返回 true 表示继续，false 表示游戏结束
 static bool handlePendingAction(GameViewModel& gvm)
 {
-    GameState* state = gvm.gameState();
-    if (!state->hasPendingAction()) return true;
+    if (!gvm.hasPendingAction()) return true;
 
-    const PendingActionInfo& info = state->pendingActionInfo();
+    const PendingActionVM& info = gvm.pendingActionVM();
     ActionViewModel* avm = gvm.actionVM();
-    Player* responder = info.target;
+    int responderId = info.targetId;
 
-    if (!responder || !responder->isAlive()) return true;
+    // 通过 PlayerViewModel 检查存活状态
+    PlayerViewModel* responderVM = gvm.playerVM(responderId);
+    if (!responderVM || !responderVM->isAlive()) return true;
 
-    std::string cardTypeName = Card::cardTypeName(info.requiredCardType);
+    std::string cardTypeName = CardViewModel::cardTypeName(info.requiredCardType);
+    std::string responderName = gvm.playerDisplayName(responderId);
 
-    std::cout << "\n>>> " << responder->displayName()
+    std::cout << "\n>>> " << responderName
               << " 需要响应: " << info.description << "\n";
 
-    // 获取可响应的牌
-    std::vector<Card*> responseCards = avm->getResponseCards(responder, info.requiredCardType);
+    // 获取可响应的牌（int IDs）
+    std::vector<int> responseCardIds =
+        avm->getResponseCardIds(responderId, info.requiredCardType);
 
     // 显示响应选项
     int optionIndex = 0;
-    std::vector<Card*> options;
-    for (Card* c : responseCards) {
-        std::cout << "  [" << optionIndex << "] 打出 "
-                  << c->suitSymbol() << c->numberString()
-                  << " " << c->cardName();
-        if (c->cardType() != info.requiredCardType) {
+    std::vector<int> options;
+    for (int cardId : responseCardIds) {
+        std::string displayStr = gvm.cardDisplayString(cardId);
+        std::cout << "  [" << optionIndex << "] 打出 " << displayStr;
+
+        // 技能转化检测：如果卡牌类型不等于要求的类型，说明是技能转化
+        if (gvm.cardTypeById(cardId) != info.requiredCardType) {
             std::cout << "（技能转化）";
         }
         std::cout << "\n";
-        options.push_back(c);
+        options.push_back(cardId);
         ++optionIndex;
     }
 
@@ -164,12 +166,11 @@ static bool handlePendingAction(GameViewModel& gvm)
                          info.canSkip ? optionIndex : optionIndex - 1);
 
     if (choice == optionIndex && info.canSkip) {
-        avm->skipResponse(responder);
+        avm->skipResponse(responderId);
     } else if (choice >= 0 && choice < static_cast<int>(options.size())) {
-        avm->respondCard(options[choice], responder);
+        avm->respondCard(options[choice], responderId);
     }
 
-    // 重新检查是否有后续待定动作
     return true;
 }
 
@@ -178,14 +179,14 @@ static bool handlePendingAction(GameViewModel& gvm)
 static void playPhase(GameViewModel& gvm)
 {
     ActionViewModel* avm = gvm.actionVM();
-    Player* curPlayer = gvm.currentPlayer();
-    if (!curPlayer) return;
+    int curPlayerId = gvm.currentPlayerId();
+    std::string curName = gvm.playerDisplayName(curPlayerId);
 
-    std::cout << "\n--- " << curPlayer->displayName() << " 的出牌阶段 ---\n";
+    std::cout << "\n--- " << curName << " 的出牌阶段 ---\n";
 
     while (!gvm.isGameOver() &&
            gvm.currentPhase() == PhaseType::Play &&
-           !gvm.gameState()->hasPendingAction()) {
+           !gvm.hasPendingAction()) {
 
         auto cardVMs = gvm.getCurrentPlayerCardVMs();
         std::cout << "\n你的手牌:\n";
@@ -201,39 +202,42 @@ static void playPhase(GameViewModel& gvm)
 
         if (cardIdx < 0 || cardIdx >= static_cast<int>(cardVMs.size())) continue;
 
-        Card* selectedCard = cardVMs[cardIdx]->card();
+        int selectedCardId = cardVMs[cardIdx]->id();
 
-        // 再次确认这张牌可以打出
-        if (!selectedCard->canUse(gvm.gameState(), curPlayer) ||
-            !GameRule::canPlayCard(gvm.gameState(), curPlayer, selectedCard)) {
+        // 使用 ViewModel 方法进行综合可用性检查
+        if (!avm->canPlayCard(selectedCardId, curPlayerId)) {
             std::cout << "无法使用这张牌！\n";
             continue;
         }
 
-        // 获取合法目标
-        std::vector<Player*> targets = avm->getValidTargets(selectedCard, curPlayer);
+        // 获取合法目标（int IDs）
+        std::vector<int> targetIds = avm->getValidTargetIds(selectedCardId, curPlayerId);
 
-        if (targets.empty()) {
+        if (targetIds.empty()) {
             // 无目标卡牌，直接使用
-            avm->playCard(selectedCard, curPlayer, {});
-        } else if (targets.size() == 1) {
-            // 单一目标，自动选择
-            std::cout << "目标: " << targets[0]->displayName() << "\n";
-            avm->playCard(selectedCard, curPlayer, {targets[0]});
+            avm->playCard(selectedCardId, curPlayerId, {});
+        } else if (targetIds.size() == 1) {
+            // 单一目标，自动选择（通过 ViewModel 获取显示名）
+            std::string targetName = gvm.playerDisplayName(targetIds[0]);
+            std::cout << "目标: " << targetName << "\n";
+            avm->playCard(selectedCardId, curPlayerId, {targetIds[0]});
         } else {
             // 多目标，让玩家选择
             std::cout << "选择目标:\n";
-            for (size_t i = 0; i < targets.size(); ++i) {
-                std::cout << "  [" << i << "] " << targets[i]->displayName()
-                          << "（" << targets[i]->characterName() << "）\n";
+            for (size_t i = 0; i < targetIds.size(); ++i) {
+                PlayerViewModel* tvm = gvm.playerVM(targetIds[i]);
+                if (tvm) {
+                    std::cout << "  [" << i << "] " << tvm->displayName()
+                              << "（" << tvm->characterName() << "）\n";
+                }
             }
             int targetIdx = readInt("目标 > ", 0,
-                                    static_cast<int>(targets.size()) - 1);
-            avm->playCard(selectedCard, curPlayer, {targets[targetIdx]});
+                                    static_cast<int>(targetIds.size()) - 1);
+            avm->playCard(selectedCardId, curPlayerId, {targetIds[targetIdx]});
         }
 
         // 检查是否触发了待定动作
-        if (gvm.gameState()->hasPendingAction()) {
+        if (gvm.hasPendingAction()) {
             handlePendingAction(gvm);
         }
     }
@@ -244,22 +248,26 @@ static void playPhase(GameViewModel& gvm)
 static void discardPhase(GameViewModel& gvm)
 {
     ActionViewModel* avm = gvm.actionVM();
-    Player* curPlayer = gvm.currentPlayer();
-    if (!curPlayer) return;
+    int curPlayerId = gvm.currentPlayerId();
 
-    int discardCount = avm->getDiscardCount(curPlayer);
+    int discardCount = avm->getDiscardCount(curPlayerId);
     if (discardCount <= 0) {
         gvm.advancePhase();  // 不需要弃牌，进入结束阶段
         return;
     }
 
-    std::cout << "\n--- " << curPlayer->displayName() << " 的弃牌阶段 ---\n";
-    std::cout << "手牌上限: " << curPlayer->handCardLimit()
-              << " | 当前手牌: " << curPlayer->handCardCount()
+    std::string curName = gvm.playerDisplayName(curPlayerId);
+    std::cout << "\n--- " << curName << " 的弃牌阶段 ---\n";
+
+    // 通过 ViewModel 获取手牌上限和当前手牌数
+    PlayerViewModel* curPVM = gvm.playerVM(curPlayerId);
+
+    std::cout << "手牌上限: " << (curPVM ? curPVM->handCardLimit() : 0)
+              << " | 当前手牌: " << (curPVM ? curPVM->handCardCount() : 0)
               << " | 需要弃置: " << discardCount << " 张\n";
 
-    while (discardCount > 0 && curPlayer->hasHandCards()) {
-        auto cardVMs = gvm.getPlayerCardVMs(curPlayer);
+    while (discardCount > 0 && curPVM && curPVM->hasHandCards()) {
+        auto cardVMs = gvm.getPlayerCardVMs(curPlayerId);
         std::cout << "\n手牌:\n";
         showHandCards(cardVMs);
         std::cout << "还需弃置 " << discardCount << " 张\n";
@@ -267,7 +275,7 @@ static void discardPhase(GameViewModel& gvm)
         int cardIdx = readInt("选择要弃置的牌号 > ", 0,
                               static_cast<int>(cardVMs.size()) - 1);
         if (cardIdx >= 0 && cardIdx < static_cast<int>(cardVMs.size())) {
-            avm->discardCard(cardVMs[cardIdx]->card(), curPlayer);
+            avm->discardCard(cardVMs[cardIdx]->id(), curPlayerId);
             --discardCount;
         }
     }
@@ -300,15 +308,18 @@ int main()
         std::cout << "[LOG] " << msg << "\n";
     });
 
-    // 订阅游戏结束
+    // 订阅游戏结束（int winnerId）
     bool gameEnded = false;
-    gvm.gameOver.connect([&gameEnded](Player* winner) {
+    gvm.gameOver.connect([&gvm, &gameEnded](int winnerId) {
         gameEnded = true;
-        if (winner) {
-            std::cout << "\n========================================\n";
-            std::cout << "  " << winner->displayName()
-                      << "（" << winner->characterName() << "）获胜！\n";
-            std::cout << "========================================\n";
+        if (winnerId >= 0) {
+            PlayerViewModel* pvm = gvm.playerVM(winnerId);
+            if (pvm) {
+                std::cout << "\n========================================\n";
+                std::cout << "  " << pvm->displayName()
+                          << "（" << pvm->characterName() << "）获胜！\n";
+                std::cout << "========================================\n";
+            }
         }
     });
 
@@ -319,7 +330,7 @@ int main()
         showGameStatus(gvm);
 
         // 优先处理待定动作
-        if (gvm.gameState()->hasPendingAction()) {
+        if (gvm.hasPendingAction()) {
             handlePendingAction(gvm);
             continue;
         }
@@ -346,10 +357,13 @@ int main()
     }
 
     if (!gameEnded && gvm.isGameOver()) {
-        Player* w = gvm.winner();
-        if (w) {
-            std::cout << "\n" << w->displayName()
-                      << "（" << w->characterName() << "）获胜！\n";
+        int winnerId = gvm.winnerId();
+        if (winnerId >= 0) {
+            PlayerViewModel* pvm = gvm.playerVM(winnerId);
+            if (pvm) {
+                std::cout << "\n" << pvm->displayName()
+                          << "（" << pvm->characterName() << "）获胜！\n";
+            }
         }
     }
 

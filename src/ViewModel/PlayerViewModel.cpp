@@ -108,12 +108,6 @@ int PlayerViewModel::handCardCount() const
     return m_player ? m_player->handCardCount() : 0;
 }
 
-const std::vector<Card*>& PlayerViewModel::handCards() const
-{
-    static std::vector<Card*> empty;
-    return m_player ? m_player->handCards() : empty;
-}
-
 bool PlayerViewModel::hasHandCards() const
 {
     return m_player ? m_player->hasHandCards() : false;
@@ -148,14 +142,7 @@ int PlayerViewModel::judgmentCount() const
     return m_player ? static_cast<int>(m_player->judgmentCards().size()) : 0;
 }
 
-// ==================== 原始指针访问 ====================
-
-Player* PlayerViewModel::player() const
-{
-    return m_player;
-}
-
-// ==================== 事件转发 ====================
+// ==================== 事件转发（值类型） ====================
 
 void PlayerViewModel::connectModelEvents()
 {
@@ -168,19 +155,19 @@ void PlayerViewModel::connectModelEvents()
         [this](int maxHp) { this->maxHpChanged.notify(maxHp); });
 
     m_conn.dyingId = m_player->dying.connect(
-        [this](Player* p) { this->dying.notify(p); });
+        [this](Player* /*p*/) { this->dying.notify(); });
 
     m_conn.diedId = m_player->died.connect(
-        [this](Player* p) { this->died.notify(p); });
+        [this](Player* /*p*/) { this->died.notify(); });
 
     m_conn.revivedId = m_player->revived.connect(
-        [this](Player* p) { this->revived.notify(p); });
+        [this](Player* /*p*/) { this->revived.notify(); });
 
     m_conn.handCardAddedId = m_player->handCardAdded.connect(
-        [this](Card* c) { this->handCardAdded.notify(c); });
+        [this](Card* c) { this->handCardAdded.notify(c ? c->id() : -1); });
 
     m_conn.handCardRemovedId = m_player->handCardRemoved.connect(
-        [this](Card* c) { this->handCardRemoved.notify(c); });
+        [this](Card* c) { this->handCardRemoved.notify(c ? c->id() : -1); });
 
     m_conn.handCardsChangedId = m_player->handCardsChanged.connect(
         [this]() { this->handCardsChanged.notify(); });

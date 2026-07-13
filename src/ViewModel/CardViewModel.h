@@ -41,9 +41,8 @@ public:
     // 重置所有 UI 状态
     void resetUIState();
 
-    // ==================== 原始指针访问 ====================
-
-    Card* card() const;
+    /// 获取卡牌类型的中文名称
+    static std::string cardTypeName(CardType type);
 
     // ==================== 事件 ====================
 

@@ -5,9 +5,9 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QHBoxLayout>
-#include "CommonTypes.h"
+#include "Core/CommonTypes.h"
 
-struct PendingActionInfo;
+struct PendingActionVM;
 
 /// 操作按钮面板 — 根据当前游戏阶段显示对应的操作按钮
 class ActionPanelWidget : public QWidget {
@@ -19,7 +19,7 @@ public:
     void updateForPhase(PhaseType phase, bool hasPendingAction);
 
     /// 有待定响应时更新显示
-    void updateForPendingAction(const PendingActionInfo& info);
+    void updateForPendingAction(const PendingActionVM& info);
 
     /// 设置提示文字
     void setHint(const QString& text);
