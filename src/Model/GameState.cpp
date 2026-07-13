@@ -26,7 +26,7 @@ int GameState::currentPlayerIndex() const
 
 void GameState::setCurrentPlayerIndex(int index)
 {
-    if (m_currentPlayerIndex != index && index >= 0 && index < m_players.size()) {
+    if (m_currentPlayerIndex != index && index >= 0 && index < static_cast<int>(m_players.size())) {
         m_currentPlayerIndex = index;
         currentPlayerChanged.notify(index);
     }
@@ -34,31 +34,34 @@ void GameState::setCurrentPlayerIndex(int index)
 
 Player* GameState::currentPlayer() const
 {
-    if (m_currentPlayerIndex >= 0 && m_currentPlayerIndex < m_players.size()) {
-        return m_players[m_currentPlayerIndex];
+    if (m_currentPlayerIndex >= 0 && m_currentPlayerIndex < static_cast<int>(m_players.size())) {
+        return m_players[m_currentPlayerIndex].get();
     }
     return nullptr;
 }
 
 Player* GameState::player(int index) const
 {
-    if (index >= 0 && index < m_players.size()) {
-        return m_players[index];
+    if (index >= 0 && index < static_cast<int>(m_players.size())) {
+        return m_players[index].get();
     }
     return nullptr;
 }
 
 int GameState::playerCount() const
 {
-    return m_players.size();
+    return static_cast<int>(m_players.size());
 }
 
-void GameState::addPlayer(Player* player)
+void GameState::addPlayer(std::unique_ptr<Player> player)
 {
     if (player) {
-        auto it = std::find(m_players.begin(), m_players.end(), player);
+        // 去重（按原始指针查找）
+        Player* raw = player.get();
+        auto it = std::find_if(m_players.begin(), m_players.end(),
+            [raw](const std::unique_ptr<Player>& p) { return p.get() == raw; });
         if (it == m_players.end()) {
-            m_players.push_back(player);
+            m_players.push_back(std::move(player));
         }
     }
 }
@@ -66,9 +69,9 @@ void GameState::addPlayer(Player* player)
 std::vector<Player*> GameState::alivePlayers() const
 {
     std::vector<Player*> alive;
-    for (Player* p : m_players) {
+    for (const auto& p : m_players) {
         if (p && p->isAlive()) {
-            alive.push_back(p);
+            alive.push_back(p.get());
         }
     }
     return alive;
@@ -76,7 +79,12 @@ std::vector<Player*> GameState::alivePlayers() const
 
 std::vector<Player*> GameState::allPlayers() const
 {
-    return m_players;
+    std::vector<Player*> result;
+    result.reserve(m_players.size());
+    for (const auto& p : m_players) {
+        result.push_back(p.get());
+    }
+    return result;
 }
 
 int GameState::turnCount() const

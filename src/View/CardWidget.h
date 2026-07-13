@@ -49,8 +49,9 @@ private:
 
     CardViewModel* m_cvm;
 
-    // 连接 ID，用于析构时断开
-    std::vector<size_t> m_connectionIds;
+    // 连接 ID，用于析构时断开（按事件分别存储，避免跨事件 ID 冲突）
+    size_t m_selectedChangedId = 0;
+    size_t m_playableChangedId = 0;
 
     bool m_faceUp;
     bool m_selected  = false;

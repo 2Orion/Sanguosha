@@ -267,31 +267,35 @@ void GameViewModel::initGame(Character* char1, Character* char2)
     // 1. 初始化牌堆
     m_cardManager->initialize();
 
-    // 2. 创建玩家
-    auto* player1 = new Player();
+    // 2. 创建玩家（GameState 接管生命周期所有权）
+    auto player1 = std::make_unique<Player>();
     player1->setPlayerId(0);
     player1->setDisplayName("玩家1");
     player1->setCharacter(char1);
 
-    auto* player2 = new Player();
+    auto player2 = std::make_unique<Player>();
     player2->setPlayerId(1);
     player2->setDisplayName("玩家2");
     player2->setCharacter(char2);
 
-    m_state->addPlayer(player1);
-    m_state->addPlayer(player2);
+    // 保留原始指针用于后续操作（move 之后 unique_ptr 为空）
+    Player* p1 = player1.get();
+    Player* p2 = player2.get();
+
+    m_state->addPlayer(std::move(player1));
+    m_state->addPlayer(std::move(player2));
 
     // 3. 发初始手牌
     for (int i = 0; i < GameRule::INITIAL_HAND_COUNT; ++i) {
         Card* c1 = m_cardManager->drawCard();
         Card* c2 = m_cardManager->drawCard();
-        if (c1) player1->addHandCard(c1);
-        if (c2) player2->addHandCard(c2);
+        if (c1) p1->addHandCard(c1);
+        if (c2) p2->addHandCard(c2);
     }
 
     // 4. 创建 PlayerViewModel（需在 Player 设置完成后）
-    m_playerVMs.push_back(std::make_unique<PlayerViewModel>(player1));
-    m_playerVMs.push_back(std::make_unique<PlayerViewModel>(player2));
+    m_playerVMs.push_back(std::make_unique<PlayerViewModel>(p1));
+    m_playerVMs.push_back(std::make_unique<PlayerViewModel>(p2));
 
     // 5. 监听 Model 事件
     m_modelConn.phaseChangedId = m_state->phaseChanged.connect(
@@ -322,10 +326,10 @@ void GameViewModel::initGame(Character* char1, Character* char2)
 
     // 7. 开始第一个回合 — 进入准备阶段
     m_state->setCurrentPhase(PhaseType::Prepare);
-    emitLog("游戏开始！" + player1->displayName() + "（" +
-            player1->characterName() + "）vs " +
-            player2->displayName() + "（" +
-            player2->characterName() + "）");
+    emitLog("游戏开始！" + p1->displayName() + "（" +
+            p1->characterName() + "）vs " +
+            p2->displayName() + "（" +
+            p2->characterName() + "）");
 }
 
 Character* GameViewModel::createCharacterById(int id)

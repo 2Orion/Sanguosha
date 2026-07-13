@@ -62,8 +62,15 @@ protected:
     bool m_isCurrent = false;
     bool m_targetable = false;
 
-    // EventListener 连接 ID 列表（用于断开）
-    std::vector<size_t> m_connectionIds;
+    /// EventListener 连接 ID（按事件类型分别存储，避免跨事件 ID 冲突）
+    struct ConnIds {
+        size_t hpChanged = 0;
+        size_t maxHpChanged = 0;
+        size_t handCardsChanged = 0;
+        size_t dying = 0;
+        size_t stateChanged = 0;
+    };
+    ConnIds m_conn;
 };
 
 #endif // PLAYERINFOWIDGET_H

@@ -85,7 +85,7 @@ void CardWidget::connectViewModel()
     if (!m_cvm) return;
     disconnectViewModel();
 
-    auto id1 = m_cvm->selectedChanged.connect([this](bool sel) {
+    m_selectedChangedId = m_cvm->selectedChanged.connect([this](bool sel) {
         QMetaObject::invokeMethod(this, [this, sel]() {
             if (m_selected != sel) {
                 m_selected = sel;
@@ -93,9 +93,8 @@ void CardWidget::connectViewModel()
             }
         }, Qt::QueuedConnection);
     });
-    m_connectionIds.push_back(id1);
 
-    auto id2 = m_cvm->playableChanged.connect([this](bool playable) {
+    m_playableChangedId = m_cvm->playableChanged.connect([this](bool playable) {
         QMetaObject::invokeMethod(this, [this, playable]() {
             if (m_playable != playable) {
                 m_playable = playable;
@@ -103,17 +102,15 @@ void CardWidget::connectViewModel()
             }
         }, Qt::QueuedConnection);
     });
-    m_connectionIds.push_back(id2);
 }
 
 void CardWidget::disconnectViewModel()
 {
     if (!m_cvm) return;
-    for (auto id : m_connectionIds) {
-        m_cvm->selectedChanged.disconnect(id);
-        m_cvm->playableChanged.disconnect(id);
-    }
-    m_connectionIds.clear();
+    m_cvm->selectedChanged.disconnect(m_selectedChangedId);
+    m_cvm->playableChanged.disconnect(m_playableChangedId);
+    m_selectedChangedId = 0;
+    m_playableChangedId = 0;
 }
 
 void CardWidget::updateTooltip()
