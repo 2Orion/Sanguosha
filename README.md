@@ -76,16 +76,30 @@ Sanguosha/
 
 ## 构建
 
-需要支持 C++17 的编译器（已用 MinGW-W64 g++ 13.2.0 验证）和 CMake ≥ 3.16。
+需要支持 C++17 的编译器和 CMake ≥ 3.16。
 
 - **编译控制台版**不需要 Qt
 - **编译图形界面版**需要安装 **Qt 6**（或 Qt 5.15+，包含 Widgets 模块）
 
+### 无 Qt（仅控制台版 + 测试）
+
 ```bash
-mkdir build && cd build
-cmake .. -G "MinGW Makefiles"      # 或你平台上惯用的生成器
-make -j
+cmake -B build -S .
+cmake --build build -j
 ```
+
+### 有 Qt（含图形界面版）
+
+需指定 Qt 安装路径：
+
+```bash
+cmake -B build -G "MinGW Makefiles" \
+  -DCMAKE_PREFIX_PATH="D:/QT/6.11.1/mingw_64" \
+  -DCMAKE_CXX_COMPILER="D:/QT/Tools/mingw1310_64/bin/g++.exe"
+cmake --build build -j
+```
+
+> **注意**：必须使用 Qt 自带的 MinGW 编译器，否则版本不匹配。另外需将 `D:/QT/6.11.1/mingw_64/bin` 添加到系统环境变量 PATH 中，运行时才能找到 Qt DLL。
 
 产物：
 - `build/libSanguoshaModel.a`（Model 静态库）

@@ -36,9 +36,9 @@ set(MODEL_SOURCES
 )
 
 set(MODEL_HEADERS
-    src/Model/CommonTypes.h
-    src/Model/Event.h
-    src/Model/RandomUtils.h
+    src/Core/CommonTypes.h
+    src/Core/Event.h
+    src/Core/RandomUtils.h
     src/Model/GameState.h
     src/Model/Card.h
     src/Model/Character.h
@@ -56,6 +56,7 @@ add_library(SanguoshaModel STATIC
 target_include_directories(SanguoshaModel
     PUBLIC
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/Core
 )
 
 # ViewModel层源文件
