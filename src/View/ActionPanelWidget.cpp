@@ -1,6 +1,4 @@
 #include "ActionPanelWidget.h"
-#include "GameViewModel.h"
-
 #include <QFont>
 
 // ==================== 构造 ====================

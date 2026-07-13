@@ -2,22 +2,21 @@
 #define CARDWIDGET_H
 
 #include <QFrame>
-#include <QMetaObject>
+#include "CardDisplayData.h"
 
-class CardViewModel;
-
-/// 单张卡牌控件 — 支持选中、可打出高亮、悬停、牌背显示
+/// 单张卡牌控件 — 只依赖 Common 层值类型
 class CardWidget : public QFrame {
     Q_OBJECT
 public:
-    explicit CardWidget(CardViewModel* cvm, bool faceUp = true, QWidget* parent = nullptr);
-    ~CardWidget() override;
+    explicit CardWidget(bool faceUp = true, QWidget* parent = nullptr);
 
-    int cardId() const;
-    bool isSelected() const;
+    void setDisplayData(const CardDisplayData& data);
+    void setFaceUp(bool faceUp, bool showPlayable = false);
+
+    int cardId() const { return m_data.cardId; }
+    bool isSelected() const { return m_selected; }
     void setSelected(bool sel);
     void setPlayable(bool playable);
-    void setFaceUp(bool faceUp);
 
     static constexpr int CARD_WIDTH  = 80;
     static constexpr int CARD_HEIGHT = 112;
@@ -37,25 +36,17 @@ protected:
 #endif
     void leaveEvent(QEvent* event) override;
 
-private slots:
-    void onViewModelSelectedChanged(bool selected);
-    void onViewModelPlayableChanged(bool playable);
-
 private:
-    void updateTooltip();
-
     void drawCardBack(QPainter& painter, const QRect& rect, int radius);
     void drawCardFront(QPainter& painter, const QRect& rect, int radius);
     void drawStateOverlay(QPainter& painter, const QRect& rect, int radius);
 
-    CardViewModel* m_cvm;
-    QMetaObject::Connection m_selConn;
-    QMetaObject::Connection m_playableConn;
-
-    bool m_faceUp;
-    bool m_selected  = false;
-    bool m_playable  = false;
-    bool m_hovered   = false;
+    CardDisplayData m_data;
+    bool m_faceUp = true;
+    bool m_selected = false;
+    bool m_playable = false;
+    bool m_hovered = false;
+    bool m_showPlayable = false;
 };
 
 #endif // CARDWIDGET_H

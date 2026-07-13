@@ -65,15 +65,11 @@ target_link_libraries(SanguoshaModel
 # ==================== ViewModel 层 ====================
 
 set(VIEWMODEL_SOURCES
-    src/ViewModel/CardViewModel.cpp
-    src/ViewModel/PlayerViewModel.cpp
     src/ViewModel/ActionViewModel.cpp
     src/ViewModel/GameViewModel.cpp
 )
 
 set(VIEWMODEL_HEADERS
-    src/ViewModel/CardViewModel.h
-    src/ViewModel/PlayerViewModel.h
     src/ViewModel/ActionViewModel.h
     src/ViewModel/GameViewModel.h
 )
