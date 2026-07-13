@@ -107,55 +107,62 @@ void GameBoardWidget::connectViewModel()
     if (!m_gvm) return;
 
     // phaseChanged → 阶段切换
-    m_conn.phaseChanged = m_gvm->phaseChanged.connect([this](PhaseType phase) {
+    auto id1 = m_gvm->phaseChanged.connect([this](PhaseType phase) {
         QMetaObject::invokeMethod(this, [this, phase]() {
             onPhaseChanged(phase);
         }, Qt::QueuedConnection);
     });
+    m_connectionIds.push_back(id1);
 
     // currentPlayerChanged → 玩家切换（int playerIndex）
-    m_conn.currentPlayerChanged = m_gvm->currentPlayerChanged.connect([this](int idx) {
+    auto id2 = m_gvm->currentPlayerChanged.connect([this](int idx) {
         QMetaObject::invokeMethod(this, [this, idx]() {
             onPlayerChanged(idx);
         }, Qt::QueuedConnection);
     });
+    m_connectionIds.push_back(id2);
 
     // gameOver → 游戏结束（int winnerId）
-    m_conn.gameOver = m_gvm->gameOver.connect([this](int winnerId) {
+    auto id3 = m_gvm->gameOver.connect([this](int winnerId) {
         QMetaObject::invokeMethod(this, [this, winnerId]() {
             onGameOver(winnerId);
         }, Qt::QueuedConnection);
     });
+    m_connectionIds.push_back(id3);
 
     // stateChanged → 全面刷新
-    m_conn.stateChanged = m_gvm->stateChanged.connect([this]() {
+    auto id4 = m_gvm->stateChanged.connect([this]() {
         QMetaObject::invokeMethod(this, [this]() {
             refreshDisplay();
         }, Qt::QueuedConnection);
     });
+    m_connectionIds.push_back(id4);
 
     // logMessage → 日志显示
-    m_conn.logMessage = m_gvm->logMessage.connect([this](const std::string& msg) {
+    auto id5 = m_gvm->logMessage.connect([this](const std::string& msg) {
         QMetaObject::invokeMethod(this, [this, msg]() {
             showLog(QString::fromStdString(msg));
         }, Qt::QueuedConnection);
     });
+    m_connectionIds.push_back(id5);
 
     // pendingActionCreated → 响应模式（PendingActionVM）
-    m_conn.pendingActionCreated = m_gvm->pendingActionCreated.connect(
+    auto id6 = m_gvm->pendingActionCreated.connect(
         [this](const PendingActionVM& info) {
             QMetaObject::invokeMethod(this, [this, info]() {
                 onPendingActionCreated(info);
             }, Qt::QueuedConnection);
         });
+    m_connectionIds.push_back(id6);
 
     // pendingActionCleared → 退出响应模式
-    m_conn.pendingActionCleared = m_gvm->pendingActionCleared.connect(
+    auto id7 = m_gvm->pendingActionCleared.connect(
         [this]() {
             QMetaObject::invokeMethod(this, [this]() {
                 onPendingActionCleared();
             }, Qt::QueuedConnection);
         });
+    m_connectionIds.push_back(id7);
 
     // 子控件信号
     connect(m_bottomHandArea, &HandCardAreaWidget::cardClicked,
@@ -186,15 +193,16 @@ void GameBoardWidget::disconnectViewModel()
 {
     if (!m_gvm) return;
 
-    m_gvm->phaseChanged.disconnect(m_conn.phaseChanged);
-    m_gvm->currentPlayerChanged.disconnect(m_conn.currentPlayerChanged);
-    m_gvm->gameOver.disconnect(m_conn.gameOver);
-    m_gvm->stateChanged.disconnect(m_conn.stateChanged);
-    m_gvm->logMessage.disconnect(m_conn.logMessage);
-    m_gvm->pendingActionCreated.disconnect(m_conn.pendingActionCreated);
-    m_gvm->pendingActionCleared.disconnect(m_conn.pendingActionCleared);
-
-    m_conn = ConnIds{};
+    for (auto id : m_connectionIds) {
+        m_gvm->phaseChanged.disconnect(id);
+        m_gvm->currentPlayerChanged.disconnect(id);
+        m_gvm->gameOver.disconnect(id);
+        m_gvm->stateChanged.disconnect(id);
+        m_gvm->logMessage.disconnect(id);
+        m_gvm->pendingActionCreated.disconnect(id);
+        m_gvm->pendingActionCleared.disconnect(id);
+    }
+    m_connectionIds.clear();
 }
 
 // ==================== 阶段切换 ====================

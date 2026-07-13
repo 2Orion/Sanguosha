@@ -204,40 +204,47 @@ void PlayerInfoWidget::connectViewModelEvents()
     disconnectViewModelEvents();
 
     // hpChanged → 更新体力显示
-    m_conn.hpChanged = m_pvm->hpChanged.connect([this](int /*hp*/) {
+    auto id1 = m_pvm->hpChanged.connect([this](int /*hp*/) {
         QMetaObject::invokeMethod(this, [this]() { updateHp(); }, Qt::QueuedConnection);
     });
+    m_connectionIds.push_back(id1);
 
     // maxHpChanged → 更新体力显示
-    m_conn.maxHpChanged = m_pvm->maxHpChanged.connect([this](int /*maxHp*/) {
+    auto id2 = m_pvm->maxHpChanged.connect([this](int /*maxHp*/) {
         QMetaObject::invokeMethod(this, [this]() { updateHp(); }, Qt::QueuedConnection);
     });
+    m_connectionIds.push_back(id2);
 
     // handCardsChanged → 更新手牌计数
-    m_conn.handCardsChanged = m_pvm->handCardsChanged.connect([this]() {
+    auto id3 = m_pvm->handCardsChanged.connect([this]() {
         QMetaObject::invokeMethod(this, [this]() { updateHandCount(); }, Qt::QueuedConnection);
     });
+    m_connectionIds.push_back(id3);
 
     // dying → 显示濒死效果
-    m_conn.dying = m_pvm->dying.connect([this]() {
+    auto id4 = m_pvm->dying.connect([this]() {
         QMetaObject::invokeMethod(this, [this]() { onDying(); }, Qt::QueuedConnection);
     });
+    m_connectionIds.push_back(id4);
 
     // stateChanged → 全面刷新
-    m_conn.stateChanged = m_pvm->stateChanged.connect([this]() {
+    auto id5 = m_pvm->stateChanged.connect([this]() {
         QMetaObject::invokeMethod(this, [this]() { refreshAll(); }, Qt::QueuedConnection);
     });
+    m_connectionIds.push_back(id5);
 }
 
 void PlayerInfoWidget::disconnectViewModelEvents()
 {
     if (!m_pvm) return;
-    m_pvm->hpChanged.disconnect(m_conn.hpChanged);
-    m_pvm->maxHpChanged.disconnect(m_conn.maxHpChanged);
-    m_pvm->handCardsChanged.disconnect(m_conn.handCardsChanged);
-    m_pvm->dying.disconnect(m_conn.dying);
-    m_pvm->stateChanged.disconnect(m_conn.stateChanged);
-    m_conn = ConnIds{};
+    for (auto id : m_connectionIds) {
+        m_pvm->hpChanged.disconnect(id);
+        m_pvm->maxHpChanged.disconnect(id);
+        m_pvm->handCardsChanged.disconnect(id);
+        m_pvm->dying.disconnect(id);
+        m_pvm->stateChanged.disconnect(id);
+    }
+    m_connectionIds.clear();
 }
 
 // ==================== 更新方法 ====================

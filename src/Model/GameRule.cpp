@@ -465,7 +465,6 @@ void checkDeath(GameState* state, Player* player)
 
     if (player->hp() <= 0) {
         player->setDying(false);
-        player->died.notify(player);
         state->clearPendingAction();
         checkGameOver(state);
     }

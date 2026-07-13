@@ -31,10 +31,8 @@ public:
     }
 
     /// 通知所有回调
-    /// 复制回调列表后遍历，防止回调中调用 connect/disconnect 导致迭代器失效
     void notify(Args... args) {
-        auto callbacksCopy = callbacks;
-        for (const auto& pair : callbacksCopy) {
+        for (const auto& pair : callbacks) {
             pair.callback(args...);
         }
     }

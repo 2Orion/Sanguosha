@@ -64,17 +64,7 @@ private:
 
     // ---- 成员 ----
     GameViewModel* m_gvm;  // 不持有，由 MainWindow 持有
-    /// EventListener 连接 ID（按事件类型分别存储，避免跨事件 ID 冲突）
-    struct ConnIds {
-        size_t phaseChanged = 0;
-        size_t currentPlayerChanged = 0;
-        size_t gameOver = 0;
-        size_t stateChanged = 0;
-        size_t logMessage = 0;
-        size_t pendingActionCreated = 0;
-        size_t pendingActionCleared = 0;
-    };
-    ConnIds m_conn;
+    std::vector<size_t> m_connectionIds;
 
     // 子控件
     PlayerInfoWidget*   m_topPlayerInfo;

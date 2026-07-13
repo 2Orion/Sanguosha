@@ -3,7 +3,6 @@
 
 #include <vector>
 #include <string>
-#include <memory>
 #include "CommonTypes.h"
 #include "Event.h"
 
@@ -37,7 +36,7 @@ public:
     Player* currentPlayer() const;
     Player* player(int index) const;
     int playerCount() const;
-    void addPlayer(std::unique_ptr<Player> player);
+    void addPlayer(Player* player);
     std::vector<Player*> alivePlayers() const;
     std::vector<Player*> allPlayers() const;
 
@@ -72,7 +71,7 @@ private:
     PhaseType m_currentPhase = PhaseType::Prepare;
     int m_currentPlayerIndex = 0;
     int m_turnCount = 0;
-    std::vector<std::unique_ptr<Player>> m_players;
+    std::vector<Player*> m_players;
     CardManager* m_cardManager = nullptr;
     bool m_hasPendingAction = false;
     PendingActionInfo m_pendingAction;
