@@ -1,31 +1,25 @@
 #ifndef PLAYERVIEWMODEL_H
 #define PLAYERVIEWMODEL_H
 
-#include <string>
-#include <vector>
-#include <cstddef>
+#include <QObject>
+#include <QString>
 #include "CommonTypes.h"
-#include "Event.h"
 
 class Player;
 class Card;
 
-/// 玩家 ViewModel — 包装 Player 并转发其事件，
-/// 方便 View 层只监听 ViewModel 而不直接依赖 Model
-class PlayerViewModel {
+/// 玩家 ViewModel — 包装 Player，转发 Qt 信号，提供只读值类型查询
+class PlayerViewModel : public QObject {
+    Q_OBJECT
 public:
-    explicit PlayerViewModel(Player* player);
-    ~PlayerViewModel();
-
-    // ==================== 身份标识 ====================
+    explicit PlayerViewModel(Player* player, QObject* parent = nullptr);
+    ~PlayerViewModel() override;
 
     int playerId() const;
-    std::string displayName() const;
-    std::string characterName() const;
-    std::string skillName() const;
-    std::string skillDescription() const;
-
-    // ==================== 体力 ====================
+    QString displayName() const;
+    QString characterName() const;
+    QString skillName() const;
+    QString skillDescription() const;
 
     int hp() const;
     int maxHp() const;
@@ -34,52 +28,31 @@ public:
     bool isDying() const;
     bool isFullHp() const;
 
-    // ==================== 手牌 ====================
-
     int handCardCount() const;
     bool hasHandCards() const;
     int handCardLimit() const;
 
-    // ==================== 回合状态 ====================
-
     bool hasUsedKillThisTurn() const;
     bool isWineEnhanced() const;
-
-    // ==================== 装备/判定区（预留） ====================
 
     int equipCount() const;
     int judgmentCount() const;
 
-    // ==================== 事件（从 Model 转发，值类型） ====================
+    Player* player() const;
 
-    EventListener<int> hpChanged;
-    EventListener<int> maxHpChanged;
-    EventListener<> dying;
-    EventListener<> died;
-    EventListener<> revived;
-    EventListener<int> handCardAdded;     // cardId
-    EventListener<int> handCardRemoved;   // cardId
-    EventListener<> handCardsChanged;
-    EventListener<> stateChanged;
+signals:
+    void hpChanged(int hp);
+    void maxHpChanged(int maxHp);
+    void dying(int playerId);
+    void died(int playerId);
+    void revived(int playerId);
+    void handCardAdded(int cardId);
+    void handCardRemoved(int cardId);
+    void handCardsChanged();
+    void stateChanged();
 
 private:
-    void connectModelEvents();
-
     Player* m_player;
-
-    // 每个 Model 事件的连接 ID
-    struct EventConnections {
-        size_t hpChangedId = 0;
-        size_t maxHpChangedId = 0;
-        size_t dyingId = 0;
-        size_t diedId = 0;
-        size_t revivedId = 0;
-        size_t handCardAddedId = 0;
-        size_t handCardRemovedId = 0;
-        size_t handCardsChangedId = 0;
-        size_t stateChangedId = 0;
-    };
-    EventConnections m_conn;
 };
 
 #endif // PLAYERVIEWMODEL_H

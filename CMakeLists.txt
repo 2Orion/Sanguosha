@@ -10,7 +10,7 @@ if(MSVC)
     add_compile_options(/utf-8)
 endif()
 
-# Qt包查找（可选：未安装Qt时跳过图形界面目标，仅构建Model/ViewModel/控制台版）
+# Qt包查找
 find_package(Qt6 QUIET COMPONENTS Widgets)
 if(Qt6_FOUND)
     set(QT_VERSION_MAJOR 6)
@@ -22,10 +22,11 @@ else()
 endif()
 
 if(NOT Qt6_FOUND AND NOT Qt5_FOUND)
-    message(STATUS "未找到 Qt6/Qt5，将跳过图形界面版（SanguoshaQt）的构建")
+    message(FATAL_ERROR "需要 Qt6 或 Qt5.15+（含 Widgets 模块）来构建此项目")
 endif()
 
-# Model层源文件
+# ==================== Model 层 ====================
+
 set(MODEL_SOURCES
     src/Model/GameState.cpp
     src/Model/Card.cpp
@@ -37,8 +38,6 @@ set(MODEL_SOURCES
 
 set(MODEL_HEADERS
     src/Model/CommonTypes.h
-    src/Model/Event.h
-    src/Model/RandomUtils.h
     src/Model/GameState.h
     src/Model/Card.h
     src/Model/Character.h
@@ -47,7 +46,6 @@ set(MODEL_HEADERS
     src/Model/GameRule.h
 )
 
-# 创建Model静态库
 add_library(SanguoshaModel STATIC
     ${MODEL_SOURCES}
     ${MODEL_HEADERS}
@@ -56,9 +54,16 @@ add_library(SanguoshaModel STATIC
 target_include_directories(SanguoshaModel
     PUBLIC
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/Common
 )
 
-# ViewModel层源文件
+target_link_libraries(SanguoshaModel
+    PUBLIC
+    Qt${QT_VERSION_MAJOR}::Core
+)
+
+# ==================== ViewModel 层 ====================
+
 set(VIEWMODEL_SOURCES
     src/ViewModel/CardViewModel.cpp
     src/ViewModel/PlayerViewModel.cpp
@@ -73,78 +78,79 @@ set(VIEWMODEL_HEADERS
     src/ViewModel/GameViewModel.h
 )
 
-# View层源文件（Qt 图形界面版，仅在找到 Qt 时构建）
-if(Qt6_FOUND OR Qt5_FOUND)
-    set(VIEW_SOURCES
-        src/View/main_qt.cpp
-        src/View/CardWidget.cpp
-        src/View/PlayerInfoWidget.cpp
-        src/View/HandCardAreaWidget.cpp
-        src/View/ActionPanelWidget.cpp
-        src/View/GameBoardWidget.cpp
-        src/View/MainWindow.cpp
-    )
+# ==================== View 层 ====================
 
-    set(VIEW_HEADERS
-        src/View/CardWidget.h
-        src/View/PlayerInfoWidget.h
-        src/View/HandCardAreaWidget.h
-        src/View/ActionPanelWidget.h
-        src/View/GameBoardWidget.h
-        src/View/MainWindow.h
-    )
+set(VIEW_SOURCES
+    src/View/CardWidget.cpp
+    src/View/PlayerInfoWidget.cpp
+    src/View/HandCardAreaWidget.cpp
+    src/View/ActionPanelWidget.cpp
+    src/View/GameBoardWidget.cpp
+    src/View/MainWindow.cpp
+)
 
-    # Qt 版可执行程序
-    add_executable(SanguoshaQt
-        ${VIEW_SOURCES}
-        ${VIEW_HEADERS}
-        ${VIEWMODEL_SOURCES}
-        ${VIEWMODEL_HEADERS}
-    )
-    target_include_directories(SanguoshaQt PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${CMAKE_SOURCE_DIR}/src/Model
-        ${CMAKE_SOURCE_DIR}/src/ViewModel
-    )
-    target_link_libraries(SanguoshaQt PRIVATE
-        SanguoshaModel
-        Qt${QT_VERSION_MAJOR}::Widgets
-    )
-endif()
+set(VIEW_HEADERS
+    src/View/CardWidget.h
+    src/View/PlayerInfoWidget.h
+    src/View/HandCardAreaWidget.h
+    src/View/ActionPanelWidget.h
+    src/View/GameBoardWidget.h
+    src/View/MainWindow.h
+)
 
-# 主程序（控制台版三国杀）
-add_executable(Sanguosha
+# ==================== App 层（组合根） ====================
+
+set(APP_SOURCES
+    src/App/GameBootstrap.cpp
+)
+
+set(APP_HEADERS
+    src/App/GameBootstrap.h
+)
+
+# ==================== Qt 版可执行程序 ====================
+
+add_executable(SanguoshaQt
     src/main.cpp
+    ${VIEW_SOURCES}
+    ${VIEW_HEADERS}
     ${VIEWMODEL_SOURCES}
     ${VIEWMODEL_HEADERS}
+    ${APP_SOURCES}
+    ${APP_HEADERS}
 )
 
-target_include_directories(Sanguosha
-    PRIVATE
+target_include_directories(SanguoshaQt PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/Common
     ${CMAKE_SOURCE_DIR}/src/Model
+    ${CMAKE_SOURCE_DIR}/src/ViewModel
+    ${CMAKE_SOURCE_DIR}/src/View
+    ${CMAKE_SOURCE_DIR}/src/App
 )
 
-target_link_libraries(Sanguosha
-    PRIVATE
+target_link_libraries(SanguoshaQt PRIVATE
     SanguoshaModel
+    Qt${QT_VERSION_MAJOR}::Widgets
 )
 
-# Model层冒烟测试
+# ==================== Model 层冒烟测试 ====================
+
 enable_testing()
 
 add_executable(ModelSmokeTest
     tests/smoke_test.cpp
 )
 
-target_include_directories(ModelSmokeTest
-    PRIVATE
+target_include_directories(ModelSmokeTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/Common
     ${CMAKE_SOURCE_DIR}/src/Model
 )
 
-target_link_libraries(ModelSmokeTest
-    PRIVATE
+target_link_libraries(ModelSmokeTest PRIVATE
     SanguoshaModel
+    Qt${QT_VERSION_MAJOR}::Core
 )
 
 add_test(NAME ModelSmokeTest COMMAND ModelSmokeTest)

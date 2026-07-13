@@ -6,7 +6,7 @@
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QString>
-#include <string>
+#include <QMetaObject>
 #include <vector>
 
 class PlayerViewModel;
@@ -18,10 +18,10 @@ public:
     explicit PlayerInfoWidget(QWidget* parent = nullptr);
     ~PlayerInfoWidget() override;
 
-    /// 绑定数据源，开始监听事件
+    /// 绑定数据源，开始监听事件（通过 Qt 信号槽）
     void bindViewModel(PlayerViewModel* pvm);
 
-    /// 解除绑定（析构或切换玩家时调用）
+    /// 解除绑定
     void unbindViewModel();
 
     bool isCurrentPlayer() const { return m_isCurrent; }
@@ -45,25 +45,23 @@ private slots:
 
 protected:
     void mousePressEvent(QMouseEvent* event) override;
-    void connectViewModelEvents();
-    void disconnectViewModelEvents();
     void setupUi();
 
     PlayerViewModel* m_pvm = nullptr;
 
     // UI 元素
-    QLabel* m_avatarLabel;       // 武将头像（用文字/emoji代替）
-    QLabel* m_nameLabel;         // 玩家名称
-    QLabel* m_hpLabel;           // 体力 ❤🖤
-    QLabel* m_skillLabel;        // 技能名 + 描述
-    QLabel* m_handCountLabel;    // 手牌张数
-    QLabel* m_turnIndicator;     // "当前回合" 标记
+    QLabel* m_avatarLabel;
+    QLabel* m_nameLabel;
+    QLabel* m_hpLabel;
+    QLabel* m_skillLabel;
+    QLabel* m_handCountLabel;
+    QLabel* m_turnIndicator;
 
     bool m_isCurrent = false;
     bool m_targetable = false;
 
-    // EventListener 连接 ID 列表（用于断开）
-    std::vector<size_t> m_connectionIds;
+    // Qt 信号槽连接（断开用）
+    std::vector<QMetaObject::Connection> m_connections;
 };
 
 #endif // PLAYERINFOWIDGET_H

@@ -3,8 +3,8 @@
 
 #include <vector>
 #include <string>
+#include <QObject>
 #include "CommonTypes.h"
-#include "Event.h"
 
 class Player;
 class CardManager;
@@ -12,19 +12,20 @@ class Card;
 
 /// 待定动作信息（当需要玩家响应时填充此结构）
 struct PendingActionInfo {
-    Player* source = nullptr;           // 动作来源（使用牌的玩家）
-    Player* target = nullptr;           // 需要响应的玩家
-    Card*   sourceCard = nullptr;       // 触发动作的卡牌
-    CardType requiredCardType;          // 需要打出的卡牌类型
-    std::string description;            // 界面提示文字（如"请打出一张【闪】"）
-    bool    canSkip = false;            // 是否可以跳过响应
-    std::vector<Player*> remainingTargets; // AOE/链式响应中尚未询问的后续目标
+    Player* source = nullptr;
+    Player* target = nullptr;
+    Card*   sourceCard = nullptr;
+    CardType requiredCardType = CardType::Kill;
+    std::string description;
+    bool    canSkip = false;
+    std::vector<Player*> remainingTargets;
 };
 
-class GameState {
+class GameState : public QObject {
+    Q_OBJECT
 public:
-    GameState();
-    ~GameState() = default;
+    explicit GameState(QObject* parent = nullptr);
+    ~GameState() override = default;
 
     // ---- 阶段管理 ----
     PhaseType currentPhase() const;
@@ -59,13 +60,13 @@ public:
     Player* winner() const;
     void setGameOver(Player* winnerPlayer);
 
-    // ---- 事件通知 ----
-    EventListener<PhaseType> phaseChanged;
-    EventListener<int> currentPlayerChanged;
-    EventListener<const PendingActionInfo&> pendingActionCreated;
-    EventListener<> pendingActionCleared;
-    EventListener<Player*> gameOver;
-    EventListener<> stateRefreshed;
+signals:
+    void phaseChanged(PhaseType phase);
+    void currentPlayerChanged(int playerIndex);
+    void pendingActionCreated(const PendingActionInfo& info);
+    void pendingActionCleared();
+    void gameOver(int winnerId);
+    void stateRefreshed();
 
 private:
     PhaseType m_currentPhase = PhaseType::Prepare;

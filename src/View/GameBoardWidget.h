@@ -6,7 +6,7 @@
 #include <QTimer>
 #include <vector>
 #include <cstddef>
-#include "Core/CommonTypes.h"
+#include "Common/CommonTypes.h"
 
 class GameViewModel;
 class CardViewModel;

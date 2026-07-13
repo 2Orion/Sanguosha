@@ -1,6 +1,6 @@
 #include "MainWindow.h"
 #include "GameBoardWidget.h"
-#include "GameViewModel.h"
+#include "GameBootstrap.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -39,14 +39,14 @@ MainWindow::MainWindow(QWidget* parent)
     setCentralWidget(m_centralStack);
 
     setupSelectionPage();
-    setupGamePage();
 
     m_centralStack->setCurrentWidget(m_selectionPage);
 }
 
 MainWindow::~MainWindow()
 {
-    delete m_gvm;
+    // GameBootstrap / GameViewModel / GameBoardWidget 均为 QObject，
+    // 由 Qt 父子关系自动管理生命期
 }
 
 // ==================== 选将界面 ====================
@@ -245,15 +245,6 @@ void MainWindow::setupSelectionPage()
     m_centralStack->addWidget(m_selectionPage);
 }
 
-// ==================== 游戏页面 ====================
-
-void MainWindow::setupGamePage()
-{
-    // 游戏页面会在 startGame 时动态创建
-    // 这里先占位，之后会被替换
-    m_gameBoard = nullptr;
-}
-
 // ==================== 选将逻辑 ====================
 
 void MainWindow::onP1CharChanged(int id)
@@ -297,47 +288,52 @@ void MainWindow::updateStartButton()
     m_startBtn->setText(QStringLiteral("开始对战！"));
 }
 
-// ==================== 游戏生命周期 ====================
+// ==================== 游戏生命周期（通过 GameBootstrap Composition Root） ====================
 
 void MainWindow::onStartGame()
 {
     int p1Id = m_p1Group->checkedId();
     int p2Id = m_p2Group->checkedId();
-
     if (p1Id < 0 || p2Id < 0 || p1Id == p2Id) return;
 
-    // 创建 GameViewModel
-    m_gvm = new GameViewModel();
-    m_gvm->startGame(p1Id, p2Id);
+    // 清除上一局残留
+    if (m_gameBoard) {
+        m_centralStack->removeWidget(m_gameBoard);
+        m_gameBoard->deleteLater();
+        m_gameBoard = nullptr;
+    }
+    if (m_bootstrap) {
+        m_bootstrap->deleteLater();
+        m_bootstrap = nullptr;
+    }
 
-    // 创建游戏面板
-    m_gameBoard = new GameBoardWidget(m_gvm, this);
-    connect(m_gameBoard, &GameBoardWidget::gameFinished,
+    // 通过 Composition Root 创建并连接所有层
+    m_bootstrap = new GameBootstrap(this, this);
+    m_gameBoard = m_bootstrap->boardWidget();
+
+    connect(m_bootstrap, &GameBootstrap::gameFinished,
             this, &MainWindow::onGameFinished);
 
-    // 替换游戏页面
-    if (m_centralStack->count() > 1) {
-        QWidget* old = m_centralStack->widget(1);
-        m_centralStack->removeWidget(old);
-        old->deleteLater();
-    }
+    m_bootstrap->startLocalGame(p1Id, p2Id);
+
     m_centralStack->addWidget(m_gameBoard);
     m_centralStack->setCurrentWidget(m_gameBoard);
 }
 
 void MainWindow::onGameFinished()
 {
-    // 清理游戏状态
+    // 清理（QObject 父子关系自动析构 GameVM 和 GameBoard）
     if (m_gameBoard) {
+        m_centralStack->removeWidget(m_gameBoard);
         m_gameBoard->deleteLater();
         m_gameBoard = nullptr;
     }
-    if (m_gvm) {
-        delete m_gvm;
-        m_gvm = nullptr;
+    if (m_bootstrap) {
+        m_bootstrap->deleteLater();
+        m_bootstrap = nullptr;
     }
 
-    // 重置选择
+    // 重置选将界面
     auto resetGroup = [](QButtonGroup* group, QLabel* label) {
         QAbstractButton* checked = group->checkedButton();
         if (checked) {

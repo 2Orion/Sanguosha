@@ -5,7 +5,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QHBoxLayout>
-#include "Core/CommonTypes.h"
+#include "Common/CommonTypes.h"
 
 struct PendingActionVM;
 

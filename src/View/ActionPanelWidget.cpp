@@ -142,7 +142,7 @@ void ActionPanelWidget::updateForPendingAction(const PendingActionVM& info)
     hideAllButtons();
 
     // 提示文字
-    QString desc = QString::fromStdString(info.description);
+    QString desc = info.description;
     m_hintLabel->setText(desc);
 
     // 如果可以跳过，显示跳过按钮

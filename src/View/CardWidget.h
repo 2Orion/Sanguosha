@@ -2,7 +2,7 @@
 #define CARDWIDGET_H
 
 #include <QFrame>
-#include <vector>
+#include <QMetaObject>
 
 class CardViewModel;
 
@@ -37,20 +37,20 @@ protected:
 #endif
     void leaveEvent(QEvent* event) override;
 
+private slots:
+    void onViewModelSelectedChanged(bool selected);
+    void onViewModelPlayableChanged(bool playable);
+
 private:
-    void connectViewModel();
-    void disconnectViewModel();
     void updateTooltip();
 
-    // 绘制方法
     void drawCardBack(QPainter& painter, const QRect& rect, int radius);
     void drawCardFront(QPainter& painter, const QRect& rect, int radius);
     void drawStateOverlay(QPainter& painter, const QRect& rect, int radius);
 
     CardViewModel* m_cvm;
-
-    // 连接 ID，用于析构时断开
-    std::vector<size_t> m_connectionIds;
+    QMetaObject::Connection m_selConn;
+    QMetaObject::Connection m_playableConn;
 
     bool m_faceUp;
     bool m_selected  = false;

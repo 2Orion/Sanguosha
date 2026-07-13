@@ -34,7 +34,12 @@ GameBoardWidget::GameBoardWidget(GameViewModel* gvm, QWidget* parent)
 
     // 立即推进到出牌阶段，不卡在自动阶段
     QMetaObject::invokeMethod(this, [this]() {
-        m_gvm->advanceToInteractivePhase();
+        // 直接推进到出牌阶段
+        while (m_gvm->currentPhase() != PhaseType::Play &&
+               m_gvm->currentPhase() != PhaseType::Discard &&
+               !m_gvm->isGameOver()) {
+            m_gvm->advancePhase();
+        }
         showLog(QStringLiteral("出牌阶段 — 双击卡牌快速打出"));
         refreshDisplay();
     }, Qt::QueuedConnection);
@@ -42,7 +47,7 @@ GameBoardWidget::GameBoardWidget(GameViewModel* gvm, QWidget* parent)
 
 GameBoardWidget::~GameBoardWidget()
 {
-    disconnectViewModel();
+    // Qt 信号槽在 QObject 析构时自动断开
 }
 
 // ==================== 布局构建 ====================
@@ -100,69 +105,19 @@ void GameBoardWidget::setupLayout()
     mainLayout->setStretchFactor(m_bottomHandArea, 1);
 }
 
-// ==================== 事件桥接 ====================
+// ==================== 事件桥接（Qt 信号 → 槽） ====================
 
 void GameBoardWidget::connectViewModel()
 {
     if (!m_gvm) return;
 
-    // phaseChanged → 阶段切换
-    auto id1 = m_gvm->phaseChanged.connect([this](PhaseType phase) {
-        QMetaObject::invokeMethod(this, [this, phase]() {
-            onPhaseChanged(phase);
-        }, Qt::QueuedConnection);
-    });
-    m_connectionIds.push_back(id1);
-
-    // currentPlayerChanged → 玩家切换（int playerIndex）
-    auto id2 = m_gvm->currentPlayerChanged.connect([this](int idx) {
-        QMetaObject::invokeMethod(this, [this, idx]() {
-            onPlayerChanged(idx);
-        }, Qt::QueuedConnection);
-    });
-    m_connectionIds.push_back(id2);
-
-    // gameOver → 游戏结束（int winnerId）
-    auto id3 = m_gvm->gameOver.connect([this](int winnerId) {
-        QMetaObject::invokeMethod(this, [this, winnerId]() {
-            onGameOver(winnerId);
-        }, Qt::QueuedConnection);
-    });
-    m_connectionIds.push_back(id3);
-
-    // stateChanged → 全面刷新
-    auto id4 = m_gvm->stateChanged.connect([this]() {
-        QMetaObject::invokeMethod(this, [this]() {
-            refreshDisplay();
-        }, Qt::QueuedConnection);
-    });
-    m_connectionIds.push_back(id4);
-
-    // logMessage → 日志显示
-    auto id5 = m_gvm->logMessage.connect([this](const std::string& msg) {
-        QMetaObject::invokeMethod(this, [this, msg]() {
-            showLog(QString::fromStdString(msg));
-        }, Qt::QueuedConnection);
-    });
-    m_connectionIds.push_back(id5);
-
-    // pendingActionCreated → 响应模式（PendingActionVM）
-    auto id6 = m_gvm->pendingActionCreated.connect(
-        [this](const PendingActionVM& info) {
-            QMetaObject::invokeMethod(this, [this, info]() {
-                onPendingActionCreated(info);
-            }, Qt::QueuedConnection);
-        });
-    m_connectionIds.push_back(id6);
-
-    // pendingActionCleared → 退出响应模式
-    auto id7 = m_gvm->pendingActionCleared.connect(
-        [this]() {
-            QMetaObject::invokeMethod(this, [this]() {
-                onPendingActionCleared();
-            }, Qt::QueuedConnection);
-        });
-    m_connectionIds.push_back(id7);
+    connect(m_gvm, &GameViewModel::phaseChanged, this, &GameBoardWidget::onPhaseChanged);
+    connect(m_gvm, &GameViewModel::currentPlayerChanged, this, &GameBoardWidget::onPlayerChanged);
+    connect(m_gvm, &GameViewModel::gameOver, this, &GameBoardWidget::onGameOver);
+    connect(m_gvm, &GameViewModel::stateChanged, this, &GameBoardWidget::refreshDisplay);
+    connect(m_gvm, &GameViewModel::logMessage, this, &GameBoardWidget::showLog);
+    connect(m_gvm, &GameViewModel::pendingActionCreated, this, &GameBoardWidget::onPendingActionCreated);
+    connect(m_gvm, &GameViewModel::pendingActionCleared, this, &GameBoardWidget::onPendingActionCleared);
 
     // 子控件信号
     connect(m_bottomHandArea, &HandCardAreaWidget::cardClicked,
@@ -191,18 +146,7 @@ void GameBoardWidget::connectViewModel()
 
 void GameBoardWidget::disconnectViewModel()
 {
-    if (!m_gvm) return;
-
-    for (auto id : m_connectionIds) {
-        m_gvm->phaseChanged.disconnect(id);
-        m_gvm->currentPlayerChanged.disconnect(id);
-        m_gvm->gameOver.disconnect(id);
-        m_gvm->stateChanged.disconnect(id);
-        m_gvm->logMessage.disconnect(id);
-        m_gvm->pendingActionCreated.disconnect(id);
-        m_gvm->pendingActionCleared.disconnect(id);
-    }
-    m_connectionIds.clear();
+    // Qt 信号槽无需手动断开，QObject 析构时自动处理
 }
 
 // ==================== 阶段切换 ====================
@@ -288,8 +232,8 @@ void GameBoardWidget::onPendingActionCreated(const PendingActionVM& info)
     // 如果没有可用的响应牌，自动跳过/扣血推进游戏
     if (responseCardIds.empty()) {
         // 通过 ViewModel 获取显示名
-        std::string name = m_gvm->playerDisplayName(info.targetId);
-        showLog(QString::fromStdString(name + " 无牌可响应，自动推进"));
+        QString name = m_gvm->playerDisplayName(info.targetId);
+        showLog(name + " 无牌可响应，自动推进");
         avm->skipResponse(info.targetId, true);  // forceNoCard=true
         return;
     }
@@ -310,7 +254,7 @@ void GameBoardWidget::onPendingActionCreated(const PendingActionVM& info)
         m_topHandArea->setCards(std::move(cardVMs), false);
     }
 
-    showLog(QString::fromStdString(info.description));
+    showLog(info.description);
 }
 
 void GameBoardWidget::onPendingActionCleared()
@@ -361,7 +305,7 @@ void GameBoardWidget::onCardClicked(int cardId)
 
         // 获取卡牌名用于日志（通过 CardViewModel）
         CardViewModel* cvm = findCardVM(cardId);
-        QString cardName = cvm ? QString::fromStdString(cvm->cardName())
+        QString cardName = cvm ? cvm->cardName()
                                : QStringLiteral("未知");
 
         if (targetIds.empty()) {
@@ -371,9 +315,9 @@ void GameBoardWidget::onCardClicked(int cardId)
             refreshDisplay();
         } else if (targetIds.size() == 1) {
             // 单一目标，自动选择
-            std::string targetName = m_gvm->playerDisplayName(targetIds[0]);
+            QString targetName = m_gvm->playerDisplayName(targetIds[0]);
             showLog(QStringLiteral("使用: ") + cardName
-                    + QStringLiteral(" → ") + QString::fromStdString(targetName));
+                    + QStringLiteral(" → ") + targetName);
             avm->playCard(cardId, curPlayerId, {targetIds[0]});
             refreshDisplay();
         } else {
@@ -431,11 +375,11 @@ void GameBoardWidget::onTargetClicked(int playerIndex)
             // 找到目标，执行出牌
             ActionViewModel* avm = m_gvm->actionVM();
             CardViewModel* cvm = findCardVM(m_pendingCardId);
-            QString cardName = cvm ? QString::fromStdString(cvm->cardName())
+            QString cardName = cvm ? cvm->cardName()
                                    : QStringLiteral("未知");
-            std::string targetName = m_gvm->playerDisplayName(tid);
+            QString targetName = m_gvm->playerDisplayName(tid);
             showLog(QStringLiteral("使用: ") + cardName
-                    + QStringLiteral(" → ") + QString::fromStdString(targetName));
+                    + QStringLiteral(" → ") + targetName);
             avm->playCard(m_pendingCardId, m_pendingCardUserId, {tid});
             exitTargetSelection();
             refreshDisplay();
@@ -506,8 +450,8 @@ void GameBoardWidget::onGameOver(int winnerId)
         PlayerViewModel* pvm = m_gvm->playerVM(winnerId);
         if (pvm) {
             msg = QStringLiteral("游戏结束！%1（%2）获胜！")
-                  .arg(QString::fromStdString(pvm->displayName()))
-                  .arg(QString::fromStdString(pvm->characterName()));
+                  .arg(pvm->displayName())
+                  .arg(pvm->characterName());
         }
     } else {
         msg = QStringLiteral("游戏结束！平局！");

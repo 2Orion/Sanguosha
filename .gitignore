@@ -2,3 +2,5 @@ build/*
 CMakeFiles/
 .vscode
 todo.md
+example
+.claude

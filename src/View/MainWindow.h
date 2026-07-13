@@ -9,7 +9,7 @@
 #include <QGroupBox>
 #include <memory>
 
-class GameViewModel;
+class GameBootstrap;
 class GameBoardWidget;
 
 /// 主窗口 — 选将界面 ↔ 游戏界面切换
@@ -27,25 +27,21 @@ private slots:
 
 private:
     void setupSelectionPage();
-    void setupGamePage();
-
-    /// 更新开始按钮状态（同武将不可重复选）
     void updateStartButton();
 
-    // ---- 页面 ----
     QStackedWidget* m_centralStack;
 
-    // ---- 选将界面 ----
-    QWidget*    m_selectionPage;
+    // 选将界面
+    QWidget*      m_selectionPage;
     QButtonGroup* m_p1Group;
     QButtonGroup* m_p2Group;
     QPushButton*  m_startBtn;
     QLabel*       m_p1SelectedLabel;
     QLabel*       m_p2SelectedLabel;
 
-    // ---- 游戏界面 ----
-    GameBoardWidget* m_gameBoard;
-    GameViewModel*   m_gvm;  // 手动管理生命周期
+    // 组合根（负责创建和管理 GameViewModel + GameBoardWidget）
+    GameBootstrap*  m_bootstrap = nullptr;
+    GameBoardWidget* m_gameBoard = nullptr;
 };
 
 #endif // MAINWINDOW_H

@@ -7,165 +7,93 @@
 // ==================== Character 基类 ====================
 
 Character::Character(const std::string& name, int maxHp,
-                     const std::string& skillName, const std::string& skillDesc)
-    : m_name(name)
+                     const std::string& skillName, const std::string& skillDesc,
+                     QObject* parent)
+    : QObject(parent)
+    , m_name(name)
     , m_maxHp(maxHp)
     , m_skillName(skillName)
     , m_skillDescription(skillDesc)
 {
 }
 
-std::string Character::characterName() const
-{
-    return m_name;
-}
+std::string Character::characterName() const { return m_name; }
+int Character::maxHp() const { return m_maxHp; }
+std::string Character::skillName() const { return m_skillName; }
+std::string Character::skillDescription() const { return m_skillDescription; }
 
-int Character::maxHp() const
-{
-    return m_maxHp;
-}
+bool Character::hasSkill() const { return true; }
 
-std::string Character::skillName() const
-{
-    return m_skillName;
-}
+bool Character::triggerCondition(GameEvent, const GameState*, const Player*) const { return false; }
 
-std::string Character::skillDescription() const
-{
-    return m_skillDescription;
-}
+void Character::triggerSkill(GameState*, Player*) {}
 
-bool Character::hasSkill() const
-{
-    return true;
-}
-
-bool Character::triggerCondition(GameEvent event,
-                                const GameState* state,
-                                const Player* self) const
-{
-    (void)event;
-    (void)state;
-    (void)self;
-    return false;
-}
-
-void Character::triggerSkill(GameState* state, Player* self)
-{
-    (void)state;
-    (void)self;
-}
-
-CardType Character::skillTransformCard(const Card* card) const
-{
-    return card->cardType();
-}
+CardType Character::skillTransformCard(const Card* card) const { return card->cardType(); }
 
 // ==================== 曹操 - 奸雄 ====================
 
-CaoCao::CaoCao()
-    : Character("曹操", 4, "奸雄", "受到伤害后，摸一张牌")
+CaoCao::CaoCao(QObject* parent)
+    : Character("曹操", 4, "奸雄", "受到伤害后，摸一张牌", parent)
 {
 }
 
-bool CaoCao::hasSkill() const
-{
-    return true;
-}
+bool CaoCao::hasSkill() const { return true; }
 
-bool CaoCao::triggerCondition(GameEvent event,
-                              const GameState* state,
-                              const Player* self) const
+bool CaoCao::triggerCondition(GameEvent event, const GameState*, const Player*) const
 {
-    (void)state;
-    (void)self;
     return event == GameEvent::OnDamage;
 }
 
 void CaoCao::triggerSkill(GameState* state, Player* self)
 {
-    if (!state || !self || !state->cardManager()) {
-        return;
-    }
-
+    if (!state || !self || !state->cardManager()) return;
     Card* card = state->cardManager()->drawCard();
     if (card) {
         self->addHandCard(card);
-        skillTriggered.notify(m_skillName);
+        emit skillTriggered(QString::fromStdString(m_skillName));
     }
 }
 
 // ==================== 关羽 - 武圣 ====================
 
-GuanYu::GuanYu()
-    : Character("关羽", 4, "武圣", "红色牌可当【杀】使用或打出")
+GuanYu::GuanYu(QObject* parent)
+    : Character("关羽", 4, "武圣", "红色牌可当【杀】使用或打出", parent)
 {
 }
 
-bool GuanYu::hasSkill() const
-{
-    return true;
-}
+bool GuanYu::hasSkill() const { return true; }
 
 CardType GuanYu::skillTransformCard(const Card* card) const
 {
-    if (card && card->isRed()) {
-        return CardType::Kill;
-    }
+    if (card && card->isRed()) return CardType::Kill;
     return card->cardType();
 }
 
 // ==================== 张飞 - 咆哮 ====================
 
-ZhangFei::ZhangFei()
-    : Character("张飞", 4, "咆哮", "出牌阶段可使用任意张【杀】")
+ZhangFei::ZhangFei(QObject* parent)
+    : Character("张飞", 4, "咆哮", "出牌阶段可使用任意张【杀】", parent)
 {
 }
 
-bool ZhangFei::hasSkill() const
-{
-    return true;
-}
-
-bool ZhangFei::triggerCondition(GameEvent event,
-                                const GameState* state,
-                                const Player* self) const
-{
-    (void)state;
-    (void)self;
-    (void)event;
-    return false;
-}
-
-void ZhangFei::triggerSkill(GameState* state, Player* self)
-{
-    (void)state;
-    (void)self;
-}
+bool ZhangFei::hasSkill() const { return true; }
+bool ZhangFei::triggerCondition(GameEvent, const GameState*, const Player*) const { return false; }
+void ZhangFei::triggerSkill(GameState*, Player*) {}
 
 // ==================== 赵云 - 龙胆 ====================
 
-ZhaoYun::ZhaoYun()
-    : Character("赵云", 4, "龙胆", "可将【杀】当【闪】，【闪】当【杀】使用或打出")
+ZhaoYun::ZhaoYun(QObject* parent)
+    : Character("赵云", 4, "龙胆", "可将【杀】当【闪】，【闪】当【杀】使用或打出", parent)
 {
 }
 
-bool ZhaoYun::hasSkill() const
-{
-    return true;
-}
+bool ZhaoYun::hasSkill() const { return true; }
+
 
 CardType ZhaoYun::skillTransformCard(const Card* card) const
 {
-    if (!card) {
-        return CardType::Kill;
-    }
-
-    if (card->cardType() == CardType::Kill) {
-        return CardType::Dodge;
-    } else if (card->cardType() == CardType::Dodge) {
-        return CardType::Kill;
-    }
-
+    if (!card) return CardType::Kill;
+    if (card->cardType() == CardType::Kill) return CardType::Dodge;
+    if (card->cardType() == CardType::Dodge) return CardType::Kill;
     return card->cardType();
 }
