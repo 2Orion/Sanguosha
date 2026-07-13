@@ -10,13 +10,19 @@ if(MSVC)
     add_compile_options(/utf-8)
 endif()
 
-# Qt包查找
+# Qt包查找（可选：未安装Qt时跳过图形界面目标，仅构建Model/ViewModel/控制台版）
 find_package(Qt6 QUIET COMPONENTS Widgets)
-if(NOT Qt6_FOUND)
-    find_package(Qt5 5.15 REQUIRED COMPONENTS Widgets)
-    set(QT_VERSION_MAJOR 5)
-else()
+if(Qt6_FOUND)
     set(QT_VERSION_MAJOR 6)
+else()
+    find_package(Qt5 5.15 QUIET COMPONENTS Widgets)
+    if(Qt5_FOUND)
+        set(QT_VERSION_MAJOR 5)
+    endif()
+endif()
+
+if(NOT Qt6_FOUND AND NOT Qt5_FOUND)
+    message(STATUS "未找到 Qt6/Qt5，将跳过图形界面版（SanguoshaQt）的构建")
 endif()
 
 # Model层源文件
@@ -67,42 +73,44 @@ set(VIEWMODEL_HEADERS
     src/ViewModel/GameViewModel.h
 )
 
-# View层源文件
-set(VIEW_SOURCES
-    src/View/main_qt.cpp
-    src/View/CardWidget.cpp
-    src/View/PlayerInfoWidget.cpp
-    src/View/HandCardAreaWidget.cpp
-    src/View/ActionPanelWidget.cpp
-    src/View/GameBoardWidget.cpp
-    src/View/MainWindow.cpp
-)
+# View层源文件（Qt 图形界面版，仅在找到 Qt 时构建）
+if(Qt6_FOUND OR Qt5_FOUND)
+    set(VIEW_SOURCES
+        src/View/main_qt.cpp
+        src/View/CardWidget.cpp
+        src/View/PlayerInfoWidget.cpp
+        src/View/HandCardAreaWidget.cpp
+        src/View/ActionPanelWidget.cpp
+        src/View/GameBoardWidget.cpp
+        src/View/MainWindow.cpp
+    )
 
-set(VIEW_HEADERS
-    src/View/CardWidget.h
-    src/View/PlayerInfoWidget.h
-    src/View/HandCardAreaWidget.h
-    src/View/ActionPanelWidget.h
-    src/View/GameBoardWidget.h
-    src/View/MainWindow.h
-)
+    set(VIEW_HEADERS
+        src/View/CardWidget.h
+        src/View/PlayerInfoWidget.h
+        src/View/HandCardAreaWidget.h
+        src/View/ActionPanelWidget.h
+        src/View/GameBoardWidget.h
+        src/View/MainWindow.h
+    )
 
-# Qt 版可执行程序
-add_executable(SanguoshaQt
-    ${VIEW_SOURCES}
-    ${VIEW_HEADERS}
-    ${VIEWMODEL_SOURCES}
-    ${VIEWMODEL_HEADERS}
-)
-target_include_directories(SanguoshaQt PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/src/Model
-    ${CMAKE_SOURCE_DIR}/src/ViewModel
-)
-target_link_libraries(SanguoshaQt PRIVATE
-    SanguoshaModel
-    Qt${QT_VERSION_MAJOR}::Widgets
-)
+    # Qt 版可执行程序
+    add_executable(SanguoshaQt
+        ${VIEW_SOURCES}
+        ${VIEW_HEADERS}
+        ${VIEWMODEL_SOURCES}
+        ${VIEWMODEL_HEADERS}
+    )
+    target_include_directories(SanguoshaQt PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/Model
+        ${CMAKE_SOURCE_DIR}/src/ViewModel
+    )
+    target_link_libraries(SanguoshaQt PRIVATE
+        SanguoshaModel
+        Qt${QT_VERSION_MAJOR}::Widgets
+    )
+endif()
 
 # 主程序（控制台版三国杀）
 add_executable(Sanguosha
