@@ -54,6 +54,7 @@ void GameBoardWidget::setupLayout()
 
 void GameBoardWidget::onPhaseChanged(PhaseType phase)
 {
+    m_currentPhase = phase;
     m_actionPanel->updateForPhase(phase, false);
 
     switch (phase) {
@@ -87,15 +88,17 @@ void GameBoardWidget::onPlayerDataUpdated(int playerId, const PlayerDisplayData&
 
 void GameBoardWidget::onHandCardsUpdated(int playerId, const CardDisplayList& data)
 {
+    // 双人同屏模式，双方手牌均正面朝上
     if (playerId == m_currentPlayerId)
-        m_bottomHandArea->setCards(data, false);
+        m_bottomHandArea->setCards(data, true);
     else
-        m_topHandArea->setCards(data, false);
+        m_topHandArea->setCards(data, true);
 }
 
 void GameBoardWidget::onPendingActionCreated(const PendingActionVM& info)
 {
     m_state = State::Responding;
+    m_responderId = info.targetId;   // 记住需要响应的玩家 ID
     m_actionPanel->updateForPendingAction(info);
     onLogMessage(info.description);
 }
@@ -103,6 +106,8 @@ void GameBoardWidget::onPendingActionCreated(const PendingActionVM& info)
 void GameBoardWidget::onPendingActionCleared()
 {
     m_state = State::Idle;
+    // 恢复操作面板到当前阶段应有的按钮状态
+    m_actionPanel->updateForPhase(m_currentPhase, false);
 }
 
 void GameBoardWidget::onGameOver(int winnerId)
@@ -130,7 +135,8 @@ void GameBoardWidget::onCardClicked(int cardId)
         emit playCardRequested(cardId, m_currentPlayerId);
         break;
     case State::Responding:
-        emit respondCardRequested(cardId, m_currentPlayerId);
+        if (m_responderId >= 0)
+            emit respondCardRequested(cardId, m_responderId);
         break;
     case State::Discarding:
         m_bottomHandArea->setSelection(cardId, true);

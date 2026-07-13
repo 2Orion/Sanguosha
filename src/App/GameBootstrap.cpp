@@ -26,14 +26,16 @@ void GameBootstrap::wireAll()
     if (!m_gvm || !m_board) return;
 
     // ── ViewModel 信号 → View 槽 ──
+    // phaseChanged 先经 GameBootstrap 检查弃牌阶段是否需要跳过
     m_gvm->connect(m_gvm, &GameViewModel::phaseChanged,
-                   m_board, &GameBoardWidget::onPhaseChanged);
+                   this, &GameBootstrap::onPhaseFromVM);
     m_gvm->connect(m_gvm, &GameViewModel::playerDataUpdated,
                    m_board, &GameBoardWidget::onPlayerDataUpdated);
     m_gvm->connect(m_gvm, &GameViewModel::handCardsUpdated,
                    m_board, &GameBoardWidget::onHandCardsUpdated);
+    // pendingActionCreated 先经 GameBootstrap 检查是否无牌可响，再决定是否转发
     m_gvm->connect(m_gvm, &GameViewModel::pendingActionCreated,
-                   m_board, &GameBoardWidget::onPendingActionCreated);
+                   this, &GameBootstrap::onPendingActionFromVM);
     m_gvm->connect(m_gvm, &GameViewModel::pendingActionCleared,
                    m_board, &GameBoardWidget::onPendingActionCleared);
     m_gvm->connect(m_gvm, &GameViewModel::gameOver,
@@ -138,15 +140,38 @@ void GameBootstrap::onSkipRequested()
     if (!state || !state->hasPendingAction()) return;
 
     int responderId = state->pendingActionInfo().target->playerId();
+    // 用户主动点击「跳过」→ 强制忽略 canSkip，承担后果
+    avm->skipResponse(responderId, true);
+}
 
-    // 检查是否有可用响应牌
-    const auto& info = state->pendingActionInfo();
-    auto responseCards = avm->getResponseCardIds(responderId, info.requiredCardType);
-
-    if (responseCards.empty() && !info.canSkip) {
-        // 无牌可出且不可跳过 → 强制跳过（承担后果）
-        avm->skipResponse(responderId, true);
-    } else {
-        avm->skipResponse(responderId, false);
+void GameBootstrap::onPhaseFromVM(PhaseType phase)
+{
+    if (phase == PhaseType::Discard) {
+        ActionViewModel* avm = m_gvm->actionVM();
+        int curId = m_gvm->currentPlayerId();
+        if (avm->getDiscardCount(curId) <= 0) {
+            // 手牌未超限，无需弃牌，直接跳过
+            m_gvm->advancePhase();
+            return;
+        }
     }
+    // 需要玩家交互，转发给 View
+    emit m_board->onPhaseChanged(phase);
+}
+
+// ==================== 无响应牌时自动推进 ====================
+
+void GameBootstrap::onPendingActionFromVM(const PendingActionVM& info)
+{
+    ActionViewModel* avm = m_gvm->actionVM();
+    auto responseCards = avm->getResponseCardIds(info.targetId, info.requiredCardType);
+
+    if (responseCards.empty()) {
+        // 无可用响应牌，自动跳过（承担后果）
+        avm->skipResponse(info.targetId, true);
+        return;
+    }
+
+    // 有可用响应牌，转发给 View 显示响应界面
+    emit m_board->onPendingActionCreated(info);
 }

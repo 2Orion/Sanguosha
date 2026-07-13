@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QVector>
 #include <QWidget>
+#include "PendingActionVM.h"
 
 class GameViewModel;
 class GameBoardWidget;
@@ -23,6 +24,10 @@ signals:
     void gameFinished();
 
 private slots:
+    // ViewModel 事件拦截
+    void onPendingActionFromVM(const PendingActionVM& info);
+    void onPhaseFromVM(PhaseType phase);
+
     // View → ViewModel 路由
     void onPlayCardRequested(int cardId, int playerId);
     void onRespondCardRequested(int cardId, int responderId);

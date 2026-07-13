@@ -101,6 +101,9 @@ void GameViewModel::initGame(Character* char1, Character* char2)
     emitLog(QStringLiteral("游戏开始！") + p1->displayName()
             + QStringLiteral("（") + p1->characterName() + QStringLiteral("）vs ")
             + p2->displayName() + QStringLiteral("（") + p2->characterName() + QStringLiteral("）"));
+
+    // 强制发射初始阶段信号（GameState 默认已是 Prepare，setCurrentPhase 不会触发）
+    emit phaseChanged(PhaseType::Prepare);
     pushAllData();
 }
 

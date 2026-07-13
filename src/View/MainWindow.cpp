@@ -309,12 +309,12 @@ void MainWindow::onStartGame()
 
     // 通过 Composition Root 创建并连接所有层
     m_bootstrap = new GameBootstrap(this, this);
-    m_gameBoard = m_bootstrap->boardWidget();
 
     connect(m_bootstrap, &GameBootstrap::gameFinished,
             this, &MainWindow::onGameFinished);
 
     m_bootstrap->startLocalGame(p1Id, p2Id);
+    m_gameBoard = m_bootstrap->boardWidget();
 
     m_centralStack->addWidget(m_gameBoard);
     m_centralStack->setCurrentWidget(m_gameBoard);

@@ -57,7 +57,9 @@ private:
     enum class State { Idle, SelectingTarget, Responding, Discarding };
     State m_state = State::Idle;
 
+    PhaseType m_currentPhase = PhaseType::Prepare;
     int m_currentPlayerId = 0;
+    int m_responderId = -1;       // 当前需要响应的玩家 ID
     int m_pendingCardId = -1;
     int m_pendingUserId = -1;
     int m_requiredDiscardCount = 0;

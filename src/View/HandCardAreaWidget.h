@@ -13,7 +13,7 @@ class HandCardAreaWidget : public QWidget {
 public:
     explicit HandCardAreaWidget(QWidget* parent = nullptr);
 
-    void setCards(const CardDisplayList& cards, bool faceUp = false);
+    void setCards(const CardDisplayList& cards, bool faceUp = true);
     void setSelection(int cardId, bool selected);
 
     int selectedCardId() const;

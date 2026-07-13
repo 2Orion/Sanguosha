@@ -34,6 +34,7 @@ public:
     GameState* gameState() const;
 
     static QString phaseName(PhaseType phase);
+    int currentPlayerId() const;
 
 signals:
     void phaseChanged(PhaseType phase);
@@ -72,7 +73,6 @@ private:
     void pushHandCards(int playerId);
     void pushAllData();
 
-    int currentPlayerId() const;
     Player* currentPlayer() const;
     Player* opponentPlayer() const;
     Player* playerByIndex(int index) const;

@@ -71,10 +71,11 @@ void HandCardAreaWidget::rebuildWidgets()
 
 void HandCardAreaWidget::clearWidgets()
 {
+    // 使用 deleteLater 而非 delete：防止在 CardWidget 的事件处理（如点击→出牌→刷新手牌）
+    // 调用栈中删除正在处理事件的自身对象，导致 use-after-free。
     for (auto* w : m_cardWidgets) {
         disconnect(w, nullptr, this, nullptr);
-        w->setParent(nullptr);
-        delete w;
+        w->deleteLater();
     }
     m_cardWidgets.clear();
 }
