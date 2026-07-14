@@ -6,15 +6,15 @@
 
 ## 0. 当前状态
 
-> 本节已按 `connection.md` / `README.md` 描述的 MVVM 重构（View 层零 ViewModel 依赖，一切通信经 `GameBootstrap` 中转）更新，反映当前代码的真实结构，而非早期设计草案。
+> 本节按当前代码的 MVVM 结构更新：View 层零 ViewModel 依赖，View 与 ViewModel 通过 Qt 信号/槽直连，连接由 `SGSApp::startLocalGame()` 集中建立。本文中的网络扩展将分别使用 `ServerApp` 和 `ClientApp` 作为新的组合根。
 
 ```
-Common 层 (值类型，无逻辑)   ✅ 完整 — CommonTypes、CardDisplayData、PlayerDisplayData、PendingActionVM
+Common 层 (值类型，无逻辑)   ✅ 完整 — CommonTypes、CardData、PlayerData、PendingActionData
 Model 层 (QObject + 信号)   ✅ 完整 — GameState、Player、Card 及子类、Character、CardManager、GameRule
 ViewModel 层 (QObject)      ✅ 完整 — GameViewModel（阶段/状态推送）、ActionViewModel（出牌/响应/弃牌）
 View 层 (Qt Widgets)        ✅ 完整 — MainWindow / GameBoardWidget / CardWidget / PlayerInfoWidget /
                                       HandCardAreaWidget / ActionPanelWidget，零编译依赖 ViewModel/Model
-App 层 (组合根)              ✅ 完整 — GameBootstrap，唯一同时认识 View 和 ViewModel 具体类型的模块
+App 层 (组合根)              ✅ 完整 — SGSApp，唯一同时认识本地 View 和 ViewModel 具体类型的模块
 冒烟测试                    ✅ 95/95 通过（仅覆盖 Model 层，View/ViewModel 需手动跑 SanguoshaQt.exe 验证）
 ```
 
@@ -131,9 +131,9 @@ namespace GameRule {
 
 #### ViewModel + View 层修改
 
-- `PlayerDisplayData`（`src/Common/PlayerDisplayData.h`）新增 `equipCards` 字段（`QVector<CardDisplayData>` 或按槽的等价结构），`GameViewModel::pushPlayerData` 里补充赋值
-- `PlayerInfoWidget` 新增装备区显示（在体力下方或右侧），从 `onPlayerDataUpdated` 收到的 `PlayerDisplayData` 里读取
-- `CardDisplayData`（`src/Common/CardDisplayData.h`）新增 `isEquipment` / `equipSlot` 字段，`GameViewModel` 在构造 `CardDisplayData` 时填充
+- `PlayerData`（`src/Common/PlayerData.h`）新增 `equipCards` 字段（`QVector<CardData>` 或按槽的等价结构），`GameViewModel::pushPlayerData` 里补充赋值
+- `PlayerInfoWidget` 新增装备区显示（在体力下方或右侧），从 `onPlayerDataUpdated` 收到的 `PlayerData` 里读取
+- `CardData`（`src/Common/CardData.h`）新增 `isEquipment` / `equipSlot` 字段，`GameViewModel` 在构造 `CardData` 时填充
 - 装备牌的手绘渲染（`CardWidget::drawCardFront`）增加"装备"分类标签和特殊边框
 
 ### 1.2 锦囊牌补充
@@ -211,34 +211,35 @@ public:
 
 ## 2. 局域网双人对战（核心拓展）
 
-> ⚠️ **第二次架构变更后的阅读说明（2026-07-14）**：本节写于第一次重构（`GameBootstrap` 中介者）之后，之后代码又经历了第二次重构：`GameBootstrap` 更名 **`SGSApp`**（纯组合根，View ↔ VM 改为信号槽直连），路由/拦截逻辑下沉到 ViewModel（出牌路由在 `ActionViewModel::onPlayCardRequested` 等 public slots，自动跳过弃牌/响应在 `GameViewModel::setNextPhase`/`onModelPendingActionCreated`），Common 值类型改名（`CardDisplayData`→`CardData`、`PlayerDisplayData`→`PlayerData`、`PendingActionVM`→`PendingActionData`、`CardDisplayList`→`CardList`）。阅读下文时按此映射，核心设计（服务器=网络化 View、客户端=网络化 ViewModel、协议字段对齐信号/槽参数）**仍然成立且变得更简单**：
+> 当前本地代码使用 `SGSApp` 作为组合根：View 与 ViewModel 通过 Qt 信号/槽直连，出牌、响应和阶段推进的校验分别位于 `ActionViewModel` 和 `GameViewModel` 的 public slots 中；自动跳过逻辑位于 ViewModel 内部。网络扩展沿用当前信号/槽形状，并新增两个组合根：服务器侧 `ServerApp`，客户端侧 `ClientApp`。Common 值类型使用 `CardData`、`PlayerData`、`PendingActionData` 和 `CardList`。
 >
-> - 文中的"GameBootstrap 服务器变体" → 一个不创建 View 的 `ServerApp` 组合根：把 `GameViewModel`/`ActionViewModel` 的信号 connect 到 `GameServer` 的广播槽，`GameServer` 收到客户端消息后直接调用 VM 的 public slots。
-> - 文中的"GameBootstrap 客户端变体" → `ClientApp` 组合根：把 `GameBoardWidget` 信号 connect 到 `GameClient` 的发送方法、`GameClient` 的同形状信号 connect 到 View 槽。
-> - **2.3 改造点 1（路由槽改 public）已天然满足**——路由槽已是 ViewModel 的 public slots，无需任何放宽；改造点 2/3（headless 启动路径、按模式连接）转化为"新写 ServerApp/ClientApp 两个小组合根"，`SGSApp` 本身可以不动。
-> - 拦截逻辑（自动跳过）已在 VM 内部、发信号之前完成，服务器端**自动免费获得**这些逻辑，不再需要"复用 GameBootstrap 拦截槽"的步骤。
+> - `ServerApp` 不创建 View，持有 `GameViewModel`、`ActionViewModel` 和 `GameServer`；VM 信号连接到 `GameServer` 的广播槽，`GameServer` 收到客户端消息后调用 VM 的 public slots。
+> - `ClientApp` 持有 `GameBoardWidget` 和 `GameClient`；View 信号连接到 `GameClient` 的发送方法，`GameClient` 的同形状信号连接到 View 槽。
+> - 当前 ViewModel 的路由槽已经是 public，无需修改现有 `SGSApp`；网络侧只需新增无 UI 的 `ServerApp` 和客户端 `ClientApp`。
+> - 自动跳过逻辑已经在 ViewModel 发出信号前完成，服务器侧复用 ViewModel 时自动获得同样的行为。
 >
 > 当前信号/槽的权威映射见 [`connection.md`](connection.md)。
 >
-> ⚠️ 本节已重写。原稿基于 `EventListener<T>` 观察者模式和 `GameController` 虚接口设计，与当前代码实际采用的 **Qt 信号/槽 + GameBootstrap 中介者**架构不符（该架构在两次重构后才成型，详见 `connection.md`）。原稿如果照搬实现，会引入一套与现有代码风格完全不同的第二套通信机制，且需要 View 持有一个 Controller 指针——直接违反当前"View 对 ViewModel/Model 零依赖、零持有"的核心约束。下面的设计改为复用现有的信号槽形状，把网络层做成 **GameBootstrap 中介逻辑的两个变体**，而不是给 View 层新增抽象。
+> 本节不再沿用原稿的 `EventListener<T>` 观察者模式和 `GameController` 虚接口设计。当前代码采用 Qt 信号/槽，View 不持有 ViewModel/Model 指针；网络层复用现有信号槽形状，通过 `ServerApp`/`ClientApp` 做组装，不给 View 层新增 Controller 抽象。
 
 ### 2.1 架构设计
 
-#### 关键洞察：复用 GameBootstrap 的中介形状
+#### 关键洞察：复用本地信号槽连接形状
 
 当前本地对战的连接关系（见 `connection.md`）已经是：
 
 ```
-GameViewModel/ActionViewModel  ──信号──►  GameBootstrap  ──槽调用──►  GameBoardWidget（View）
-GameBoardWidget（View）        ──信号──►  GameBootstrap  ──方法调用──►  GameViewModel/ActionViewModel
+GameViewModel/ActionViewModel  ──信号直连──►  GameBoardWidget（View）
+GameBoardWidget（View）        ──信号直连──►  ViewModel public slots
+                         连接由 SGSApp::startLocalGame() 建立
 ```
 
-`GameBootstrap` 私有槽（`onPlayCardRequested(int cardId, int playerId)`、`onRespondCardRequested(int cardId, int responderId)` 等，见 `src/App/GameBootstrap.h`）的参数已经是纯值类型（`int`/`PendingActionVM`），天然可以直接映射成网络消息的字段，不需要额外设计一套 VM 接口。同样，`GameViewModel`/`ActionViewModel` 对外暴露的信号（`phaseChanged`、`playerDataUpdated`、`handCardsUpdated`、`pendingActionCreated`、`pendingActionCleared`、`gameOver`、`logMessage`，见 `connection.md` 表格）也已经是可直接序列化的值类型。
+当前 ViewModel 的命令槽（`ActionViewModel::onPlayCardRequested`、`onRespondCardRequested`、`onTargetSelected`，以及 `GameViewModel` 的阶段/弃牌槽）和对外信号都使用纯值参数，天然可以映射成网络消息字段，不需要额外设计一套 VM 接口。具体信号形状以 `connection.md` 和当前头文件为准。
 
 **因此网络边界不需要新增 `RemoteGameVM`/`GameController` 这类"仿制 ViewModel 接口"的适配层**，只需要：
 
-- **服务器**：本地已有的 `GameViewModel`/`ActionViewModel`/`Model` 原样保留。新增 `GameServer`，它扮演"网络化的 View"——把 `GameBoardWidget` 原本要发的信号，替换成从 socket 解析出的网络消息去调用 `GameBootstrap` 的同名私有槽；把 `GameBootstrap` 原本要转发给 `GameBoardWidget` 槽的调用，替换成把参数序列化后广播给客户端。
-- **客户端**：`GameBoardWidget`（View）**完全不改**，因为它本就零依赖 ViewModel。新增 `GameClient`，它扮演"网络化的 ViewModel"——暴露和 `GameViewModel`/`ActionViewModel` 完全相同形状的信号（`phaseChanged`、`handCardsUpdated`……），内容由收到的网络消息填充；同时暴露和 `ActionViewModel` 相同形状的可调用方法（`playCard`、`respondCard`、`discardCard`、`skipResponse`……），调用后不在本地执行任何游戏逻辑，只是把参数打包发给服务器。客户端本地仍然需要一个轻量 `GameBootstrap`（或复用/参数化现有 `GameBootstrap`，让它接受"任意提供这组信号/槽形状的对象"而不是写死 `GameViewModel*`），负责把 `GameBoardWidget` 的信号接到 `GameClient` 的发送方法，把 `GameClient` 的信号接到 `GameBoardWidget` 的槽——这正是 `GameBootstrap::wireAll()` 现有逻辑的复用，不是重新发明。
+- **服务器**：本地已有的 `GameViewModel`/`ActionViewModel`/`Model` 原样保留。新增 `GameServer` 和无 UI 的 `ServerApp`；`ServerApp` 把 VM 信号连接到 `GameServer` 的广播槽，`GameServer` 将客户端消息分发到 VM 的 public slots。
+- **客户端**：`GameBoardWidget`（View）**完全不改**，因为它本就零依赖 ViewModel。新增 `GameClient` 和 `ClientApp`；`ClientApp` 把 View 信号连接到 `GameClient` 的发送方法，把 `GameClient` 的信号连接到 View 槽。`GameClient` 只负责网络收发，不在本地执行游戏规则。
 
 ```
 ┌───────── 服务器（Server）──────────┐          ┌───────── 客户端（Client）──────────┐
@@ -246,22 +247,22 @@ GameBoardWidget（View）        ──信号──►  GameBootstrap  ──方
 │  GameViewModel + ActionViewModel   │          │  GameBoardWidget（View，不改）      │
 │  （本地权威，执行全部游戏逻辑）      │          │           ▲例信号槽形状复用          │
 │           ▲│ 信号 / 槽调用          │          │           │                        │
-│  GameBootstrap（服务器变体）        │          │  GameBootstrap（客户端变体）        │
+│  ServerApp（服务器组合根）          │          │  ClientApp（客户端组合根）          │
 │  · VM 信号  → 序列化 → 广播         │  TCP     │  · GameClient 收到消息 → 转发给 View 槽│
-│  · 收到客户端消息 → 调用私有槽       │◄────────►│  · View 信号 → GameClient 发送给服务器│
+│  · 收到客户端消息 → 调用 VM public slot│◄───────►│  · View 信号 → GameClient 发送给服务器│
 │           ▲                        │  协议     │           ▲                        │
 │  GameServer（QTcpServer）           │          │  GameClient（QTcpSocket）           │
 │  只做转发，不含游戏逻辑              │          │  只做转发，不含游戏逻辑，无 Model     │
 └────────────────────────────────────┘          └─────────────────────────────────────┘
 ```
 
-**核心决策**：网络边界仍在 View ↔ ViewModel 之间（和原方案结论一致），但落地方式改为**在两端各放一个 `GameBootstrap` 变体做信号翻译**，而不是新建一整套镜像 ViewModel 接口。服务器端 `GameBootstrap` 的对端从"本地 View"换成"GameServer 网络转发"；客户端 `GameBootstrap` 的对端从"本地 ViewModel"换成"GameClient 网络转发"。两端 `GameBoardWidget`（View）代码保持 100% 一致，无需 `GameController`/`LocalController`/`RemoteController` 之类的运行时多态。
+**核心决策**：网络边界仍在 View ↔ ViewModel 之间。服务器端由 `ServerApp` 把 GameServer 接到本地 VM；客户端由 `ClientApp` 把 GameClient 接到 `GameBoardWidget`。两端的 `GameBoardWidget` 代码保持一致，无需 `GameController`/`LocalController`/`RemoteController` 之类的运行时多态。
 
 #### 为什么选择这个边界
 
 | 边界 | 优点 | 缺点 |
 |------|------|------|
-| View ↔ VM 之间，复用 GameBootstrap 形状（本方案） | 不新增 View 层抽象；协议字段与现有信号/槽参数一一对应，容易维护一致性 | 服务器/客户端各需要一个 GameBootstrap 变体，需要小心避免把两个变体的连接逻辑写重复 |
+| View ↔ VM 之间，复用现有信号槽形状（本方案） | 不新增 View 层抽象；协议字段与现有信号/槽参数一一对应，容易维护一致性 | 服务器/客户端各需要一个组合根，需要小心避免把两端的连接逻辑写重复 |
 | VM → View 之间（原方案的另一选项） | 协议简单 | View 必须改造为 async，且需要新增 Controller 抽象 |
 | 直接同步 Model | 逻辑简单 | 暴露 Model 指针，彻底破坏 MVVM |
 
@@ -281,7 +282,7 @@ src/Network/
 
 #### 消息类型定义
 
-消息字段直接对应 `GameBootstrap` 现有槽/信号的参数列表（见 `src/App/GameBootstrap.h` 和 `connection.md` 的信号表），不再单独设计一套字段。
+消息字段直接对应 `GameViewModel`/`ActionViewModel` 现有 public slots 和信号的参数列表（见对应头文件和 `connection.md` 的信号表），不再单独设计一套字段。
 
 ```cpp
 // Network/Protocol.h
@@ -292,21 +293,20 @@ enum class MessageType : uint8_t {
     SelectCharacter,          // 客户端 → 服务器：选择武将（对应 MainWindow::startGameRequested 的参数）
     GameStarted,              // 服务器 → 客户端：游戏开始，含双方角色信息
 
-    // View → GameBootstrap 槽的网络化（客户端 GameBootstrap 收到 View 信号后，
-    // 不再直接调 avm/gvm，而是打包成消息发给服务器）
-    PlayCardRequested,        // ~ GameBootstrap::onPlayCardRequested(cardId, playerId)
-    RespondCardRequested,     // ~ GameBootstrap::onRespondCardRequested(cardId, responderId)
-    DiscardCardRequested,     // ~ GameBootstrap::onDiscardCardRequested(cardId, playerId)
-    TargetSelected,           // ~ GameBootstrap::onTargetSelected(playerIndex)
-    EndPlayRequested,         // ~ GameBootstrap::onEndPlayRequested()
-    SkipRequested,            // ~ GameBootstrap::onSkipRequested()
+    // View 命令的网络化（ClientApp 收到 View 信号后打包发给服务器）
+    PlayCardRequested,        // ~ ActionViewModel::onPlayCardRequested(cardId, playerId)
+    RespondCardRequested,     // ~ ActionViewModel::onRespondCardRequested(cardId, responderId)
+    DiscardCardRequested,     // ~ GameViewModel::onDiscardCardRequested(cardId, playerId)
+    TargetSelected,           // ~ ActionViewModel::onTargetSelected(playerIndex)
+    EndPlayRequested,         // ~ GameViewModel::onEndPlayRequested()
+    SkipRequested,            // ~ GameViewModel::onSkipRequested()
 
-    // GameViewModel 信号的网络化（服务器 GameBootstrap 变体收到 VM 信号后，
-    // 不再调用 m_board 的槽，而是序列化广播给客户端）
+    // GameViewModel 信号的网络化（ServerApp 收到 VM 信号后，
+    // 不再调用本地 m_board 的槽，而是序列化广播给客户端）
     PhaseChanged,              // ~ GameViewModel::phaseChanged(PhaseType)
-    PlayerDataUpdated,         // ~ GameViewModel::playerDataUpdated(int, PlayerDisplayData)
-    HandCardsUpdated,          // ~ GameViewModel::handCardsUpdated(int, CardDisplayList)（对手手牌需脱敏，见下）
-    PendingActionCreated,      // ~ GameViewModel::pendingActionCreated(PendingActionVM)
+    PlayerDataUpdated,         // ~ GameViewModel::playerDataUpdated(int, PlayerData)
+    HandCardsUpdated,          // ~ GameViewModel::handCardsUpdated(int, CardList)（对手手牌需脱敏，见下）
+    PendingActionCreated,      // ~ GameViewModel::pendingActionCreated(PendingActionData)
     PendingActionCleared,      // ~ GameViewModel::pendingActionCleared()
     GameOver,                  // ~ GameViewModel::gameOver(int)
     LogMessage,                // ~ GameViewModel::logMessage(QString)
@@ -317,7 +317,7 @@ enum class MessageType : uint8_t {
 };
 ```
 
-**手牌脱敏**：`HandCardsUpdated` 广播给两个客户端时不能发送同一份数据——`CardDisplayData` 含 `cardType`/`suit`/`number`/`cardName` 等牌面信息。服务器 `GameBootstrap` 变体需要对每个客户端单独构造消息：发给牌的所有者时带完整 `CardDisplayList`；发给对手时只保留 `cardId`（用于后续弃牌/失去牌的动画匹配）和数量，牌面字段清空或替换为占位值。这一层脱敏原方案未提及，必须补上，否则对手能看到你的手牌内容。
+**手牌脱敏**：`HandCardsUpdated` 广播给两个客户端时不能发送同一份数据——`CardData` 含 `cardType`/`suit`/`number`/`cardName` 等牌面信息。服务器 `ServerApp`/`GameServer` 需要对每个客户端单独构造消息：发给牌的所有者时带完整 `CardList`；发给对手时只保留 `cardId`（用于后续弃牌/失去牌的动画匹配）和数量，牌面字段清空或替换为占位值。这一层脱敏必须在服务器广播边界完成，否则对手能看到手牌内容。
 
 #### 序列化格式
 
@@ -337,15 +337,15 @@ public:
 private:
     void writeInt32(QByteArray& buf, qint32 val);
     void writeString(QByteArray& buf, const QString& str);
-    void writeCardDisplayData(QByteArray& buf, const CardDisplayData& data);
-    void writePlayerDisplayData(QByteArray& buf, const PlayerDisplayData& data);
+    void writeCardData(QByteArray& buf, const CardData& data);
+    void writePlayerData(QByteArray& buf, const PlayerData& data);
     // ...
 };
 ```
 
 > 直接用 `QDataStream` 配合 `QByteArray` 会更省事（Qt 内置支持大多数值类型的 `<<`/`>>`），除非有明确的跨平台/跨语言互操作需求，否则不需要手写帧头校验和这类底层协议——这是原方案里唯一可以简化的部分。
 
-**消息结构体示例**（字段对齐 `GameBootstrap` 槽参数和 Common 层值类型）：
+**消息结构体示例**（字段对齐 ViewModel public slots 和 Common 层值类型）：
 
 ```cpp
 struct PlayCardMsg {          // 客户端 → 服务器，对应 onPlayCardRequested(cardId, playerId)
@@ -357,38 +357,38 @@ struct TargetSelectedMsg {    // 客户端 → 服务器，对应 onTargetSelect
     qint32 playerIndex;
 };
 
-struct PlayerDataMsg {        // 服务器 → 客户端，对应 playerDataUpdated(playerId, PlayerDisplayData)
+struct PlayerDataMsg {        // 服务器 → 客户端，对应 playerDataUpdated(playerId, PlayerData)
     qint32 playerId;
-    PlayerDisplayData data;   // 复用 Common 层结构体，不新造 PlayerState
+    PlayerData data;          // 复用 Common 层结构体，不新造 PlayerState
 };
 
-struct HandCardsMsg {         // 服务器 → 客户端，对应 handCardsUpdated(playerId, CardDisplayList)
+struct HandCardsMsg {         // 服务器 → 客户端，对应 handCardsUpdated(playerId, CardList)
     qint32 playerId;
-    CardDisplayList cards;    // 复用 Common 层结构体；发给非所有者时按上面脱敏规则裁剪字段
+    CardList cards;           // 复用 Common 层结构体；发给非所有者时按上面脱敏规则裁剪字段
 };
 
-struct PendingActionMsg {     // 服务器 → 客户端，对应 pendingActionCreated(PendingActionVM)
-    PendingActionVM info;     // 直接复用 Common 层结构体
+struct PendingActionMsg {     // 服务器 → 客户端，对应 pendingActionCreated(PendingActionData)
+    PendingActionData info;   // 直接复用 Common 层结构体
 };
 ```
 
-**关键点**：消息 payload 尽量直接复用 `src/Common/` 里已有的 `CardDisplayData`/`PlayerDisplayData`/`PendingActionVM`，而不是像原方案那样另建一套 `CardInfo`/`StateSyncMsg::PlayerState`。这样服务器端打包消息时可以直接拿 `GameViewModel` 信号槽的入参去序列化，不需要额外的字段映射层。
+**关键点**：消息 payload 尽量直接复用 `src/Common/` 里已有的 `CardData`/`PlayerData`/`PendingActionData`，而不是另建一套 `CardInfo`/`StateSyncMsg::PlayerState`。这样服务器端打包消息时可以直接拿 `GameViewModel` 信号槽的入参去序列化，只在按玩家脱敏时做必要的字段裁剪。
 
-### 2.3 服务器设计（GameServer）— "网络化的 View"
+### 2.3 服务器设计（ServerApp + GameServer）— "网络化的 View"
 
 ```
 GameServer (QTcpServer)
 ├── 监听端口（默认 9527）
 ├── 管理最多 2 个客户端连接（分配 playerId 0/1）
-├── 内部持有完整的 GameViewModel + ActionViewModel + Model（和本地模式一样，直接复用）
+├── ServerApp 持有完整的 GameViewModel + ActionViewModel + Model（和本地模式一样，直接复用）
 ├── 扮演 GameBoardWidget 在信号槽图里的位置：
 │   ├── 把 GameViewModel/ActionViewModel 的信号连接到自己的槽，序列化后按 playerId 定向广播
-│   └── 收到客户端消息后，直接调用 GameBootstrap 现有的私有槽逻辑（onPlayCardRequested 等）
+│   └── 收到客户端消息后，调用 ViewModel 的 public slots（onPlayCardRequested 等）
 │       —— 这部分校验/路由逻辑不需要重写，服务器只是把"谁触发了这个槽"从 View 信号换成网络消息
 └── 心跳定时器（保活 + 超时踢出）
 ```
 
-具体做法：服务器端复用一个 `GameBootstrap` 实例来跑本地游戏逻辑（`startLocalGame` 原样调用），但**不再创建 `GameBoardWidget`**，而是把 `GameBootstrap::wireAll()` 里原本连到 `m_board` 槽的那几条信号，改连到 `GameServer` 的槽上做序列化广播；`GameServer` 收到客户端消息后，调用 `GameBootstrap` 对应的 `onXxxRequested` 方法（这些方法当前是 `private slots`，需要放宽为 `public` 或者提供一层薄委托，见下方"改造点"）。
+具体做法：`ServerApp` 创建 `GameViewModel`、`ActionViewModel` 和 `GameServer`，但**不创建 `GameBoardWidget`**。它把 VM 的信号连接到 `GameServer` 的广播槽；`GameServer` 收到客户端消息后，直接调用 `ActionViewModel`/`GameViewModel` 的 public slots。现有本地 `SGSApp` 不需要改造，也不存在把私有槽改为 public 的步骤。
 
 ```cpp
 // Network/GameServer.h
@@ -409,11 +409,11 @@ private slots:
     void onClientReadyRead();
     void onClientDisconnected();
 
-    // 接收 GameBootstrap 的 VM 信号转发（连接方式见下）
+    // 接收 ServerApp 连接的 VM 信号并广播（连接方式见下）
     void broadcastPhaseChanged(PhaseType phase);
-    void broadcastPlayerData(int playerId, const PlayerDisplayData& data);
-    void broadcastHandCards(int playerId, const CardDisplayList& cards);  // 内部按 playerId 脱敏后分别发
-    void broadcastPendingAction(const PendingActionVM& info);
+    void broadcastPlayerData(int playerId, const PlayerData& data);
+    void broadcastHandCards(int playerId, const CardList& cards);  // 内部按 playerId 脱敏后分别发
+    void broadcastPendingAction(const PendingActionData& info);
     void broadcastGameOver(int winnerId);
     void broadcastLog(const QString& msg);
 
@@ -430,15 +430,16 @@ private:
 
     QTcpServer* m_server;
     std::array<ClientSlot, 2> m_clients;
-    GameBootstrap* m_bootstrap = nullptr;  // 服务器侧仍持有完整 Model+VM，逻辑零改动
+    GameViewModel* m_gameViewModel = nullptr;
+    ActionViewModel* m_actionViewModel = nullptr;
 };
 ```
 
-**改造点**：`GameBootstrap` 当前把所有路由槽（`onPlayCardRequested` 等，见 `src/App/GameBootstrap.h:25-35`）声明为 `private slots`，且构造函数里直接 `new MainWindow()`、把 `GameBoardWidget` 的创建耦合在 `startLocalGame` 里。要复用它做服务器逻辑核心，需要小改：
+**ServerApp 组装点**：
 
-1. 把 `GameBootstrap` 的路由方法（`onPlayCardRequested`/`onRespondCardRequested`/`onDiscardCardRequested`/`onTargetSelected`/`onEndPlayRequested`/`onAdvanceRequested`/`onSkipRequested`）改为 `public slots`，供 `GameServer` 直接连接/调用。
-2. 给 `GameBootstrap` 增加一个不创建 `MainWindow`/`GameBoardWidget` 的构造路径（例如无参构造 + 单独的 `startHeadlessGame(charId1, charId2)`），供服务器场景使用——这是唯一必须新增的 App 层改动，其余路由/拦截逻辑（`onPhaseFromVM`、`onPendingActionFromVM`）原样复用。
-3. `wireAll()` 里原本连到 `m_board` 槽的几行改为按运行模式（本地 UI / 服务器）走不同的目标对象。
+1. `ServerApp` 提供 `startHeadlessGame(charId1, charId2)`，创建并启动 `GameViewModel`，不创建窗口或牌桌。
+2. 将 `GameViewModel`/`ActionViewModel` 的信号连接到 `GameServer` 的广播槽，将网络命令分发到对应的 ViewModel public slots。
+3. 自动跳过逻辑继续使用 `GameViewModel::setNextPhase()` 和 `GameViewModel::onModelPendingActionCreated()`，不在网络层重复实现。
 
 ### 2.4 客户端设计（GameClient）— "网络化的 ViewModel"
 
@@ -455,7 +456,7 @@ GameClient (QObject)
 └── 不包含 Model，不做任何规则判断（校验全部信任服务器结果）
 ```
 
-客户端复用一个**不含 Model 的 `GameBootstrap`（或者一个提供同样 `wireAll()` 连接形状的等价对象）**：`GameBoardWidget` 的信号照常连到这个对象的路由槽，只是槽的实现从"调用 `ActionViewModel::playCard`"换成"调用 `GameClient::sendPlayCard`"；`GameClient` 收到服务器广播后 emit 的信号，直接连到 `GameBoardWidget` 的槽——连接关系和本地模式的 `wireAll()` 一一对应，`GameBoardWidget` 本身不用感知这个区别。
+客户端使用不含 Model 的 `ClientApp` 作为组合根：`GameBoardWidget` 的信号连接到 `GameClient` 的发送方法，`GameClient` 收到服务器广播后发出的信号直接连接到 `GameBoardWidget` 的槽。连接关系与本地 `SGSApp::startLocalGame()` 对齐，`GameBoardWidget` 本身不用感知运行模式差异。
 
 ```cpp
 // Network/GameClient.h
@@ -467,7 +468,7 @@ public:
     void connectToServer(const QString& host, quint16 port = 9527);
     int localPlayerId() const { return m_localPlayerId; }
 
-    // 与 ActionViewModel/GameViewModel 相同形状的方法，供网络化 GameBootstrap 调用
+    // 与 ActionViewModel/GameViewModel 相同形状的方法，供 ClientApp 调用
     void playCard(int cardId, int playerId, const std::vector<int>& targetIds);
     void respondCard(int cardId, int responderId);
     void discardCard(int cardId, int playerId);
@@ -483,9 +484,9 @@ signals:
 
     // 与 GameViewModel 信号完全相同的形状，GameBoardWidget 槽可以直接连
     void phaseChanged(PhaseType phase);
-    void playerDataUpdated(int playerId, const PlayerDisplayData& data);
-    void handCardsUpdated(int playerId, const CardDisplayList& cards);
-    void pendingActionCreated(const PendingActionVM& info);
+    void playerDataUpdated(int playerId, const PlayerData& data);
+    void handCardsUpdated(int playerId, const CardList& cards);
+    void pendingActionCreated(const PendingActionData& info);
     void pendingActionCleared();
     void gameOver(int winnerId);
     void logMessage(const QString& msg);
@@ -503,7 +504,7 @@ private:
 };
 ```
 
-**不再需要** `RemoteGameVM`/`PlayerVMAdapter` 这两个类——原方案让它们去镜像 `GameViewModel`/`PlayerViewModel` 的完整只读查询接口（`currentPlayerId()`、`playerHp()`……），是因为原方案假设 View 会主动调用 VM 方法拉取状态。但当前 View（`GameBoardWidget`）从不主动查询 VM，全部状态都是通过槽被动接收（见 `connection.md` 的信号表），所以 `GameClient` 只需要转发信号即可，不需要维护一份完整的本地状态镜像和只读查询接口。
+**不再需要** `RemoteGameVM`/`PlayerVMAdapter` 这两个类——原方案让它们去镜像 ViewModel 的完整只读查询接口，是因为原方案假设 View 会主动调用 VM 方法拉取状态。但当前 View（`GameBoardWidget`）从不主动查询 VM，全部状态都是通过槽被动接收（见 `connection.md` 的信号表），所以 `GameClient` 只需要转发信号即可，不需要维护一份完整的本地状态镜像和只读查询接口。
 
 ### 2.5 View 层适配
 
@@ -515,8 +516,8 @@ private:
 |------|------|
 | `MainWindow.h/cpp` | 新增"创建房间"/"加入房间"入口，新增联网配置对话框 |
 | 新增 `View/NetworkConfigDialog.h/cpp` | 联网配置对话框（IP/端口输入），纯 UI，不依赖 Network 层类型（通过信号把 host/port 传出去） |
-| `App/GameBootstrap.h/cpp` | 路由槽改 `public`；新增无 UI 的服务器侧启动路径（见 2.3 改造点） |
-| 新增 `App/ClientBootstrap.h/cpp`（或扩展 `GameBootstrap` 支持"客户端模式"） | 组装 `GameBoardWidget` + `GameClient`，按 2.4 描述的方式做信号翻译 |
+| 新增 `App/ServerApp.h/cpp` | 组装无 UI 的 `GameViewModel`/`ActionViewModel` + `GameServer`，提供服务器侧启动路径 |
+| 新增 `App/ClientApp.h/cpp` | 组装 `GameBoardWidget` + `GameClient`，按 2.4 描述的方式建立信号连接 |
 | 新增 `Network/GameServer.h/cpp` | 服务器网络层 |
 | 新增 `Network/GameClient.h/cpp` | 客户端网络层 |
 | 新增 `Network/Protocol.h`、`MessageSerializer.h/cpp` | 消息定义与序列化 |
@@ -538,31 +539,31 @@ private:
    SelectCharacter(曹操)                    SelectCharacter(关羽)
 
 7. 双方都 ready 后，服务器调用
-   GameBootstrap::startHeadlessGame(0,1)
+   ServerApp::startHeadlessGame(0,1)
    （内部即 GameViewModel::startGame，逻辑不变）
 
 8. GameViewModel 发出的每个信号
-   经服务器 GameBootstrap 变体 → GameServer
+    经 ServerApp 连接 → GameServer
    序列化后广播（HandCardsUpdated 按 playerId 脱敏）  →  9. GameClient 收到，emit 同形状信号
                                                           → GameBoardWidget 槽接收，UI 更新（与本地模式路径一致）
 
 10. P1 双击「杀」
-    GameBoardWidget::playCardRequested → 本地 GameBootstrap 变体
+    GameBoardWidget::playCardRequested → ClientApp
     → GameClient::playCard → 发送 PlayCardRequested        →
 
 11. 服务器 GameServer 收到消息
-    → 调用 GameBootstrap::onPlayCardRequested(cardId, playerId)
+    → 调用 ActionViewModel::onPlayCardRequested(cardId, playerId)
       （与本地模式完全同一份校验/路由代码）
     → ActionViewModel::playCard(...) 执行
     → GameViewModel 发出 pendingActionCreated
-    → 服务器 GameBootstrap 变体的 onPendingActionFromVM 拦截
-      （自动跳过无牌可响应的情况，逻辑复用）
+    → GameViewModel::onModelPendingActionCreated 在发信号前处理自动跳过
+      （无牌可响应时不广播待定动作）
     → GameServer 广播 PendingActionCreated(Dodge, P2)      →  12. P2 客户端收到，显示响应界面
 
 13.                                                    ←    14. P2 点击「跳过」
                                                               GameClient::skipResponse() → 发送 SkipRequested
 
-15. 服务器收到，调用 onSkipRequested
+15. 服务器收到，调用 GameViewModel::onSkipRequested
     → ActionViewModel::skipResponse(P2, true) → dealDamage
     → GameViewModel 发出 playerDataUpdated(P2, hp-1)
     → GameServer 广播                                   →  16. 双方收到状态更新
@@ -570,7 +571,7 @@ private:
 17. ...（后续流程与本地模式完全一致，只是每一步信号都多绕一次网络）
 ```
 
-**这个流程和原方案（2.6 旧版）描述的步骤基本一致，区别只在于：所有"服务器执行 XXX"的步骤复用的是 `GameBootstrap`/`GameViewModel`/`ActionViewModel` 现有代码，不是重新实现一遍游戏逻辑分发。**
+**这个流程和原方案（2.6 旧版）描述的步骤基本一致，区别在于：服务器直接复用 `GameViewModel`/`ActionViewModel` 的 public slots 和内部自动跳过逻辑，不在网络层重新实现游戏逻辑分发。**
 
 ### 2.7 可靠性设计
 
@@ -608,7 +609,7 @@ void GameClient::startReconnectTimer()
 }
 ```
 
-重连要真正生效，服务器需要保留断线玩家的 `playerId` 一段时间并支持"重新绑定"，客户端重连成功后需要请求一次全量状态同步（例如新增 `MessageType::RequestFullSync`，服务器把当前 `GameState` 通过现有的 `pushAllData()`（`GameViewModel` 已有此方法，见 `src/ViewModel/GameViewModel.h:74`）重新推送一遍）——这部分原方案没有细化，留到阶段二实现时再落地。
+重连要真正生效，服务器需要保留断线玩家的 `playerId` 一段时间并支持"重新绑定"，客户端重连成功后需要请求一次全量状态同步（例如新增 `MessageType::RequestFullSync`，服务器把当前 `GameState` 通过现有的 `pushAllData()`（`GameViewModel` 已有此方法，见 `src/ViewModel/GameViewModel.h:81`）重新推送一遍）——这部分原方案没有细化，留到阶段二实现时再落地。
 
 ---
 
@@ -761,16 +762,16 @@ class GameBoardWidget {
 
 ## 4. Bug 修复与优化
 
-> ⚠️ 原稿的 4.1（运行一段时间后无响应退出）和 4.3（有可响应牌时必须响应不可跳过）已经在实际代码里修复，且根因和原稿的推测不一样——原稿是问题发现前基于猜测写的排查清单，现在已经有确凿的根因分析和修复记录，两节内容已过时，删除并替换为下面的指引。真正的根因、修复方式和涉及文件见 [`CHANGELOG.md`](CHANGELOG.md)：
+> ⚠️ 原稿的 4.1（运行一段时间后无响应退出）和 4.3（有可响应牌时必须响应不可跳过）中的部分问题已经在实际代码里修复，且根因和原稿的推测不一样。原稿是问题发现前基于猜测写的排查清单，真正的根因、修复方式和涉及文件见 [`CHANGELOG.md`](CHANGELOG.md)。当前仍需为 ViewModel 的响应校验、濒死链和网络非法命令补回归测试。
 >
 > - **运行一段时间后无响应卡退**：根因不是 `EventListener`（本项目从未使用这个机制）或定时器生命周期，而是 `HandCardAreaWidget::clearWidgets()` 用 `delete w` 同步销毁了正在处理 `mousePressEvent` 调用栈上的 `CardWidget` 自身，导致 use-after-free。修复是把 `delete w` 换成 `w->deleteLater()`。
-> - **有可响应牌时必须响应不可跳过 / 无响应牌时卡死**：根因是 `ActionPanelWidget::updateForPendingAction` 在 `canSkip=false` 时隐藏「跳过」按钮，且 `ActionViewModel::skipResponse` 在非强制模式下会因 `canSkip` 检查直接 return。修复是始终显示「跳过」按钮，`GameBootstrap::onSkipRequested` 统一用 `forceNoCard=true` 调用，并新增 `onPendingActionFromVM` 在无响应牌时自动跳过（这条已经体现在当前 `GameBootstrap::onPendingActionFromVM` 的实现里，见 `src/App/GameBootstrap.cpp`）。
+> - **有可响应牌时必须响应不可跳过 / 无响应牌时卡死**：根因是 `ActionPanelWidget::updateForPendingAction` 在 `canSkip=false` 时隐藏「跳过」按钮，且 `ActionViewModel::skipResponse` 在非强制模式下会因 `canSkip` 检查直接 return。当前修复是始终显示「跳过」按钮，由 `GameViewModel::onSkipRequested` 统一以 `forceNoCard=true` 调用，并由 `GameViewModel::onModelPendingActionCreated` 在无响应牌时自动跳过，详见 `src/ViewModel/GameViewModel.cpp`。
 >
 > 后续再遇到类似的"卡死"、"崩溃"问题，优先去读 `CHANGELOG.md` 里已记录的坑（信号在新旧值相同时不触发、`delete` vs `deleteLater()`、响应面板状态未恢复），大多数疑难杂症已经在这几类模式里出现过。
 
 ### 4.1 武将技能不能正常使用
 
-> ⚠️ 原编号为 4.2，因上方两节被删除而重新编号。以下问题清单仍待验证——静态阅读代码（`src/Model/GameRule.cpp`、`src/Model/Character.cpp`、`src/ViewModel/ActionViewModel.cpp`）显示触发链条已经接好（`GameRule::dealDamage` 里会调 `triggerCondition`/`triggerSkill`，`ActionViewModel::getResponseCardIds`/`canPlayKill` 里都有 `skillTransformCard` 调用），但没有实跑验证武将技能的实际游戏效果，建议先跑一局本地对战测试这四个武将，确认是否还有问题，而不要假设原稿描述的现象仍然存在。
+> ⚠️ 原编号为 4.2，因上方两节被删除而重新编号。以下问题清单仍待验证——静态阅读代码（`src/Model/GameRule.cpp`、`src/Model/Character.cpp`、`src/ViewModel/ActionViewModel.cpp`）显示触发链条已经接好（`GameRule::dealDamage` 里会调 `triggerCondition`/`triggerSkill`，`ActionViewModel::getResponseCardIds`/`playsAsKill` 里都有 `skillTransformCard` 调用），但没有实跑验证武将技能的实际游戏效果，建议先跑一局本地对战测试这四个武将，确认是否还有问题，而不要假设原稿描述的现象仍然存在。
 
 | 技能 | 当前问题 | 修复 |
 |------|---------|------|
@@ -798,18 +799,20 @@ void GameRule::dealDamage(GameState* state, Player* target, int value, Player* s
 }
 
 // 统一响应牌收集（含技能转化）
-std::vector<Card*> ActionViewModel::getResponseCards(Player* player, CardType requiredType) {
-    std::vector<Card*> result;
+std::vector<int> ActionViewModel::getResponseCardIds(int playerId, CardType requiredType) const {
+    std::vector<int> result;
+    Player* player = findPlayer(playerId);
+    if (!player) return result;
     for (Card* card : player->handCards()) {
         if (card->cardType() == requiredType) {
-            result.push_back(card);
+            result.push_back(card->id());
             continue;
         }
         // 武将技能转化
         if (player->character()) {
             CardType transformed = player->character()->skillTransformCard(card);
             if (transformed == requiredType) {
-                result.push_back(card);
+                result.push_back(card->id());
             }
         }
     }
@@ -835,16 +838,16 @@ std::vector<Card*> ActionViewModel::getResponseCards(Player* player, CardType re
 
 ### 阶段二：局域网对战（约 4 周）
 
-> 按 2.1-2.7 的重新设计更新，去掉了 `RemoteGameVM`/`GameController`/`LocalController`/`RemoteController` 四项（不再需要），`GameBoardWidget` 从"改造"变为"零改动"，新增了 `GameBootstrap` 的小幅重构任务。
+> 按 2.1-2.7 的重新设计更新，去掉了 `RemoteGameVM`/`GameController`/`LocalController`/`RemoteController` 四项（不再需要），`GameBoardWidget` 从"改造"变为"零改动"，新增 `ServerApp`/`ClientApp` 两个组合根和网络层对象。
 
 | 任务 | 文件 | 优先级 |
 |------|------|--------|
 | Protocol.h 消息定义 | `Network/Protocol.h` | P0 |
 | MessageSerializer（建议直接用 QDataStream） | `Network/MessageSerializer.h/cpp` | P0 |
-| GameBootstrap 路由槽改 public + 新增无 UI 启动路径 | `App/GameBootstrap.h/cpp` | P0 |
+| ServerApp 无 UI 启动路径 | `App/ServerApp.h/cpp` | P0 |
 | GameServer（服务器侧"网络化 View"） | `Network/GameServer.h/cpp` | P0 |
 | GameClient（客户端侧"网络化 ViewModel"） | `Network/GameClient.h/cpp` | P0 |
-| 客户端信号翻译（新 App 层对象或 GameBootstrap 客户端模式） | `App/ClientBootstrap.h/cpp` 或 `App/GameBootstrap.h/cpp` | P0 |
+| 客户端信号翻译 | `App/ClientApp.h/cpp` | P0 |
 | 手牌脱敏逻辑（对手手牌广播前裁剪牌面字段） | `Network/GameServer.cpp` | P0 |
 | MainWindow 联网入口（创建/加入房间） | `View/MainWindow.h/cpp` | P1 |
 | 网络配置对话框 | `View/NetworkConfigDialog.h/cpp` | P1 |
@@ -874,7 +877,7 @@ std::vector<Card*> ActionViewModel::getResponseCards(Player* player, CardType re
 | GameServer 持有完整 GameViewModel/Model | ❌ 否 | 服务器端本就该拥有完整 VM+Model，和本地单机模式一致 |
 | GameClient 暴露 GameViewModel 同形状信号/方法 | ❌ 否 | 只是转发网络消息，不持有、不访问 Model 指针 |
 | GameBoardWidget 零改动，同时被本地/服务器/客户端复用 | ❌ 否，且是收益 | View 本来就零依赖 ViewModel，天然可以被三种运行模式复用，不需要新增 Controller 抽象层 |
-| GameBootstrap 路由槽改为 public | ⚠️ 轻微放宽封装 | 仅供同进程内的 `GameServer`/客户端网络对象调用，不对外暴露给 View；可接受的最小改动 |
+| ServerApp/ClientApp 组合根 | ❌ 否 | 只负责创建对象和建立连接，不向 View 暴露 Model 指针；现有 `SGSApp` 本地路径保持不变 |
 
 原方案里 `GameController`/`LocalController`/`RemoteController`/`RemoteGameVM`/`PlayerVMAdapter` 五个类已从设计中移除（见 2.3-2.5），因为它们解决的问题（"让 View 用同一套接口访问本地/远程数据"）当前架构已经用"View 只认 Common 值类型 + 信号槽"的方式解决了，不需要再加一层运行时多态。
 
@@ -888,13 +891,13 @@ std::vector<Card*> ActionViewModel::getResponseCards(Player* player, CardType re
   └── GameBoardWidget 全程只接触 Common 层值类型，不知道数据来自本地 VM 还是网络
 ```
 
-**关键约束**：`GameClient` 和服务器侧的网络转发代码永远不能持有或传递 `Model::Player*`/`Model::Card*` 指针。所有跨网络的数据必须是 `src/Common/` 里已有的值类型（`CardDisplayData`/`PlayerDisplayData`/`PendingActionVM`）或更基础的 `int`/`QString`/枚举——这和本地模式 View 对 Model 的约束完全一致，只是把"跨层"换成了"跨网络"。
+**关键约束**：`GameClient` 和服务器侧的网络转发代码永远不能持有或传递 `Model::Player*`/`Model::Card*` 指针。所有跨网络的数据必须是 `src/Common/` 里已有的值类型（`CardData`/`PlayerData`/`PendingActionData`/`CardList`）或更基础的 `int`/`QString`/枚举——这和本地模式 View 对 Model 的约束完全一致，只是把"跨层"换成了"跨网络"。
 
 ---
 
 ## 7. 三人分工方案（按内容顺序切分）
 
-> ⚠️ 文中出现的 `GameBootstrap` 均对应现在的 `SGSApp`（第二次重构后更名，见 §2 顶部说明）；"GameBootstrap 改造"任务大幅缩水——路由槽已是 ViewModel 的 public slots，乙只需新写 `ServerApp`/`ClientApp` 两个组合根，`SGSApp` 不动，甲乙在 App 层的文件冲突随之消失。值类型按 `CardData`/`PlayerData`/`PendingActionData` 理解。
+> 本节按当前代码命名：本地模式使用 `SGSApp`，网络模式新增 `ServerApp`/`ClientApp` 两个组合根；ViewModel 路由槽已经是 public slots，`SGSApp` 不需要为网络模式改造。值类型统一使用 `CardData`/`PlayerData`/`PendingActionData`。
 >
 > 与第 5 节路线图配套。按文档内容章节切分：甲负责 §1+§4（卡牌与规则），乙负责 §2 全部（网络对战），丙负责 §3+阶段三（UI 与稳定性）。这个切法的特点是**乙的网络主线 + 甲丙两条支线定期汇入**——网络的服务器/客户端两端由一人完成，信号翻译逻辑高度对称，一人写不容易两边对不上；代价是工作量不均（§2 是 4 周，§1/§3 各 2 周）和两处串行依赖，必须用 7.2 的契约前置和 7.5 的时间线错位来消化。
 
@@ -903,7 +906,7 @@ std::vector<Card*> ActionViewModel::getResponseCards(Player* player, CardType re
 | 成员 | 内容 | 对应章节 | 涉及文件 |
 |------|------|---------|---------|
 | **甲：卡牌与规则** | 装备牌、锦囊、牌堆、武将、技能 Bug 验证 | §1、§4、阶段一 | `Model/*`、`Common/*`（加字段）、`PlayerInfoWidget`（装备区显示） |
-| **乙：网络对战** | 协议、序列化、GameServer、GameClient、ClientBootstrap、GameBootstrap 改造 | §2 全部、阶段二 | `Network/*`（全部新建）、`App/*` |
+| **乙：网络对战** | 协议、序列化、GameServer、GameClient、ServerApp、ClientApp | §2 全部、阶段二 | `Network/*`（全部新建）、`App/*` |
 | **丙：UI 与稳定性** | 动画、特效、布局、日志、联网入口 UI、冒烟测试补充 | §3、阶段三 | `View/*`、`tests/smoke_test.cpp` |
 
 其中 §2.5 表格里的两个纯 View 文件（`MainWindow` 联网入口、`NetworkConfigDialog`）划给丙而不是乙——它们不依赖 Network 层类型（通过信号传出 host/port），本质是 UI 内容，同时给乙减量。
@@ -912,20 +915,20 @@ std::vector<Card*> ActionViewModel::getResponseCards(Player* player, CardType re
 
 乙的序列化依赖甲给 Common 值类型加的新字段，这是本切法最大的串行依赖，处理方式：
 
-1. **甲先提交 Common 新字段的结构定义**——`PlayerDisplayData::equipCards`、`CardDisplayData::isEquipment`/`equipSlot`（§1.1），哪怕 Model 逻辑还没写，先把结构体定下来。
-2. **乙随后冻结 `Network/Protocol.h`**：消息枚举 + 消息结构体，字段直接抄 `GameBootstrap` 现有槽/信号的参数（§2.2 已列全）；并写 Common 值类型的 `QDataStream <<`/`>>` 运算符（甲评审）。建议协议加版本号字段，字段变更时递增。
-3. **乙的 `GameBootstrap` 改造最先合入**：路由槽改 `public slots` + 新增 `startHeadlessGame()`（§2.3 改造点 1-3）。
+1. **甲先提交 Common 新字段的结构定义**——`PlayerData::equipCards`、`CardData::isEquipment`/`equipSlot`（§1.1），哪怕 Model 逻辑还没写，先把结构体定下来。
+2. **乙随后冻结 `Network/Protocol.h`**：消息枚举 + 消息结构体，字段直接对齐 `GameViewModel`/`ActionViewModel` 的 slots/signals（§2.2 已列全）；并写 Common 值类型的 `QDataStream <<`/`>>` 运算符（甲评审）。建议协议加版本号字段，字段变更时递增。
+3. **乙的 `ServerApp`/`ClientApp` 组装最先合入**：先完成服务器 headless 启动和客户端信号翻译，再接入完整网络流程。
 
 ### 7.3 乙的网络主线（约 4 周）
 
 | 顺序 | 任务 | 说明 |
 |------|------|------|
 | 1 | `Protocol.h` + `MessageSerializer` | 用 QDataStream，不手写帧校验（§2.2 建议） |
-| 2 | `GameBootstrap` headless 路径 | 不创建 MainWindow/GameBoardWidget 的启动路径 |
+| 2 | `ServerApp` headless 路径 | 不创建 MainWindow/GameBoardWidget 的启动路径 |
 | 3 | `GameServer` | QTcpServer，连接管理、playerId 分配、握手/选将流程 |
 | 4 | **手牌脱敏** | 对手手牌只发 cardId + 数量，牌面字段清空（§2.2 强调的安全点，P0） |
 | 5 | `GameClient` | 暴露与 GameViewModel/ActionViewModel 同形状的信号和方法，纯转发，零 Model |
-| 6 | `ClientBootstrap` | GameBoardWidget 信号 → GameClient 发送方法、GameClient 信号 → View 槽，照抄 `wireAll()` 连接形状 |
+| 6 | `ClientApp` | GameBoardWidget 信号 → GameClient 发送方法、GameClient 信号 → View 槽，照抄 `SGSApp::startLocalGame()` 的连接形状 |
 | 7 | 心跳保活 | Ping/Pong + 超时踢出（§2.7）；断线重连留到联调后，首版可不做 |
 
 ### 7.4 甲、丙的支线与汇入点
@@ -945,5 +948,5 @@ std::vector<Card*> ActionViewModel::getResponseCards(Player* player, CardType re
 
 1. **工作量不均是本切法的固有代价**：乙 4 周网络主线无人分担。缓解手段已内置在 7.1（View 侧网络 UI 划给丙）和 7.4（甲第 3 周汇入联调）——如果乙进度落后，优先砍掉的是心跳保活和断线重连（首版可不做，见 §2.7），而不是手牌脱敏（P0）。
 2. **Common 值类型字段变更必须走三人同步**：甲加字段 → 乙补序列化 → 丙补 View 渲染（§1.1 和 §2.2 都依赖这条链）。甲在阶段一中途如需再加字段，必须先通知乙升协议版本号。
-3. **`GameBootstrap.h/cpp` 是甲乙冲突热点**（乙改造它，甲的新拦截逻辑也加在这）。规则：乙的改造 PR 最先合入，甲的拦截逻辑改动之后再进。
-4. **View 层零改动是验收标准**：如果联调中发现 `GameBoardWidget` 需要为网络模式改代码，说明设计跑偏了——先回头查 ClientBootstrap 的信号翻译，而不是改 View。丙的动画改动只加新方法，不改现有槽的签名，否则会波及乙的连接代码。
+3. **`App/ServerApp.h/cpp` 和 `App/ClientApp.h/cpp` 是网络组装热点**。规则：先冻结 Common DTO 和网络协议，再分别合入 ServerApp、ClientApp；现有 `SGSApp` 只保留本地模式连接，不把网络逻辑回填到本地组合根。
+4. **View 层零改动是验收标准**：如果联调中发现 `GameBoardWidget` 需要为网络模式改代码，说明设计跑偏了——先回头查 `ClientApp` 的信号连接，而不是改 View。丙的动画改动只加新方法，不改现有槽的签名，否则会波及乙的连接代码。
