@@ -22,6 +22,11 @@ struct CardData {
     bool isPlayable = false;
     bool isHighlighted = false;
     int ownerId = -1;
+
+    // ==================== 装备牌字段 ====================
+    bool isEquipment = false;
+    EquipSlot equipSlot = EquipSlot::Weapon;
+    int attackRange = 0;       // 武器攻击距离加成
 };
 
 using CardList = QVector<CardData>;
