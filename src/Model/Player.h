@@ -3,45 +3,46 @@
 
 #include <vector>
 #include <string>
+#include <QObject>
 #include "CommonTypes.h"
-#include "Event.h"
 
 class Card;
 class Character;
 class GameState;
 
-class Player {
+class Player : public QObject {
+    Q_OBJECT
 public:
-    Player();
-    ~Player();
+    explicit Player(QObject* parent = nullptr);
+    ~Player() override;
 
     // ==================== 身份标识 ====================
 
     int playerId() const;
     void setPlayerId(int id);
-    std::string displayName() const;
-    void setDisplayName(const std::string& name);
+    QString displayName() const;
+    void setDisplayName(const QString& name);
 
     // ==================== 武将管理 ====================
 
     void setCharacter(Character* character);
     Character* character() const;
-    std::string characterName() const;
+    QString characterName() const;
     bool hasCharacter() const;
 
     // ==================== 体力管理 ====================
 
     int hp() const;
     void setHp(int value);
-    int maxHp() const;           // 委托给 Character
+    int maxHp() const;
     void damage(int value);
     void heal(int value);
     bool isAlive() const;
     bool isDying() const;
     void setDying(bool dying);
     bool isFullHp() const;
-    double hpRatio() const;      // hp / maxHp（用于血条显示）
-    int handCardLimit() const;   // = 当前体力值
+    double hpRatio() const;
+    int handCardLimit() const;
 
     // ==================== 手牌管理 ====================
 
@@ -51,9 +52,9 @@ public:
     void addHandCard(Card* card);
     void removeHandCard(Card* card);
     bool hasHandCards() const;
-    Card* getRandomHandCard() const;  // 随机获取一张手牌
+    Card* getRandomHandCard() const;
 
-    // ==================== 装备区（预留） ====================
+    // ==================== 装备区 ====================
 
     const std::vector<Card*>& equipCards() const;
     bool hasEquipCards() const;
@@ -69,7 +70,7 @@ public:
 
     // ==================== 回合状态 ====================
 
-    void resetTurnState();              // 回合开始时调用
+    void resetTurnState();
     bool hasUsedKillThisTurn() const;
     void setUsedKillThisTurn(bool used);
     bool isWineEnhanced() const;
@@ -77,24 +78,23 @@ public:
 
     // ==================== 工具 ====================
 
-    /// 获取所有可被选中的牌（手牌 + 装备区）
     std::vector<Card*> allSelectableCards() const;
 
-    // ==================== 事件通知 ====================
-    EventListener<int> hpChanged;
-    EventListener<int> maxHpChanged;
-    EventListener<Player*> dying;
-    EventListener<Player*> died;
-    EventListener<Player*> revived;       // 从濒死救回
-    EventListener<Card*> handCardAdded;
-    EventListener<Card*> handCardRemoved;
-    EventListener<> handCardsChanged;          // 批量手牌变化
-    EventListener<Character*> characterChanged;
-    EventListener<> stateChanged;              // 通用刷新
+signals:
+    void hpChanged(int hp);
+    void maxHpChanged(int maxHp);
+    void dying(int playerId);
+    void died(int playerId);
+    void revived(int playerId);
+    void handCardAdded(int cardId);
+    void handCardRemoved(int cardId);
+    void handCardsChanged();
+    void characterChanged(const QString& charName);
+    void stateChanged();
 
 private:
     int m_playerId = -1;
-    std::string m_displayName;
+    QString m_displayName;
     Character* m_character = nullptr;
 
     int m_hp = 0;

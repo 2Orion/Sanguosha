@@ -1,7 +1,6 @@
-// 冒烟测试：直接驱动 Model 层核心流程，验证 Qt 移除后行为是否正确。
+// 冒烟测试：直接驱动 Model 层核心流程，验证游戏规则行为是否正确。
 // 不依赖任何测试框架，方便随时用 g++ 单独编译运行。
 #include "CommonTypes.h"
-#include "Event.h"
 #include "GameState.h"
 #include "Player.h"
 #include "Character.h"

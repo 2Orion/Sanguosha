@@ -1,6 +1,4 @@
 #include "ActionPanelWidget.h"
-#include "GameViewModel.h"
-
 #include <QFont>
 
 // ==================== 构造 ====================
@@ -137,18 +135,17 @@ void ActionPanelWidget::updateForPhase(PhaseType phase, bool hasPendingAction)
     }
 }
 
-void ActionPanelWidget::updateForPendingAction(const PendingActionVM& info)
+void ActionPanelWidget::updateForPendingAction(const PendingActionData& info)
 {
     hideAllButtons();
 
-    // 提示文字
-    QString desc = QString::fromStdString(info.description);
-    m_hintLabel->setText(desc);
+    m_hintLabel->setText(info.description);
 
-    // 如果可以跳过，显示跳过按钮
-    if (info.canSkip) {
-        m_skipResponseBtn->setVisible(true);
-    }
+    // 始终显示跳过按钮：玩家可选择打出牌或承担后果
+    // canSkip=true 表示"无惩罚跳过"（如 AOE 跳过直接扣血）
+    // canSkip=false 表示"不能跳过"（如杀→闪），
+    // 但我们仍然显示跳过按钮让玩家选择不响应直接扣血
+    m_skipResponseBtn->setVisible(true);
 }
 
 void ActionPanelWidget::setHint(const QString& text)

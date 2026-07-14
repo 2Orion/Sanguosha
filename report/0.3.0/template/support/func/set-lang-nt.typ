@@ -1,0 +1,79 @@
+#import "@preview/numbly:0.1.0": numbly
+
+#let set-lang-nt(first-line-indent, english, doc) = if english {
+  set heading(
+    numbering: numbly(
+      "{1:I}.",
+      "{1}.{2}",
+      "{3:A}",
+      "{3:A}{4}",
+      "{3:A}{4}-{5}",
+      "{6:a}.",
+    ),
+  )
+  if first-line-indent {
+    set par(
+      first-line-indent: (
+        amount: 1.5em,
+      ),
+    )
+    doc
+  }
+  doc
+} else {
+  show heading: it => {
+    show h.where(amount: 0.3em): none
+    it
+  }
+  set heading(
+    numbering: numbly(
+      "{1:一}、",
+      "{1}.{2} ",
+      "{3:A} ",
+      "{3:A}{4} ",
+      "{3:A}{4}-{5} ",
+      "{6:a}. ",
+    ),
+  )
+
+  show "\"": it => {
+    text(font: "PingFang SC")["]
+  }
+  show "“": it => {
+    text(font: "PingFang SC")["]
+  }
+  show "”": it => {
+    text(font: "PingFang SC")["]
+  }
+
+  show "'": it => {
+    text(font: "PingFang SC")[']
+  }
+  show "‘": it => {
+    text(font: "PingFang SC")[‘]
+  }
+  show "’": it => {
+    text(font: "PingFang SC")[’]
+  }
+
+  set par(
+    justify: true,
+  )
+  set text(lang: "zh", region: "cn")
+  set figure.caption(separator: [ -- ])
+  show outline.entry: it => {
+    show "、": "、" + h(-0.5em)
+    show " ": none
+    it
+  }
+
+  if first-line-indent {
+    set par(
+      first-line-indent: (
+        amount: 2em,
+      ),
+    )
+    doc
+  }
+  doc
+}

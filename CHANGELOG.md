@@ -1,62 +1,166 @@
 # Changelog
 
-## [Unreleased] — MVVM 严格化重构
+## Bug Fixes
 
-### 架构：MVVM 分层修复
+### [2026-07-14] 出牌阶段无法主动使用武将转化技能（武圣/龙胆）
 
-**问题**：ViewModel 层通过 `Card* card()`、`Player* player()` 等方法暴露原始 Model 指针，View 层拿到指针后直接调用 Model 方法（如 `card->cardName()`、`player->displayName()`），绕过了 ViewModel，违反了 MVVM 原则。
+**现象**：关羽无法将红色牌当【杀】主动使用，赵云无法将【闪】当【杀】主动使用。转化牌在出牌阶段不高亮、双击无反应。（响应阶段的转化一直正常，如用红牌响应南蛮入侵。）
 
-**修复**：ViewModel 层公共接口现在只暴露值类型（`int`、`std::string`、`bool`），View 层通过 ViewModel 获取所有数据。
+**根因**：`Character::skillTransformCard` 只接入了响应路径（`ActionViewModel::getResponseCardIds`、`GameRule::hasDodgeToRespond`/`hasKillToRespond`），出牌路径的三个入口全部只认卡牌本体：
 
-#### ViewModel 层
+1. `ActionViewModel::getPlayableCards` / `canPlayCard` 只检查 `card->canUse()`——关羽的红闪（`DodgeCard::canUse` 恒 false）和赵云的闪永远不可出
+2. `ActionViewModel::getValidTargetIds` 调用 `card->getValidTargets()`——闪的目标列表恒为空
+3. `ActionViewModel::playCard` 直接 `card->execute()`——即使放开校验，执行的也是原牌效果而非杀的结算
 
-- **CardViewModel** — 移除 `Card* card()` 公共访问器；所有显示数据通过已有透传方法获取（`cardName()`、`suitSymbol()` 等）
-- **PlayerViewModel** — 移除 `Player* player()` 和 `const std::vector<Card*>& handCards()`；事件类型 `Player*` → `int`/`void`（`dying`、`died`、`revived`、`handCardAdded`、`handCardRemoved`）
-- **GameViewModel** — 新增 `PendingActionVM` 结构体（不含原始指针的 ViewModel 层 DTO）；`currentPlayer()` → `currentPlayerId()`；`opponentPlayer()` → `opponentPlayerId()`；`winner()` → `winnerId()`；`pendingActionInfo()` → `pendingActionVM()`；`gameOver` 事件 `Player*` → `int winnerId`；新增 `cardDisplayString()`、`cardNameById()`、`playerDisplayName()` 等值类型辅助方法；原始指针方法移至 `private`
-- **ActionViewModel** — 所有公共方法参数和返回值 `Card*`/`Player*` → `int cardId`/`int playerId`；内部通过 `findCard()`/`findPlayer()` 查找 Model 对象；保留 `getPlayableCards(Player*)` 为 `private` 供内部使用
+张飞（咆哮，`GameRule::canPlayKill` 已特判）和曹操（奸雄，被动触发）不受影响。
 
-#### View 层
+**修复**：`ActionViewModel` 新增私有判定 `playsAsKill(card, player)`（条件：出牌阶段、玩家存活、卡牌本体不可用、技能转化结果为杀、通过 `canPlayKill` 出杀次数检查），并接入出牌路径三个入口：
 
-- **GameBoardWidget** — 所有交互状态 `Card*`/`Player*` → `int` ID；事件处理器改用 `PendingActionVM` 和 `int winnerId`；显示数据通过 `CardViewModel`/`PlayerViewModel` 查找
-- **HandCardAreaWidget** — 信号 `cardClicked(Card*)` → `cardClicked(int cardId)`；`selectedCard()` → `selectedCardId()`；新增 `cardVM(int cardId)` 查找器
-- **ActionPanelWidget** — `updateForPendingAction()` 参数 `PendingActionInfo` → `PendingActionVM`
-- **PlayerInfoWidget** — 更新 `dying` 事件回调以匹配新的 `EventListener<>` 类型
-- **main.cpp**（控制台版） — 完全重写，使用 ViewModel 值类型接口，零原始 Model 指针访问
+1. `getPlayableCards` / `canPlayCard`：本体不可用时，`playsAsKill` 成立即视为可出（高亮 + 校验放行）
+2. `getValidTargetIds`：转化为杀时按杀的目标规则返回（除自己外的存活角色）
+3. `playCard`：转化为杀时不执行原牌 `execute()`，改走 `GameRule::executeKill()` 结算（酒加成、闪响应流程与真杀一致），并输出"发动【武圣】，将【X】当【杀】使用"日志
 
-### 构建系统
+**设计取舍**：本体可用时优先按本体使用——如关羽缺血时的红桃按桃使用，不能当杀（满血时红桃本体不可用，可当杀）。当前 UI 是双击出牌，没有"选择用法"的交互，此规则保证行为确定；后续如加装备/技能按钮 UI 可再放开。
 
-- **CMakeLists.txt** — 拆分为 3 个独立 target：
-  - `sgs_console` — 控制台版（`src/main.cpp`）
-  - `sgs_qt` — Qt GUI 版（`src/View/main_qt.cpp`）
-  - `sgs_test` — Model 冒烟测试（`tests/smoke_test.cpp`）
-- Qt5 → Qt6（`find_package` 和 `target_link_libraries`）
-- C++ 标准 C++11 → C++14（`std::make_unique` 需要）
-- `include_directories` 添加 `src`（修复 `#include "Core/CommonTypes.h"` 解析）
+**涉及文件**：`src/ViewModel/ActionViewModel.h/cpp`
 
-### Bug 修复
+**验证**：构建通过，冒烟测试 95/95（仅覆盖 Model 层，本改动在 ViewModel 层，需手动跑 `SanguoshaQt.exe` 用关羽/赵云实测转化出杀）。
 
-- **Core/Event.h** — 修复 `notify()` 中 `pair.second` → `pair.callback`，`disconnect()` 中 `pair.first` → `pair.id`（`CallbackPair` 使用命名成员而非 `std::pair`）
-- **main.cpp** — 修复 `NOMINMAX` 重复定义警告
+### [2026-07-14] 选将后点击「开始对战」闪退
 
-### 涉及文件
+**现象**：选择武将后点击开始对战，程序短暂无响应后异常中止。
 
-| 文件 | 变更类型 |
-|------|---------|
-| `CMakeLists.txt` | 重写 |
-| `src/Core/Event.h` | Bug 修复 |
-| `src/ViewModel/CardViewModel.h` | 移除 `card()` |
-| `src/ViewModel/CardViewModel.cpp` | 移除 `card()` 实现 |
-| `src/ViewModel/PlayerViewModel.h` | 移除原始指针，修复事件类型 |
-| `src/ViewModel/PlayerViewModel.cpp` | 事件转发使用值类型 |
-| `src/ViewModel/GameViewModel.h` | 新增 `PendingActionVM`，接口值类型化 |
-| `src/ViewModel/GameViewModel.cpp` | 实现值类型 API，翻译层逻辑 |
-| `src/ViewModel/ActionViewModel.h` | 参数/返回值 ID 化 |
-| `src/ViewModel/ActionViewModel.cpp` | ID 实现 + 内部查找 |
-| `src/View/GameBoardWidget.h` | 状态成员 ID 化 |
-| `src/View/GameBoardWidget.cpp` | 所有交互使用 ID |
-| `src/View/HandCardAreaWidget.h` | 信号 ID 化 |
-| `src/View/HandCardAreaWidget.cpp` | 信号发射 ID 化 |
-| `src/View/ActionPanelWidget.h` | 参数类型更新 |
-| `src/View/ActionPanelWidget.cpp` | 实现更新 |
-| `src/View/PlayerInfoWidget.cpp` | 事件回调更新 |
-| `src/main.cpp` | 完全重写（值类型） |
+**根因**：`MainWindow::onStartGame()` 中 `m_bootstrap->boardWidget()` 在 `startLocalGame()` 之前调用，此时 GameBoardWidget 尚未创建，
+返回 `nullptr`。随后 `m_centralStack->addWidget(nullptr)` 导致 Qt 异常退出。
+
+**修复**：将 `boardWidget()` 移到 `startLocalGame()` 之后。
+
+**涉及文件**：`src/View/MainWindow.cpp`
+
+### [2026-07-14] 卡在准备阶段，无法进入出牌
+
+**现象**：游戏启动后始终停留在准备阶段，自动阶段不推进。
+
+**根因**：`GameState` 构造函数中 `m_currentPhase` 默认值已是 `Prepare`。`initGame()` 调用 `setCurrentPhase(Prepare)` 时因为新旧值相同，条件判断 `if (m_currentPhase != phase) { emit phaseChanged(…); }` 不成立，不发射信号。`GameBoardWidget::onPhaseChanged` 从未被调用，自动推进计时器从未启动。
+
+**修复**：在 `initGame()` 中 `setCurrentPhase(Prepare)` 之后，强制 `emit phaseChanged(Prepare)` 启动流程。
+
+**涉及文件**：`src/ViewModel/GameViewModel.cpp`
+
+### [2026-07-14] 双方手牌显示为牌背
+
+**现象**：进入游戏后双方手牌均显示为红色牌背花纹，看不到牌面。
+
+**根因**：`GameBoardWidget::onHandCardsUpdated` 调用 `m_bottomHandArea->setCards(data, false)` 传入了 `false`。`HandCardAreaWidget::setCards` 的第二参数已从原 `isOpponent` 重构为 `faceUp`，`false` 表示牌背。
+
+**修复**：两处调用均改为 `setCards(data, true)`，同时修改 `HandCardAreaWidget` 的默认值 `faceUp = true`。
+
+**涉及文件**：`src/View/GameBoardWidget.cpp`、`src/View/HandCardAreaWidget.h`
+
+### [2026-07-14] 运行一段时间后无响应卡退
+
+**现象**：出牌/响应流程中程序突然无响应后异常退出。
+
+**根因**：`HandCardAreaWidget::clearWidgets()` 使用 `delete w` 同步销毁旧 `CardWidget`。
+当用户在出牌阶段点击一张牌时调用链为：
+
+```
+CardWidget::mousePressEvent → emit clicked(cardId)
+  → HandCardAreaWidget::onCardWidgetClicked → emit cardClicked(cardId)
+    → GameBoardWidget::onCardClicked → emit playCardRequested(cardId, pid)
+      → GameBootstrap::onPlayCardRequested → avm->playCard(…)
+        → 卡牌从手牌移除 → emit handCardsChanged
+          → GameViewModel::pushHandCards → emit handCardsUpdated
+            → GameBoardWidget::onHandCardsUpdated
+              → m_bottomHandArea->setCards(…) → clearWidgets()
+                → delete w — 正在处理 mousePressEvent 的 CardWidget 自身！
+```
+
+`delete w` 在对象自身的方法调用栈执行期间销毁对象，导致 return 时 use-after-free 崩溃。
+
+**修复**：`clearWidgets()` 中 `delete w` 改为 `w->deleteLater()`，推迟到事件循环空闲时再销毁旧控件。
+此时 `CardDisplayData` 是值类型，旧控件即使暂存也有独立数据副本，不会访问已释放内存。
+
+**涉及文件**：`src/View/HandCardAreaWidget.cpp`
+
+### [2026-07-14] 待定动作阶段卡死 / 必须打出响应牌
+
+**现象**：两种表现——
+1. 无闪/杀可响应时，游戏卡在响应阶段无法继续
+2. 有响应牌时必须打出，无法选择跳过承担后果
+
+**根因**：
+- 无响应牌时，`ActionPanelWidget::updateForPendingAction` 因 `canSkip=false` 隐藏了「跳过」按钮，且没有自动推进逻辑
+- 有响应牌时，虽然「跳过」按钮不可见，但即使能访问到也会因为 `ActionViewModel::skipResponse(responderId, false)` 中 `if (!forceNoCard && !info.canSkip) return;` 直接返回，不推进游戏
+
+**修复**：
+1. `ActionPanelWidget::updateForPendingAction` 始终显示「跳过」按钮，让玩家自由选择
+2. `GameBootstrap::onSkipRequested` 调用 `skipResponse(responderId, true)` 强制推进（`forceNoCard=true`）
+3. 新增 `GameBootstrap::onPendingActionFromVM` 拦截 `pendingActionCreated` 信号：无响应牌时自动跳过，有牌时转发给 View 显示响应界面
+
+**涉及文件**：
+- `src/View/ActionPanelWidget.cpp`
+- `src/App/GameBootstrap.h/cpp`
+
+### [2026-07-14] 响应阶段点击响应牌无效
+
+**现象**：需要打出响应牌（如杀后的闪）时，点击手牌无反应。
+
+**根因**：`GameBoardWidget::onCardClicked` 在 `State::Responding` 分支中发射 `respondCardRequested(cardId, m_currentPlayerId)`，其中 `m_currentPlayerId` 是当前回合玩家（攻击者），而非需要响应的玩家（目标）。ViewModel 收到错误 ID 后找不到对应的响应者，`respondCard` 因 `!responder` 直接返回。
+
+**修复**：在 `onPendingActionCreated` 中记录 `m_responderId = info.targetId`，`onCardClicked` 的 Responding 分支改为 `emit respondCardRequested(cardId, m_responderId)`。
+
+**涉及文件**：`src/View/GameBoardWidget.h/cpp`
+
+### [2026-07-14] 跳过响应后操作面板不更新，覆盖结束出牌按钮
+
+**现象**：出牌阶段打出杀，点击「跳过」后提示文字不更新、跳过按钮不消失，且覆盖了「结束出牌」按钮，无法结束出牌。
+
+**根因**：`GameBoardWidget::onPendingActionCleared` 只重置了 `m_state = Idle`，没有恢复 `ActionPanelWidget` 的显示。面板仍停留在响应模式（显示跳过按钮 + 旧的响应提示文字）。
+
+跳过按钮被设为 `setVisible(true)` 后一直显示，而「结束出牌」按钮虽存在但被遮挡在跳过按钮之下，且因 `hideAllButtons()` → `setVisible(false)` 未被调用而不可见。
+
+**修复**：
+1. `onPendingActionCleared` 中调用 `m_actionPanel->updateForPhase(m_currentPhase, false)` 恢复面板
+2. 新增 `m_currentPhase` 成员变量，在 `onPhaseChanged` 中更新
+
+**涉及文件**：`src/View/GameBoardWidget.h/cpp`
+
+### [2026-07-14] 弃牌阶段必须弃牌，未检查手牌上限
+
+**现象**：出牌阶段结束后进入弃牌阶段，即使手牌未超限也会强制进入弃牌界面。
+
+**根因**：重构后弃牌阶段的 `getDiscardCount` 检查被删除。`GameBoardWidget::onPhaseChanged` 无条件设置 `m_state = Discarding` 并显示弃牌提示，不检查手牌是否超过体力值对应的上限。
+
+**修复**：`GameBootstrap` 拦截 `phaseChanged` 信号，在 `Discard` 阶段先调用 `avm->getDiscardCount(curId)`。若 ≤ 0 则直接 `gvm->advancePhase()` 跳过弃牌阶段。
+
+**涉及文件**：`src/App/GameBootstrap.h/cpp`、`src/ViewModel/GameViewModel.h`
+
+### [2026-07-14] 架构调整（第二次重构）：GameBootstrap 更名 SGSApp，路由/拦截逻辑下沉 ViewModel
+
+> 晚于下一条（第一次重构）。本文件中早于本次重构的条目提到的 `GameBootstrap` 均对应现在的 `SGSApp`，`CardDisplayData`/`PlayerDisplayData`/`PendingActionVM` 均对应现在的 `CardData`/`PlayerData`/`PendingActionData`；历史条目不改写。
+
+**调整内容**：
+- `GameBootstrap` 更名 `SGSApp`，退化为纯组合根：只创建对象、在 `startLocalGame()` 里建立 View ↔ ViewModel 信号槽直连、管理对局生命周期，零业务逻辑
+- 原 App 层路由槽（`onPlayCardRequested`/`onTargetSelected`/`onRespondCardRequested` → `ActionViewModel`；`onDiscardCardRequested`/`onEndPlayRequested`/`onAdvanceRequested`/`onSkipRequested` → `GameViewModel`）改为 ViewModel 的 public slots，View 信号直连
+- 原 App 层拦截逻辑下沉：弃牌数 ≤0 自动跳过 → `GameViewModel::setNextPhase`；无响应牌自动跳过 → `GameViewModel::onModelPendingActionCreated`
+- Common 值类型改名：`CardDisplayData` → `CardData`（新增列表别名 `CardList`）、`PlayerDisplayData` → `PlayerData`、`PendingActionVM` → `PendingActionData`
+
+**涉及文件**：`src/App/SGSApp.h/cpp`（原 `GameBootstrap.h/cpp`）、`src/ViewModel/*`、`src/Common/*`、`src/View/*`（仅头文件名变更）、`src/main.cpp`
+
+**文档同步**：`connection.md`、`README.md`、`CLAUDE.md`、`interface.md` §8/§9、`plan2.0.md` §2/§7 顶部阅读说明均已按新架构更新。
+
+### [2026-07-14] 架构调整：GameBootstrap 作为程序入口
+
+**调整内容**：
+- `MainWindow` 不再包含 `GameBootstrap`，改为纯 UI 层，由 `GameBootstrap` 创建并拥有
+- `GameBootstrap` 成为真正的 Composition Root，创建 `MainWindow`、`GameViewModel`、`GameBoardWidget`
+- `main.cpp` 直接创建 `GameBootstrap`，不直接引用 `MainWindow`
+
+**依赖关系变更**：
+```
+旧: main → MainWindow → GameBootstrap → GameViewModel/GameBoardWidget
+新: main → GameBootstrap → MainWindow + GameViewModel + GameBoardWidget
+```
+
+**涉及文件**：`src/main.cpp`、`src/App/GameBootstrap.h/cpp`、`src/View/MainWindow.h/cpp`

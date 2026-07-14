@@ -1,5 +1,4 @@
 #include "ActionViewModel.h"
-#include "Core/CommonTypes.h"
 #include "GameState.h"
 #include "GameRule.h"
 #include "CardManager.h"
@@ -7,21 +6,18 @@
 #include "Card.h"
 #include "Character.h"
 
-ActionViewModel::ActionViewModel()
+ActionViewModel::ActionViewModel(QObject* parent)
+    : QObject(parent)
 {
 }
 
-void ActionViewModel::setGameState(GameState* state)
-{
-    m_state = state;
-}
+void ActionViewModel::setGameState(GameState* state) { m_state = state; }
 
 // ==================== 内部 Model 对象查找 ====================
 
 Player* ActionViewModel::findPlayer(int playerId) const
 {
-    if (!m_state) return nullptr;
-    return m_state->player(playerId);
+    return m_state ? m_state->player(playerId) : nullptr;
 }
 
 Card* ActionViewModel::findCard(int cardId) const
@@ -43,7 +39,6 @@ std::vector<int> ActionViewModel::getPlayableCardIds(int playerId) const
     std::vector<int> result;
     Player* player = findPlayer(playerId);
     if (!player) return result;
-
     for (Card* card : getPlayableCards(player)) {
         if (card) result.push_back(card->id());
     }
@@ -55,6 +50,15 @@ std::vector<int> ActionViewModel::getValidTargetIds(int cardId, int playerId) co
     Card* card = findCard(cardId);
     Player* user = findPlayer(playerId);
     if (!m_state || !card || !user) return {};
+
+    // 技能转化为【杀】使用时，目标规则按杀处理（除自己外的存活角色）
+    if (playsAsKill(card, user)) {
+        std::vector<int> result;
+        for (Player* p : m_state->alivePlayers()) {
+            if (p && p != user) result.push_back(p->playerId());
+        }
+        return result;
+    }
 
     std::vector<Player*> targets = card->getValidTargets(m_state, user);
     std::vector<int> result;
@@ -79,8 +83,8 @@ bool ActionViewModel::canPlayCard(int cardId, int playerId) const
     Card* card = findCard(cardId);
     Player* player = findPlayer(playerId);
     if (!m_state || !card || !player) return false;
-    return card->canUse(m_state, player) &&
-           GameRule::canPlayCard(m_state, player, card);
+    if (card->canUse(m_state, player) && GameRule::canPlayCard(m_state, player, card)) return true;
+    return playsAsKill(card, player);
 }
 
 ActionResult ActionViewModel::playCard(int cardId, int playerId,
@@ -90,39 +94,49 @@ ActionResult ActionViewModel::playCard(int cardId, int playerId,
     Player* user = findPlayer(playerId);
     if (!m_state || !card || !user) return ActionResult::Completed;
 
-    // 将 target IDs 转为 Player* 列表
     std::vector<Player*> targets;
     for (int tid : targetIds) {
         Player* t = findPlayer(tid);
         if (t) targets.push_back(t);
     }
 
-    ActionResult result = card->execute(m_state, user, targets);
+    // 技能转化为【杀】使用：不执行原牌效果，走杀的结算（关羽武圣 / 赵云龙胆）
+    if (playsAsKill(card, user)) {
+        if (targets.empty()) return ActionResult::Completed;
+        GameRule::executeKill(m_state, user, targets.front());
+        user->removeHandCard(card);
+        if (m_state->cardManager()) m_state->cardManager()->discard(card);
 
-    // 使用后从手牌移除并放入弃牌堆
-    user->removeHandCard(card);
-    if (m_state->cardManager()) {
-        m_state->cardManager()->discard(card);
+        QString skillName = user->character()
+                ? QString::fromStdString(user->character()->skillName()) : QString();
+        emitLog(user->displayName() + QStringLiteral(" 发动【") + skillName +
+                QStringLiteral("】，将【") + QString::fromStdString(card->cardName()) +
+                QStringLiteral("】当【杀】使用 → ") + targets.front()->displayName());
+
+        emit actionCompleted();
+        return ActionResult::RequiresDodge;
     }
 
-    // 记录日志
-    std::string targetStr;
+    ActionResult result = card->execute(m_state, user, targets);
+    user->removeHandCard(card);
+    if (m_state->cardManager()) m_state->cardManager()->discard(card);
+
+    QString targetStr;
     for (size_t i = 0; i < targets.size(); ++i) {
-        if (i > 0) targetStr += "、";
+        if (i > 0) targetStr += QStringLiteral("、");
         targetStr += targets[i]->displayName();
     }
+    emitLog(user->displayName() + QStringLiteral(" 使用了【") +
+            QString::fromStdString(card->cardName()) + QStringLiteral("】") +
+            (targetStr.isEmpty() ? QString() : QStringLiteral(" → ") + targetStr));
 
-    emitLog(user->displayName() + " 使用了【" + card->cardName() + "】" +
-            (targetStr.empty() ? "" : " → " + targetStr));
-
-    actionCompleted.notify();
+    emit actionCompleted();
     return result;
 }
 
 // ==================== 响应阶段 ====================
 
-std::vector<int> ActionViewModel::getResponseCardIds(int playerId,
-                                                       CardType requiredType) const
+std::vector<int> ActionViewModel::getResponseCardIds(int playerId, CardType requiredType) const
 {
     std::vector<int> result;
     Player* player = findPlayer(playerId);
@@ -130,129 +144,110 @@ std::vector<int> ActionViewModel::getResponseCardIds(int playerId,
 
     for (Card* card : player->handCards()) {
         if (!card) continue;
-
-        // 直接匹配
         if (card->cardType() == requiredType) {
             result.push_back(card->id());
             continue;
         }
-
-        // 武将技能转化
         if (player->character()) {
             CardType transformed = player->character()->skillTransformCard(card);
-            if (transformed == requiredType) {
-                result.push_back(card->id());
-            }
+            if (transformed == requiredType) result.push_back(card->id());
         }
     }
     return result;
 }
 
-bool ActionViewModel::isValidResponseCard(int cardId, int playerId,
-                                           CardType requiredType) const
+bool ActionViewModel::isValidResponseCard(int cardId, int playerId, CardType requiredType) const
 {
-    std::vector<int> responseCardIds = getResponseCardIds(playerId, requiredType);
-    for (int id : responseCardIds) {
-        if (id == cardId) return true;
-    }
-    return false;
+    auto ids = getResponseCardIds(playerId, requiredType);
+    return std::find(ids.begin(), ids.end(), cardId) != ids.end();
 }
 
 bool ActionViewModel::canSkipPendingAction() const
 {
-    if (!m_state) return false;
-    if (!m_state->hasPendingAction()) return false;
-    return m_state->pendingActionInfo().canSkip;
+    return m_state && m_state->hasPendingAction() && m_state->pendingActionInfo().canSkip;
 }
 
 void ActionViewModel::respondCard(int cardId, int playerId)
 {
     Card* card = findCard(cardId);
     Player* responder = findPlayer(playerId);
-    if (!m_state || !card || !responder) return;
-    if (!m_state->hasPendingAction()) return;
+    if (!m_state || !card || !responder || !m_state->hasPendingAction()) return;
 
     const PendingActionInfo& info = m_state->pendingActionInfo();
-    std::string cardName = card->cardName();
 
     switch (info.requiredCardType) {
     case CardType::Dodge:
         if (info.canSkip) {
-            // AOE 闪避响应（万箭齐发）
             GameRule::handleAoeDodgeResponse(m_state, responder, card);
-            emitLog(responder->displayName() + " 打出【" + cardName + "】响应万箭齐发");
+            emitLog(responder->displayName() + QStringLiteral(" 打出【") +
+                    QString::fromStdString(card->cardName()) + QStringLiteral("】响应万箭齐发"));
         } else {
-            // 普通杀响应
             GameRule::handleKillResponse(m_state, responder, card);
-            emitLog(responder->displayName() + " 打出【" + cardName + "】响应杀");
+            emitLog(responder->displayName() + QStringLiteral(" 打出【") +
+                    QString::fromStdString(card->cardName()) + QStringLiteral("】响应杀"));
         }
         break;
 
     case CardType::Kill:
-        // 南蛮入侵响应
         GameRule::handleAoeKillResponse(m_state, responder, card);
-        emitLog(responder->displayName() + " 打出【" + cardName + "】响应南蛮入侵");
+        emitLog(responder->displayName() + QStringLiteral(" 打出【") +
+                QString::fromStdString(card->cardName()) + QStringLiteral("】响应南蛮入侵"));
         break;
 
-    case CardType::Peach:
-        // 濒死救助
-        {
-            Player* dyingPlayer = info.target;
-            bool saved = GameRule::handleDyingPeach(m_state, dyingPlayer, responder, card);
-            emitLog(responder->displayName() + " 对 " + dyingPlayer->displayName() +
-                    " 使用【" + cardName + "】" +
-                    (saved ? "，救回！" : "，仍需继续救援"));
-        }
+    case CardType::Peach: {
+        Player* dyingPlayer = info.target;
+        bool saved = GameRule::handleDyingPeach(m_state, dyingPlayer, responder, card);
+        emitLog(responder->displayName() + QStringLiteral(" 对 ") +
+                dyingPlayer->displayName() + QStringLiteral(" 使用【") +
+                QString::fromStdString(card->cardName()) + QStringLiteral("】") +
+                (saved ? QStringLiteral("，救回！") : QStringLiteral("，仍需继续救援")));
         break;
+    }
 
     default:
         break;
     }
 
-    actionCompleted.notify();
+    emit actionCompleted();
 }
 
 void ActionViewModel::skipResponse(int playerId, bool forceNoCard)
 {
     Player* responder = findPlayer(playerId);
-    if (!m_state || !responder) return;
-    if (!m_state->hasPendingAction()) return;
+    if (!m_state || !responder || !m_state->hasPendingAction()) return;
 
     const PendingActionInfo& info = m_state->pendingActionInfo();
-
-    // forceNoCard=true: 玩家没有可用的响应牌，强制跳过（即使 canSkip=false）
     if (!forceNoCard && !info.canSkip) return;
 
     switch (info.requiredCardType) {
     case CardType::Dodge:
         if (info.canSkip) {
-            // AOE 闪避跳过（万箭齐发）
             GameRule::handleAoeSkipResponse(m_state, responder);
-            emitLog(responder->displayName() + " 放弃了响应");
+            emitLog(responder->displayName() + QStringLiteral(" 放弃了响应"));
         } else {
-            // 普通杀 — 无闪可出，直接扣血
             GameRule::handleKillResponse(m_state, responder, nullptr);
-            emitLog(responder->displayName() + " 没有【闪】，受到伤害");
+            emitLog(responder->displayName() + QStringLiteral(" 没有【闪】，受到伤害"));
         }
         break;
 
     case CardType::Kill:
-        // AOE 杀跳过（南蛮入侵）
         GameRule::handleAoeSkipResponse(m_state, responder);
-        emitLog(responder->displayName() + " 放弃了响应");
+        emitLog(responder->displayName() + QStringLiteral(" 放弃了响应"));
         break;
 
-    case CardType::Peach:
-        // 放弃救助
-        GameRule::skipDyingResponse(m_state, info.target);
-        emitLog(responder->displayName() + " 放弃救助 " + info.target->displayName());
+    case CardType::Peach: {
+        Player* dyingPlayer = info.target;
+        GameRule::skipDyingResponse(m_state, dyingPlayer);
+        emitLog(responder->displayName() + QStringLiteral(" 放弃救助 ") +
+                dyingPlayer->displayName());
         break;
+    }
 
     default:
         break;
     }
 
-    actionCompleted.notify();
+    emit actionCompleted();
 }
 
 // ==================== 弃牌阶段 ====================
@@ -264,11 +259,9 @@ void ActionViewModel::discardCard(int cardId, int playerId)
     if (!m_state || !card || !player) return;
 
     player->removeHandCard(card);
-    if (m_state->cardManager()) {
-        m_state->cardManager()->discard(card);
-    }
-
-    emitLog(player->displayName() + " 弃置了【" + card->cardName() + "】");
+    if (m_state->cardManager()) m_state->cardManager()->discard(card);
+    emitLog(player->displayName() + QStringLiteral(" 弃置了【") +
+            QString::fromStdString(card->cardName()) + QStringLiteral("】"));
 }
 
 int ActionViewModel::getDiscardCount(int playerId) const
@@ -277,30 +270,78 @@ int ActionViewModel::getDiscardCount(int playerId) const
     return GameRule::getDiscardCount(player);
 }
 
-// ==================== 内部：Model 指针版本（供 ViewModel 层使用） ====================
+// ==================== 内部 ====================
 
 std::vector<Card*> ActionViewModel::getPlayableCards(Player* player) const
 {
     std::vector<Card*> result;
     if (!m_state || !player) return result;
-
     for (Card* card : player->handCards()) {
         if (!card) continue;
-
-        // 检查卡牌自身的使用条件
-        if (!card->canUse(m_state, player)) continue;
-
-        // 通用规则检查
-        if (!GameRule::canPlayCard(m_state, player, card)) continue;
-
-        result.push_back(card);
+        if (card->canUse(m_state, player) && GameRule::canPlayCard(m_state, player, card)) {
+            result.push_back(card);
+            continue;
+        }
+        // 本体不可用，但武将技能可将其当【杀】主动使用
+        if (playsAsKill(card, player)) result.push_back(card);
     }
     return result;
 }
 
-// ==================== 内部 ====================
-
-void ActionViewModel::emitLog(const std::string& msg)
+/// 出牌阶段主动技能转化判定：卡牌本体不可用，但武将技能（武圣/龙胆）
+/// 可将其当【杀】使用。本体可用时优先按本体使用（如关羽缺血时的红桃仍按桃使用）。
+bool ActionViewModel::playsAsKill(const Card* card, const Player* player) const
 {
-    logMessage.notify(msg);
+    if (!m_state || !card || !player) return false;
+    if (m_state->currentPhase() != PhaseType::Play) return false;
+    if (!player->isAlive() || !player->character()) return false;
+    if (card->cardType() == CardType::Kill) return false;
+    if (card->canUse(m_state, player)) return false;
+    if (player->character()->skillTransformCard(card) != CardType::Kill) return false;
+    return GameRule::canPlayKill(m_state, player);
+}
+
+void ActionViewModel::emitLog(const QString& msg)
+{
+    emit logMessage(msg);
+}
+
+// ==================== View 命令槽（从 SGSApp 迁入） ====================
+
+void ActionViewModel::onPlayCardRequested(int cardId, int playerId)
+{
+    if (!isOwnCard(cardId, playerId)) return;
+    if (!canPlayCard(cardId, playerId)) return;
+
+    auto targets = getValidTargetIds(cardId, playerId);
+    if (targets.empty()) {
+        playCard(cardId, playerId, {});
+    } else if (targets.size() == 1) {
+        playCard(cardId, playerId, {targets[0]});
+    } else {
+        m_pendingCardId = cardId;
+        m_pendingUserId = playerId;
+        m_pendingTargetIds = QVector<int>(targets.begin(), targets.end());
+        playCard(cardId, playerId, {targets[0]});
+    }
+}
+
+void ActionViewModel::onTargetSelected(int playerIndex)
+{
+    if (m_pendingCardId >= 0 && !m_pendingTargetIds.isEmpty()) {
+        for (int t : m_pendingTargetIds) {
+            if (t == playerIndex) {
+                playCard(m_pendingCardId, m_pendingUserId, {playerIndex});
+                break;
+            }
+        }
+        m_pendingCardId = -1;
+        m_pendingUserId = -1;
+        m_pendingTargetIds.clear();
+    }
+}
+
+void ActionViewModel::onRespondCardRequested(int cardId, int responderId)
+{
+    respondCard(cardId, responderId);
 }

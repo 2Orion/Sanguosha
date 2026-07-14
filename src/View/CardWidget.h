@@ -2,22 +2,21 @@
 #define CARDWIDGET_H
 
 #include <QFrame>
-#include <vector>
+#include "CardData.h"
 
-class CardViewModel;
-
-/// 单张卡牌控件 — 支持选中、可打出高亮、悬停、牌背显示
+/// 单张卡牌控件 — 只依赖 Common 层值类型
 class CardWidget : public QFrame {
     Q_OBJECT
 public:
-    explicit CardWidget(CardViewModel* cvm, bool faceUp = true, QWidget* parent = nullptr);
-    ~CardWidget() override;
+    explicit CardWidget(bool faceUp = true, QWidget* parent = nullptr);
 
-    int cardId() const;
-    bool isSelected() const;
+    void setDisplayData(const CardData& data);
+    void setFaceUp(bool faceUp, bool showPlayable = false);
+
+    int cardId() const { return m_data.cardId; }
+    bool isSelected() const { return m_selected; }
     void setSelected(bool sel);
     void setPlayable(bool playable);
-    void setFaceUp(bool faceUp);
 
     static constexpr int CARD_WIDTH  = 80;
     static constexpr int CARD_HEIGHT = 112;
@@ -38,24 +37,16 @@ protected:
     void leaveEvent(QEvent* event) override;
 
 private:
-    void connectViewModel();
-    void disconnectViewModel();
-    void updateTooltip();
-
-    // 绘制方法
     void drawCardBack(QPainter& painter, const QRect& rect, int radius);
     void drawCardFront(QPainter& painter, const QRect& rect, int radius);
     void drawStateOverlay(QPainter& painter, const QRect& rect, int radius);
 
-    CardViewModel* m_cvm;
-
-    // 连接 ID，用于析构时断开
-    std::vector<size_t> m_connectionIds;
-
-    bool m_faceUp;
-    bool m_selected  = false;
-    bool m_playable  = false;
-    bool m_hovered   = false;
+    CardData m_data;
+    bool m_faceUp = true;
+    bool m_selected = false;
+    bool m_playable = false;
+    bool m_hovered = false;
+    bool m_showPlayable = false;
 };
 
 #endif // CARDWIDGET_H

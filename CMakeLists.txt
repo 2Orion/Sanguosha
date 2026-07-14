@@ -1,105 +1,152 @@
-# Created by and for Qt Creator This file was created for editing the project sources only.
-# You may attempt to use it for building too, by modifying this file here.
+cmake_minimum_required(VERSION 3.16)
+project(Sanguosha VERSION 1.0.0 LANGUAGES CXX)
 
-cmake_minimum_required(VERSION 3.5)
-project(sgs)
-
-set(CMAKE_AUTOUIC ON)
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTORCC ON)
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-find_package(Qt6 COMPONENTS Core Gui Widgets REQUIRED)
+set(CMAKE_AUTOMOC ON)
 
-include_directories(
-    src
-    src/Core
-    src/Model
-    src/View
-    src/ViewModel
-)
+# MSVC: 强制使用 UTF-8 编译和输出，解决中文乱码
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
 
-# ==================== 公共源文件（不含 main） ====================
+# Qt包查找
+find_package(Qt6 QUIET COMPONENTS Widgets)
+if(Qt6_FOUND)
+    set(QT_VERSION_MAJOR 6)
+else()
+    find_package(Qt5 5.15 QUIET COMPONENTS Widgets)
+    if(Qt5_FOUND)
+        set(QT_VERSION_MAJOR 5)
+    endif()
+endif()
 
-set (CORE_SRCS
-    src/Core/CommonTypes.h
-    src/Core/Event.h
-    src/Core/RandomUtils.h
-)
+if(NOT Qt6_FOUND AND NOT Qt5_FOUND)
+    message(FATAL_ERROR "需要 Qt6 或 Qt5.15+（含 Widgets 模块）来构建此项目")
+endif()
 
-set (MODEL_SRCS
-    src/Model/Card.cpp
-    src/Model/Card.h
-    src/Model/CardManager.cpp
-    src/Model/CardManager.h
-    src/Model/Character.cpp
-    src/Model/Character.h
-    src/Model/CommonTypes.h
-    src/Model/Event.h
-    src/Model/GameRule.cpp
-    src/Model/GameRule.h
+# ==================== Model 层 ====================
+
+set(MODEL_SOURCES
     src/Model/GameState.cpp
-    src/Model/GameState.h
+    src/Model/Card.cpp
+    src/Model/Character.cpp
     src/Model/Player.cpp
+    src/Model/CardManager.cpp
+    src/Model/GameRule.cpp
+)
+
+set(MODEL_HEADERS
+    src/Model/CommonTypes.h
+    src/Model/GameState.h
+    src/Model/Card.h
+    src/Model/Character.h
     src/Model/Player.h
-    src/Model/RandomUtils.h
+    src/Model/CardManager.h
+    src/Model/GameRule.h
 )
 
-set (VIEWMODEL_SRCS
+add_library(SanguoshaModel STATIC
+    ${MODEL_SOURCES}
+    ${MODEL_HEADERS}
+)
+
+target_include_directories(SanguoshaModel
+    PUBLIC
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/Common
+)
+
+target_link_libraries(SanguoshaModel
+    PUBLIC
+    Qt${QT_VERSION_MAJOR}::Core
+)
+
+# ==================== ViewModel 层 ====================
+
+set(VIEWMODEL_SOURCES
     src/ViewModel/ActionViewModel.cpp
-    src/ViewModel/ActionViewModel.h
-    src/ViewModel/CardViewModel.cpp
-    src/ViewModel/CardViewModel.h
     src/ViewModel/GameViewModel.cpp
+)
+
+set(VIEWMODEL_HEADERS
+    src/ViewModel/ActionViewModel.h
     src/ViewModel/GameViewModel.h
-    src/ViewModel/PlayerViewModel.cpp
-    src/ViewModel/PlayerViewModel.h
 )
 
-set (VIEW_SRCS
-    src/View/ActionPanelWidget.cpp
-    src/View/ActionPanelWidget.h
+# ==================== View 层 ====================
+
+set(VIEW_SOURCES
     src/View/CardWidget.cpp
-    src/View/CardWidget.h
-    src/View/GameBoardWidget.cpp
-    src/View/GameBoardWidget.h
-    src/View/HandCardAreaWidget.cpp
-    src/View/HandCardAreaWidget.h
-    src/View/MainWindow.cpp
-    src/View/MainWindow.h
     src/View/PlayerInfoWidget.cpp
+    src/View/HandCardAreaWidget.cpp
+    src/View/ActionPanelWidget.cpp
+    src/View/GameBoardWidget.cpp
+    src/View/MainWindow.cpp
+)
+
+set(VIEW_HEADERS
+    src/View/CardWidget.h
     src/View/PlayerInfoWidget.h
+    src/View/HandCardAreaWidget.h
+    src/View/ActionPanelWidget.h
+    src/View/GameBoardWidget.h
+    src/View/MainWindow.h
 )
 
-# ==================== 控制台版（无 Qt Widgets，仅 Core 用于 EventListener） ====================
+# ==================== App 层（组合根） ====================
 
-add_executable(sgs_console
-    ${CORE_SRCS}
-    ${MODEL_SRCS}
-    ${VIEWMODEL_SRCS}
+set(APP_SOURCES
+    src/App/SGSApp.cpp
+)
+
+set(APP_HEADERS
+    src/App/SGSApp.h
+)
+
+# ==================== Qt 版可执行程序 ====================
+
+add_executable(SanguoshaQt
     src/main.cpp
+    ${VIEW_SOURCES}
+    ${VIEW_HEADERS}
+    ${VIEWMODEL_SOURCES}
+    ${VIEWMODEL_HEADERS}
+    ${APP_SOURCES}
+    ${APP_HEADERS}
 )
 
-target_link_libraries(sgs_console PRIVATE Qt6::Core)
-
-# ==================== Qt GUI 版 ====================
-
-add_executable(sgs_qt
-    ${CORE_SRCS}
-    ${MODEL_SRCS}
-    ${VIEWMODEL_SRCS}
-    ${VIEW_SRCS}
-    src/View/main_qt.cpp
+target_include_directories(SanguoshaQt PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/Common
+    ${CMAKE_SOURCE_DIR}/src/Model
+    ${CMAKE_SOURCE_DIR}/src/ViewModel
+    ${CMAKE_SOURCE_DIR}/src/View
+    ${CMAKE_SOURCE_DIR}/src/App
 )
 
-target_link_libraries(sgs_qt PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
+target_link_libraries(SanguoshaQt PRIVATE
+    SanguoshaModel
+    Qt${QT_VERSION_MAJOR}::Widgets
+)
 
-# ==================== Model 冒烟测试 ====================
+# ==================== Model 层冒烟测试 ====================
 
-add_executable(sgs_test
-    ${CORE_SRCS}
-    ${MODEL_SRCS}
+enable_testing()
+
+add_executable(ModelSmokeTest
     tests/smoke_test.cpp
 )
 
-target_link_libraries(sgs_test PRIVATE Qt6::Core)
+target_include_directories(ModelSmokeTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/Common
+    ${CMAKE_SOURCE_DIR}/src/Model
+)
+
+target_link_libraries(ModelSmokeTest PRIVATE
+    SanguoshaModel
+    Qt${QT_VERSION_MAJOR}::Core
+)
+
+add_test(NAME ModelSmokeTest COMMAND ModelSmokeTest)

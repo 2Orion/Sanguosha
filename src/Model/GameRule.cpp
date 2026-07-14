@@ -102,7 +102,7 @@ void executeKill(GameState* state, Player* user, Player* target)
     info.target = target;
     info.sourceCard = nullptr;
     info.requiredCardType = CardType::Dodge;
-    info.description = user->displayName() + " 对 " + target->displayName() + " 使用了【杀】，请打出【闪】";
+    info.description = (user->displayName() + " 对 " + target->displayName() + " 使用了【杀】，请打出【闪】").toStdString();
     info.canSkip = false;
 
     state->setPendingAction(info);
@@ -224,7 +224,7 @@ void executeBarbarianInvasion(GameState* state, Player* user)
     info.target = firstTarget;
     info.sourceCard = nullptr;
     info.requiredCardType = CardType::Kill;
-    info.description = user->displayName() + " 使用了【南蛮入侵】，" + firstTarget->displayName() + " 需打出【杀】";
+    info.description = (user->displayName() + " 使用了【南蛮入侵】，" + firstTarget->displayName() + " 需打出【杀】").toStdString();
     info.canSkip = true;
     info.remainingTargets = std::vector<Player*>(targets.begin() + 1, targets.end());
 
@@ -251,7 +251,7 @@ void executeVolley(GameState* state, Player* user)
     info.target = firstTarget;
     info.sourceCard = nullptr;
     info.requiredCardType = CardType::Dodge;
-    info.description = user->displayName() + " 使用了【万箭齐发】，" + firstTarget->displayName() + " 需打出【闪】";
+    info.description = (user->displayName() + " 使用了【万箭齐发】，" + firstTarget->displayName() + " 需打出【闪】").toStdString();
     info.canSkip = true;
     info.remainingTargets = std::vector<Player*>(targets.begin() + 1, targets.end());
 
@@ -303,7 +303,7 @@ void handleAoeKillResponse(GameState* state, Player* responder, Card* killCard)
         nextInfo.target = nextTarget;
         nextInfo.sourceCard = nullptr;
         nextInfo.requiredCardType = CardType::Kill;
-        nextInfo.description = info.source->displayName() + " 使用了【南蛮入侵】，" + nextTarget->displayName() + " 需打出【杀】";
+        nextInfo.description = (info.source->displayName() + " 使用了【南蛮入侵】，" + nextTarget->displayName() + " 需打出【杀】").toStdString();
         nextInfo.canSkip = true;
         nextInfo.remainingTargets = std::vector<Player*>(remainingTargets.begin() + 1, remainingTargets.end());
 
@@ -343,7 +343,7 @@ void handleAoeDodgeResponse(GameState* state, Player* responder, Card* dodgeCard
         nextInfo.target = nextTarget;
         nextInfo.sourceCard = nullptr;
         nextInfo.requiredCardType = CardType::Dodge;
-        nextInfo.description = info.source->displayName() + " 使用了【万箭齐发】，" + nextTarget->displayName() + " 需打出【闪】";
+        nextInfo.description = (info.source->displayName() + " 使用了【万箭齐发】，" + nextTarget->displayName() + " 需打出【闪】").toStdString();
         nextInfo.canSkip = true;
         nextInfo.remainingTargets = std::vector<Player*>(remainingTargets.begin() + 1, remainingTargets.end());
 
@@ -399,7 +399,7 @@ void startDyingProcess(GameState* state, Player* dyingPlayer)
     info.target = dyingPlayer;
     info.sourceCard = nullptr;
     info.requiredCardType = CardType::Peach;
-    info.description = dyingPlayer->displayName() + " 濒死，" + firstSavior->displayName() + " 可以使用【桃】或【酒】";
+    info.description = (dyingPlayer->displayName() + " 濒死，" + firstSavior->displayName() + " 可以使用【桃】或【酒】").toStdString();
     info.canSkip = true;
 
     state->setPendingAction(info);
@@ -450,7 +450,7 @@ void skipDyingResponse(GameState* state, Player* dyingPlayer)
         nextInfo.target = dyingPlayer;
         nextInfo.sourceCard = nullptr;
         nextInfo.requiredCardType = CardType::Peach;
-        nextInfo.description = dyingPlayer->displayName() + " 濒死，" + nextSavior->displayName() + " 可以使用【桃】或【酒】";
+        nextInfo.description = (dyingPlayer->displayName() + " 濒死，" + nextSavior->displayName() + " 可以使用【桃】或【酒】").toStdString();
         nextInfo.canSkip = true;
 
         state->setPendingAction(nextInfo);

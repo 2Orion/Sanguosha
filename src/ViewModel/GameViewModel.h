@@ -1,164 +1,94 @@
 #ifndef GAMEVIEWMODEL_H
 #define GAMEVIEWMODEL_H
 
-#include <string>
-#include <vector>
+#include <QObject>
+#include <QString>
+#include <QVector>
 #include <memory>
-#include <cstddef>
-#include "Core/CommonTypes.h"
-#include "Core/Event.h"
-#include "GameState.h"  // 内部使用：PendingActionInfo, GameState
+#include "CommonTypes.h"
+#include "GameState.h"
+#include "CardData.h"
+#include "PlayerData.h"
+#include "PendingActionData.h"
 
 class CardManager;
 class Player;
 class Card;
 class Character;
-class PlayerViewModel;
 class ActionViewModel;
-class CardViewModel;
 
-/// ViewModel 层的待定动作信息（无原始 Model 指针）
-struct PendingActionVM {
-    int sourceId = -1;            // 动作来源玩家 ID
-    int targetId = -1;            // 需要响应的玩家 ID
-    int sourceCardId = -1;        // 触发动作的卡牌 ID
-    CardType requiredCardType = CardType::Kill;
-    std::string description;      // 界面提示文字
-    bool canSkip = false;         // 是否可以跳过响应
-    std::vector<int> remainingTargetIds; // AOE/链式响应中尚未询问的后续目标 ID
-};
-
-/// 游戏 ViewModel — 中央协调器
-/// 管理游戏生命周期、阶段状态机、回合流转
-class GameViewModel {
+/// 游戏 ViewModel — 中央协调器，对外只暴露 Qt 信号 + 值类型
+class GameViewModel : public QObject {
+    Q_OBJECT
 public:
-    GameViewModel();
-    ~GameViewModel();
+    explicit GameViewModel(QObject* parent = nullptr);
+    ~GameViewModel() override;
 
-    // ==================== 游戏生命周期 ====================
-
-    /// 开始游戏（characterId: 0=曹操, 1=关羽, 2=张飞, 3=赵云）
+    // ==================== 游戏生命周期（SGSApp 调用） ====================
     void startGame(int characterId1, int characterId2);
-
-    /// 推进到下个阶段
-    /// Prepare→Judge→Draw→Play→Discard→End→(切换玩家)→Prepare...
     void advancePhase();
-
-    /// 当前玩家结束出牌（Play→Discard 的快捷方式）
     void endPlayPhase();
 
-    /// 跳过非交互阶段，直接推进到需要玩家操作的阶段（Play/Discard）
-    void advanceToInteractivePhase();
+    // ==================== 子 VM 访问（仅 SGSApp 使用） ====================
+    ActionViewModel* actionVM() const;
+    GameState* gameState() const;
 
-    // ==================== 状态查询（仅值类型） ====================
-
-    /// 当前玩家 ID（0 或 1），-1 表示无当前玩家
+    static QString phaseName(PhaseType phase);
     int currentPlayerId() const;
 
-    /// 对手玩家 ID（0 或 1），-1 表示无对手
-    int opponentPlayerId() const;
+signals:
+    void phaseChanged(PhaseType phase);
+    void currentPlayerChanged(int playerIndex);
+    void gameOver(int winnerId);
+    void logMessage(const QString& msg);
+    void pendingActionCreated(const PendingActionData& info);
+    void pendingActionCleared();
+    void stateChanged();
 
-    PhaseType currentPhase() const;
-    int turnCount() const;
-    bool isGameOver() const;
+    /// 手牌数据更新（双人模式实时推送双方手牌）
+    void handCardsUpdated(int playerId, const CardList& cards);
 
-    /// 获胜者 ID，-1 表示无（平局或游戏未结束）
-    int winnerId() const;
+    /// 玩家数据更新
+    void playerDataUpdated(int playerId, const PlayerData& data);
 
-    /// 获取阶段的中文名称
-    static std::string phaseName(PhaseType phase);
+    // ==================== View 命令槽（由 SGSApp 直连） ====================
+public slots:
+    void onDiscardCardRequested(int cardId, int playerId);
+    void onEndPlayRequested();
+    void onAdvanceRequested();
+    void onSkipRequested();
 
-    // ==================== 待定动作（响应系统） ====================
-
-    bool hasPendingAction() const;
-    PendingActionVM pendingActionVM() const;
-
-    // ==================== 子 ViewModel ====================
-
-    PlayerViewModel* playerVM(int index) const;
-    ActionViewModel* actionVM() const;
-
-    // ==================== 手牌展示辅助 ====================
-
-    /// 获取当前玩家手牌的 CardViewModel 列表（重置 UI 状态后计算可打出的牌）
-    std::vector<std::unique_ptr<CardViewModel>> getCurrentPlayerCardVMs() const;
-
-    /// 获取指定玩家手牌的 CardViewModel 列表（按玩家 ID）
-    std::vector<std::unique_ptr<CardViewModel>> getPlayerCardVMs(int playerIndex) const;
-
-    // ==================== 显示数据查找辅助（给 View 用，只返回值类型） ====================
-
-    /// 通过卡牌 ID 查找完整显示字符串（如 "♠A 杀"）
-    std::string cardDisplayString(int cardId) const;
-
-    /// 通过卡牌 ID 查找卡牌名称
-    std::string cardNameById(int cardId) const;
-
-    /// 通过卡牌 ID 查找卡牌类型
-    CardType cardTypeById(int cardId) const;
-
-    /// 通过玩家 ID 获取玩家显示名
-    std::string playerDisplayName(int playerId) const;
-
-    // ==================== 事件 ====================
-
-    EventListener<PhaseType> phaseChanged;
-    EventListener<int> currentPlayerChanged;                // int = playerIndex
-    EventListener<int> gameOver;                            // int = winnerId, -1 = 平局
-    EventListener<const std::string&> logMessage;
-    EventListener<const PendingActionVM&> pendingActionCreated;
-    EventListener<> pendingActionCleared;
-    EventListener<> stateChanged;
+private slots:
+    void onModelPendingActionCreated(const PendingActionInfo& info);
+    void onModelPendingActionCleared();
+    void onModelGameOver(int winnerPlayerId);
+    void onModelPlayerDied(int playerId);
 
 private:
-    // ---- 初始化 ----
     void initGame(Character* char1, Character* char2);
     Character* createCharacterById(int id);
-
-    // ---- 阶段执行 ----
     void executePhasePrepare();
     void executePhaseJudge();
     void executePhaseDraw();
     void executePhaseEnd();
-
-    // ---- 辅助 ----
     void setNextPhase(PhaseType phase);
     void switchToNextPlayer();
-    void emitLog(const std::string& msg);
+    void emitLog(const QString& msg);
 
-    // ---- Model 事件回调 ----
-    void onPendingActionCreated(const PendingActionInfo& info);
-    void onPendingActionCleared();
-    void onGameOver(Player* winner);
-    void onPlayerDied(Player* player);
+    // 数据推送辅助
+    void pushPlayerData(int playerId);
+    void pushHandCards(int playerId);
+    void pushAllData();
 
-    // ---- 内部 Model 访问（仅 ViewModel 层内部使用） ----
-    GameState* gameState() const;
     Player* currentPlayer() const;
     Player* opponentPlayer() const;
     Player* playerByIndex(int index) const;
-
-    /// 通过 cardId 查找卡牌（遍历所有玩家手牌）
     Card* findCard(int cardId) const;
 
-    // ---- 成员 ----
     std::unique_ptr<GameState> m_state;
     std::unique_ptr<CardManager> m_cardManager;
     std::unique_ptr<ActionViewModel> m_actionVM;
-    std::vector<std::unique_ptr<PlayerViewModel>> m_playerVMs;
-    std::vector<std::unique_ptr<Character>> m_characters;  // 武将生命周期管理
-
-    // Model 事件连接 ID
-    struct ModelConnections {
-        size_t phaseChangedId = 0;
-        size_t currentPlayerChangedId = 0;
-        size_t pendingActionCreatedId = 0;
-        size_t pendingActionClearedId = 0;
-        size_t gameOverId = 0;
-        size_t stateRefreshedId = 0;
-    };
-    ModelConnections m_modelConn;
-    std::vector<size_t> m_playerDiedConnections;  // 每个玩家的 died 连接 ID
+    std::vector<QMetaObject::Connection> m_modelConnections;
 };
 
 #endif // GAMEVIEWMODEL_H

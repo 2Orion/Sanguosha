@@ -1,8 +1,8 @@
 #ifndef MODEL_COMMONTYPES_H
 #define MODEL_COMMONTYPES_H
 
-// 从 Core 层导入共享枚举类型
-#include "Core/CommonTypes.h"
+// 从 Common 层导入共享枚举类型
+#include "Common/CommonTypes.h"
 
 // ==================== Model 层转发声明 ====================
 
