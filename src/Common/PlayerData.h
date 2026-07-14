@@ -1,10 +1,10 @@
-#ifndef PLAYERDISPLAYDATA_H
-#define PLAYERDISPLAYDATA_H
+#ifndef PLAYERDATA_H
+#define PLAYERDATA_H
 
 #include <QString>
 
 /// 玩家展示数据（值类型，无指针，跨层传递用）
-struct PlayerDisplayData {
+struct PlayerData {
     int playerId = -1;
     QString displayName;
     QString characterName;
@@ -19,4 +19,4 @@ struct PlayerDisplayData {
     bool isCurrentPlayer = false;
 };
 
-#endif // PLAYERDISPLAYDATA_H
+#endif // PLAYERDATA_H

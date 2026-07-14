@@ -7,9 +7,9 @@
 #include <memory>
 #include "CommonTypes.h"
 #include "GameState.h"
-#include "CardDisplayData.h"
-#include "PlayerDisplayData.h"
-#include "PendingActionVM.h"
+#include "CardData.h"
+#include "PlayerData.h"
+#include "PendingActionData.h"
 
 class CardManager;
 class Player;
@@ -24,12 +24,12 @@ public:
     explicit GameViewModel(QObject* parent = nullptr);
     ~GameViewModel() override;
 
-    // ==================== 游戏生命周期（GameBootstrap 调用） ====================
+    // ==================== 游戏生命周期（SGSApp 调用） ====================
     void startGame(int characterId1, int characterId2);
     void advancePhase();
     void endPlayPhase();
 
-    // ==================== 子 VM 访问（仅 GameBootstrap 使用） ====================
+    // ==================== 子 VM 访问（仅 SGSApp 使用） ====================
     ActionViewModel* actionVM() const;
     GameState* gameState() const;
 
@@ -41,15 +41,22 @@ signals:
     void currentPlayerChanged(int playerIndex);
     void gameOver(int winnerId);
     void logMessage(const QString& msg);
-    void pendingActionCreated(const PendingActionVM& info);
+    void pendingActionCreated(const PendingActionData& info);
     void pendingActionCleared();
     void stateChanged();
 
     /// 手牌数据更新（双人模式实时推送双方手牌）
-    void handCardsUpdated(int playerId, const CardDisplayList& cards);
+    void handCardsUpdated(int playerId, const CardList& cards);
 
     /// 玩家数据更新
-    void playerDataUpdated(int playerId, const PlayerDisplayData& data);
+    void playerDataUpdated(int playerId, const PlayerData& data);
+
+    // ==================== View 命令槽（由 SGSApp 直连） ====================
+public slots:
+    void onDiscardCardRequested(int cardId, int playerId);
+    void onEndPlayRequested();
+    void onAdvanceRequested();
+    void onSkipRequested();
 
 private slots:
     void onModelPendingActionCreated(const PendingActionInfo& info);

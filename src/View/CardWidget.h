@@ -2,7 +2,7 @@
 #define CARDWIDGET_H
 
 #include <QFrame>
-#include "CardDisplayData.h"
+#include "CardData.h"
 
 /// 单张卡牌控件 — 只依赖 Common 层值类型
 class CardWidget : public QFrame {
@@ -10,7 +10,7 @@ class CardWidget : public QFrame {
 public:
     explicit CardWidget(bool faceUp = true, QWidget* parent = nullptr);
 
-    void setDisplayData(const CardDisplayData& data);
+    void setDisplayData(const CardData& data);
     void setFaceUp(bool faceUp, bool showPlayable = false);
 
     int cardId() const { return m_data.cardId; }
@@ -41,7 +41,7 @@ private:
     void drawCardFront(QPainter& painter, const QRect& rect, int radius);
     void drawStateOverlay(QPainter& painter, const QRect& rect, int radius);
 
-    CardDisplayData m_data;
+    CardData m_data;
     bool m_faceUp = true;
     bool m_selected = false;
     bool m_playable = false;

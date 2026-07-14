@@ -157,6 +157,15 @@ void GameViewModel::executePhaseEnd()
 
 void GameViewModel::setNextPhase(PhaseType phase)
 {
+    // 自动跳过 Discard 阶段（当前玩家无需弃牌）
+    if (phase == PhaseType::Discard) {
+        Player* cur = currentPlayer();
+        if (cur && GameRule::getDiscardCount(cur) <= 0) {
+            setNextPhase(PhaseType::End);
+            return;
+        }
+    }
+
     m_state->setCurrentPhase(phase);
     emitLog(QStringLiteral("→ ") + GameViewModel::phaseName(phase));
     emit stateChanged();
@@ -191,7 +200,7 @@ void GameViewModel::pushPlayerData(int playerId)
 {
     Player* p = playerByIndex(playerId);
     if (!p) return;
-    PlayerDisplayData d;
+    PlayerData d;
     d.playerId = p->playerId();
     d.displayName = p->displayName();
     d.characterName = p->characterName();
@@ -219,10 +228,10 @@ void GameViewModel::pushHandCards(int playerId)
         playableIds = m_actionVM->getPlayableCardIds(playerId);
     }
 
-    QVector<CardDisplayData> cards;
+    QVector<CardData> cards;
     for (Card* card : p->handCards()) {
         if (!card) continue;
-        CardDisplayData d;
+        CardData d;
         d.cardId = card->id();
         d.cardType = card->cardType();
         d.suit = card->suit();
@@ -253,7 +262,7 @@ void GameViewModel::pushAllData()
 
 void GameViewModel::onModelPendingActionCreated(const PendingActionInfo& info)
 {
-    PendingActionVM vm;
+    PendingActionData vm;
     vm.sourceId = info.source ? info.source->playerId() : -1;
     vm.targetId = info.target ? info.target->playerId() : -1;
     vm.sourceCardId = info.sourceCard ? info.sourceCard->id() : -1;
@@ -262,6 +271,14 @@ void GameViewModel::onModelPendingActionCreated(const PendingActionInfo& info)
     vm.canSkip = info.canSkip;
     for (Player* p : info.remainingTargets)
         if (p) vm.remainingTargetIds.push_back(p->playerId());
+
+    // 自动跳过：目标玩家没有可用响应牌
+    auto responseCards = m_actionVM->getResponseCardIds(vm.targetId, vm.requiredCardType);
+    if (responseCards.empty()) {
+        m_actionVM->skipResponse(vm.targetId, true);
+        return;
+    }
+
     emit pendingActionCreated(vm);
     emitLog(QString::fromStdString(info.description));
     emit stateChanged();
@@ -288,6 +305,26 @@ void GameViewModel::onModelPlayerDied(int playerId)
     Player* p = playerByIndex(playerId);
     if (!p) return;
     emitLog(p->displayName() + QStringLiteral("（") + p->characterName() + QStringLiteral("）阵亡！"));
+}
+
+// ==================== View 命令槽（从 SGSApp 迁入） ====================
+
+void GameViewModel::onDiscardCardRequested(int cardId, int playerId)
+{
+    m_actionVM->discardCard(cardId, playerId);
+    if (m_actionVM->getDiscardCount(playerId) <= 0)
+        advancePhase();
+}
+
+void GameViewModel::onEndPlayRequested() { endPlayPhase(); }
+
+void GameViewModel::onAdvanceRequested() { advancePhase(); }
+
+void GameViewModel::onSkipRequested()
+{
+    if (!m_state || !m_state->hasPendingAction()) return;
+    int responderId = m_state->pendingActionInfo().target->playerId();
+    m_actionVM->skipResponse(responderId, true);
 }
 
 // ==================== 内部 ====================

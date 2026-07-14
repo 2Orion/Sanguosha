@@ -261,3 +261,43 @@ void ActionViewModel::emitLog(const QString& msg)
 {
     emit logMessage(msg);
 }
+
+// ==================== View 命令槽（从 SGSApp 迁入） ====================
+
+void ActionViewModel::onPlayCardRequested(int cardId, int playerId)
+{
+    if (!isOwnCard(cardId, playerId)) return;
+    if (!canPlayCard(cardId, playerId)) return;
+
+    auto targets = getValidTargetIds(cardId, playerId);
+    if (targets.empty()) {
+        playCard(cardId, playerId, {});
+    } else if (targets.size() == 1) {
+        playCard(cardId, playerId, {targets[0]});
+    } else {
+        m_pendingCardId = cardId;
+        m_pendingUserId = playerId;
+        m_pendingTargetIds = QVector<int>(targets.begin(), targets.end());
+        playCard(cardId, playerId, {targets[0]});
+    }
+}
+
+void ActionViewModel::onTargetSelected(int playerIndex)
+{
+    if (m_pendingCardId >= 0 && !m_pendingTargetIds.isEmpty()) {
+        for (int t : m_pendingTargetIds) {
+            if (t == playerIndex) {
+                playCard(m_pendingCardId, m_pendingUserId, {playerIndex});
+                break;
+            }
+        }
+        m_pendingCardId = -1;
+        m_pendingUserId = -1;
+        m_pendingTargetIds.clear();
+    }
+}
+
+void ActionViewModel::onRespondCardRequested(int cardId, int responderId)
+{
+    respondCard(cardId, responderId);
+}

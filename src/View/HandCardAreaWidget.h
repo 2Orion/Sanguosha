@@ -3,17 +3,17 @@
 
 #include <QWidget>
 #include <QVector>
-#include "CardDisplayData.h"
+#include "CardData.h"
 
 class CardWidget;
 
-/// 手牌区域 — 只依赖 Common 层 CardDisplayData
+/// 手牌区域 — 只依赖 Common 层 CardData
 class HandCardAreaWidget : public QWidget {
     Q_OBJECT
 public:
     explicit HandCardAreaWidget(QWidget* parent = nullptr);
 
-    void setCards(const CardDisplayList& cards, bool faceUp = true);
+    void setCards(const CardList& cards, bool faceUp = true);
     void setSelection(int cardId, bool selected);
 
     int selectedCardId() const;
@@ -37,7 +37,7 @@ private:
     void clearWidgets();
     CardWidget* findWidgetByCardId(int id) const;
 
-    CardDisplayList m_cards;
+    CardList m_cards;
     bool m_faceUp = false;
     std::vector<CardWidget*> m_cardWidgets;
 

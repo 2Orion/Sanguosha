@@ -15,7 +15,7 @@ CardWidget::CardWidget(bool faceUp, QWidget* parent)
     setMouseTracking(true);
 }
 
-void CardWidget::setDisplayData(const CardDisplayData& data)
+void CardWidget::setDisplayData(const CardData& data)
 {
     m_data = data;
     QString tip = data.cardName;

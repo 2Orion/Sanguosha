@@ -97,11 +97,11 @@ set(VIEW_HEADERS
 # ==================== App 层（组合根） ====================
 
 set(APP_SOURCES
-    src/App/GameBootstrap.cpp
+    src/App/SGSApp.cpp
 )
 
 set(APP_HEADERS
-    src/App/GameBootstrap.h
+    src/App/SGSApp.h
 )
 
 # ==================== Qt 版可执行程序 ====================

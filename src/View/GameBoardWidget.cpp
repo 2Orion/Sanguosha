@@ -74,7 +74,7 @@ void GameBoardWidget::onPhaseChanged(PhaseType phase)
     }
 }
 
-void GameBoardWidget::onPlayerDataUpdated(int playerId, const PlayerDisplayData& data)
+void GameBoardWidget::onPlayerDataUpdated(int playerId, const PlayerData& data)
 {
     if (playerId == 0) m_bottomPlayerInfo->setDisplayData(data);
     else if (playerId == 1) m_topPlayerInfo->setDisplayData(data);
@@ -86,7 +86,7 @@ void GameBoardWidget::onPlayerDataUpdated(int playerId, const PlayerDisplayData&
     }
 }
 
-void GameBoardWidget::onHandCardsUpdated(int playerId, const CardDisplayList& data)
+void GameBoardWidget::onHandCardsUpdated(int playerId, const CardList& data)
 {
     // 双人同屏模式，双方手牌均正面朝上
     if (playerId == m_currentPlayerId)
@@ -95,7 +95,7 @@ void GameBoardWidget::onHandCardsUpdated(int playerId, const CardDisplayList& da
         m_topHandArea->setCards(data, true);
 }
 
-void GameBoardWidget::onPendingActionCreated(const PendingActionVM& info)
+void GameBoardWidget::onPendingActionCreated(const PendingActionData& info)
 {
     m_state = State::Responding;
     m_responderId = info.targetId;   // 记住需要响应的玩家 ID

@@ -182,7 +182,129 @@ void GameBootstrap::onPendingActionFromVM(const PendingActionVM& info) {
 
 ---
 
-## 4. 值类型（Common 层）
+## 4. Model ↔ ViewModel（双向通信）
+
+ViewModel 和 Model 之间的通信是**双向的**，但使用不同的机制。
+
+### 4.1 Model → ViewModel：Qt 信号
+
+Model 层对象继承 `QObject`，状态变化时 `emit signal()`。ViewModel 在初始化时 `connect` 这些信号。
+
+```cpp
+// GameViewModel::initGame() 中建立连接
+connect(m_state.get(), &GameState::phaseChanged,               // Model 信号
+        this, &GameViewModel::phaseChanged);                    // → VM 信号转发
+
+connect(m_state.get(), &GameState::pendingActionCreated,       // Model 信号
+        this, &GameViewModel::onModelPendingActionCreated);     // → VM 槽处理
+
+connect(p, &Player::handCardsChanged,                          // Player 信号
+        this, [this, p]() { pushHandCards(p->playerId()); });  // → VM lambda
+```
+
+Model 只管 `emit`，不关心谁在监听：
+
+```cpp
+// Model/GameState.cpp
+void GameState::setCurrentPhase(PhaseType phase) {
+    m_currentPhase = phase;
+    emit phaseChanged(phase);  // 不知道谁收到了这个信号
+}
+
+// Model/Player.cpp
+void Player::addHandCard(Card* card) {
+    m_handCards.push_back(card);
+    emit handCardAdded(card->id());   // 通知手牌变化
+    emit handCardsChanged();
+    emit stateChanged();
+}
+```
+
+全部 Model → ViewModel 信号连接（在 `GameViewModel::initGame` 中建立）：
+
+| Model 信号 | ViewModel 处理 | 说明 |
+|-----------|---------------|------|
+| `GameState::phaseChanged` | → `GameViewModel::phaseChanged`（信号直转） | 阶段变化转发 |
+| `GameState::currentPlayerChanged` | → `GameViewModel::currentPlayerChanged`（信号直转） | 当前玩家转发 |
+| `GameState::pendingActionCreated` | → `GameViewModel::onModelPendingActionCreated`（槽） | 翻译为 PendingActionVM 后转发 |
+| `GameState::pendingActionCleared` | → `GameViewModel::onModelPendingActionCleared`（槽） | 清空待定动作 |
+| `GameState::gameOver` | → `GameViewModel::onModelGameOver`（槽） | 处理游戏结束 |
+| `GameState::stateRefreshed` | → `GameViewModel::pushAllData`（lambda） | 全面推送数据 |
+| `Player::handCardsChanged` | → lambda → `pushHandCards` | 手牌变化推送 |
+| `Player::stateChanged` | → lambda → `pushPlayerData` | 玩家状态推送 |
+| `Player::died` | → `GameViewModel::onModelPlayerDied`（槽） | 阵亡处理 |
+
+### 4.2 ViewModel → Model：直接方法调用
+
+ViewModel **持有** Model 对象（`unique_ptr`），直接调用其方法修改状态。Model 状态变化后通过 Qt 信号通知 ViewModel（见上节），形成闭环。
+
+```cpp
+// GameViewModel 持有 GameState 和 CardManager
+class GameViewModel : public QObject {
+    std::unique_ptr<GameState> m_state;       // 持有 Model
+    std::unique_ptr<CardManager> m_cardManager; // 持有 Model
+};
+```
+
+```cpp
+// ViewModel → Model 直接方法调用
+void GameViewModel::advancePhase() {
+    switch (m_state->currentPhase()) {     // 读取 Model 状态
+    case PhaseType::Draw:
+        executePhaseDraw();                // VM → Model 方法调用
+        setNextPhase(PhaseType::Play);
+        break;
+    ...
+    }
+}
+
+// ActionViewModel 同样直接调用 Model 方法
+ActionResult ActionViewModel::playCard(int cardId, int playerId,
+                                        const std::vector<int>& targetIds) {
+    Card* card = findCard(cardId);
+    Player* user = findPlayer(playerId);
+    ActionResult result = card->execute(m_state, user, targets);  // Model 方法
+    user->removeHandCard(card);                                    // Model 方法
+    m_state->cardManager()->discard(card);                         // Model 方法
+    emit actionCompleted();
+    return result;
+}
+```
+
+### 4.3 完整闭环示例：出杀
+
+```
+用户出杀点击"跳过":
+  ① GameBootstrap::onSkipRequested()
+  ②   → ActionVM::skipResponse(playerId, true)          ← ViewModel 调用 ViewModel
+  ③     → GameRule::handleKillResponse(state, responder, nullptr)  ← VM → Model
+  ④       → Player::damage(1)                            ← Model 方法
+  ⑤         → emit hpChanged(m_hp)                      ← Model 发出信号
+  ⑥           → PlayerViewModel 曾转发此信号（重构前）/ 现在直接连到...
+
+  ⑦       → state->clearPendingAction()                  ← Model 方法
+  ⑧         → emit pendingActionCleared()               ← Model 发出信号
+  ⑨           → GameVM::onModelPendingActionCleared()    ← ViewModel 接收
+  ⑩             → emit pendingActionCleared()            ← ViewModel 转发给 View
+  ⑪               → GameBoardWidget::onPendingActionCleared()  ← View 更新 UI
+```
+
+### 4.4 小结
+
+| 方向 | 机制 | 代码示例 |
+|------|------|---------|
+| **Model → ViewModel** | Qt 信号 | `connect(model, &Model::signal, vm, &VM::slot)` |
+| **ViewModel → Model** | 方法调用 | `m_state->setCurrentPhase(phase)` |
+
+ViewModel 同时扮演两个角色：
+- **指挥者**：调用 Model 方法修改状态
+- **监听者**：接收 Model 信号并进行后续处理
+
+这正是 MVVM 中 ViewModel 的核心职责——封装 Model 的复杂度，为更上层的 View 提供服务。
+
+---
+
+## 5. 值类型（Common 层）
 
 三个跨层值类型结构体，放在`src/Common/`中，所有层（包括 View）都可以引用：
 
@@ -215,7 +337,7 @@ struct PendingActionVM {
 
 ---
 
-## 5. 解耦效果
+## 6. 解耦效果
 
 ```
 重构前：                              重构后：

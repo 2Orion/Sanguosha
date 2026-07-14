@@ -5,15 +5,15 @@
 #include <QLabel>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
-#include "PlayerDisplayData.h"
+#include "PlayerData.h"
 
-/// 玩家信息面板 — 只依赖 Common 层 PlayerDisplayData
+/// 玩家信息面板 — 只依赖 Common 层 PlayerData
 class PlayerInfoWidget : public QWidget {
     Q_OBJECT
 public:
     explicit PlayerInfoWidget(QWidget* parent = nullptr);
 
-    void setDisplayData(const PlayerDisplayData& data);
+    void setDisplayData(const PlayerData& data);
     void setCurrentPlayer(bool isCurrent);
     bool isCurrentPlayer() const { return m_isCurrent; }
 
