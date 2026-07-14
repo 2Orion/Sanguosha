@@ -56,13 +56,15 @@ void GameBoardWidget::onHandCardsUpdated(int playerId, const CardDisplayList& ca
 
 | ViewModel 信号 | View 槽 | 数据类型 |
 |---------------|--------|---------|
-| `phaseChanged(PhaseType)` | `onPhaseChanged` | 枚举 |
-| `playerDataUpdated(int, PlayerDisplayData)` | `onPlayerDataUpdated` | 值类型 |
-| `handCardsUpdated(int, CardDisplayList)` | `onHandCardsUpdated` | 值类型列表 |
-| `pendingActionCreated(PendingActionVM)` | `onPendingActionCreated` | 值类型 |
-| `pendingActionCleared()` | `onPendingActionCleared` | 无参数 |
-| `gameOver(int)` | `onGameOver` | int |
-| `logMessage(QString)` | `onLogMessage` | QString |
+| `phaseChanged(PhaseType)` | ⚠️ 先到 `GameBootstrap::onPhaseFromVM`，再转发给 `onPhaseChanged` | 枚举 |
+| `playerDataUpdated(int, PlayerDisplayData)` | `onPlayerDataUpdated`（直连） | 值类型 |
+| `handCardsUpdated(int, CardDisplayList)` | `onHandCardsUpdated`（直连） | 值类型列表 |
+| `pendingActionCreated(PendingActionVM)` | ⚠️ 先到 `GameBootstrap::onPendingActionFromVM`，再转发给 `onPendingActionCreated` | 值类型 |
+| `pendingActionCleared()` | `onPendingActionCleared`（直连） | 无参数 |
+| `gameOver(int)` | `onGameOver`（直连） | int |
+| `logMessage(QString)` | `onLogMessage`（直连） | QString |
+
+`phaseChanged` 和 `pendingActionCreated` **不是**直连 View 槽，而是先被 `GameBootstrap` 自己的拦截槽（详见第 3 节）接住做条件判断，再决定是否转发给 View——这两条是后续 Bug 修复中加上的（见 `CHANGELOG.md`），文档曾经落后于代码，现已更新。
 
 ---
 
@@ -124,18 +126,20 @@ void GameBootstrap::onPlayCardRequested(int cardId, int playerId) {
 
 ## 3. GameBootstrap 连接表
 
-GameBootstrap 构造函数中完成所有连接：
+`GameBootstrap` 在 `startLocalGame()` 创建完 `GameViewModel`/`GameBoardWidget` 后调用 `wireAll()` 完成所有连接（实际代码见 `src/App/GameBootstrap.cpp`，下面代码块已同步更新，之前的版本漏掉了两条拦截连接）：
 
 ```cpp
 void GameBootstrap::wireAll() {
-    // ViewModel 信号 → View 槽
-    connect(m_gvm, &GameViewModel::phaseChanged,      m_board, &GameBoardWidget::onPhaseChanged);
-    connect(m_gvm, &GameViewModel::playerDataUpdated,  m_board, &GameBoardWidget::onPlayerDataUpdated);
-    connect(m_gvm, &GameViewModel::handCardsUpdated,   m_board, &GameBoardWidget::onHandCardsUpdated);
-    connect(m_gvm, &GameViewModel::pendingActionCreated, m_board, &GameBoardWidget::onPendingActionCreated);
+    if (!m_gvm || !m_board) return;
+
+    // ViewModel 信号 → View 槽（phaseChanged / pendingActionCreated 先拦截，其余直连）
+    connect(m_gvm, &GameViewModel::phaseChanged, this, &GameBootstrap::onPhaseFromVM);
+    connect(m_gvm, &GameViewModel::playerDataUpdated, m_board, &GameBoardWidget::onPlayerDataUpdated);
+    connect(m_gvm, &GameViewModel::handCardsUpdated, m_board, &GameBoardWidget::onHandCardsUpdated);
+    connect(m_gvm, &GameViewModel::pendingActionCreated, this, &GameBootstrap::onPendingActionFromVM);
     connect(m_gvm, &GameViewModel::pendingActionCleared, m_board, &GameBoardWidget::onPendingActionCleared);
-    connect(m_gvm, &GameViewModel::gameOver,           m_board, &GameBoardWidget::onGameOver);
-    connect(m_gvm, &GameViewModel::logMessage,         m_board, &GameBoardWidget::onLogMessage);
+    connect(m_gvm, &GameViewModel::gameOver, m_board, &GameBoardWidget::onGameOver);
+    connect(m_gvm, &GameViewModel::logMessage, m_board, &GameBoardWidget::onLogMessage);
 
     // View 信号 → GameBootstrap 中转
     connect(m_board, &GameBoardWidget::playCardRequested,    this, &GameBootstrap::onPlayCardRequested);
@@ -147,6 +151,34 @@ void GameBootstrap::wireAll() {
     connect(m_board, &GameBoardWidget::skipRequested,        this, &GameBootstrap::onSkipRequested);
 }
 ```
+
+### 3.1 两个拦截槽
+
+`onPhaseFromVM` 和 `onPendingActionFromVM` 不是简单转发，它们在把信号交给 View 之前先做一次条件判断，这是两个 Bug 修复（见 `CHANGELOG.md`）落地的地方：
+
+```cpp
+void GameBootstrap::onPhaseFromVM(PhaseType phase) {
+    if (phase == PhaseType::Discard) {
+        int curId = m_gvm->currentPlayerId();
+        if (m_gvm->actionVM()->getDiscardCount(curId) <= 0) {
+            m_gvm->advancePhase();   // 手牌未超限，跳过弃牌阶段，不转发给 View
+            return;
+        }
+    }
+    m_board->onPhaseChanged(phase);
+}
+
+void GameBootstrap::onPendingActionFromVM(const PendingActionVM& info) {
+    auto responseCards = m_gvm->actionVM()->getResponseCardIds(info.targetId, info.requiredCardType);
+    if (responseCards.empty()) {
+        m_gvm->actionVM()->skipResponse(info.targetId, true);  // 无响应牌，自动跳过，不显示响应界面
+        return;
+    }
+    m_board->onPendingActionCreated(info);
+}
+```
+
+新增类似的"View 之前先拦截判断一次"的逻辑，都应该加在这两个槽（或新增同类槽）里，不要下沉到 `GameViewModel`/`ActionViewModel`（那样会让 ViewModel 承担 UI 呈现决策）或 `GameBoardWidget`（那样会破坏 View 零业务逻辑的约束）。
 
 ---
 
