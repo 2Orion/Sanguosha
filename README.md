@@ -54,7 +54,10 @@ Sanguosha/
 │   └── App/                  # 组合根
 │       └── SGSApp.h/cpp
 └── tests/
-    └── smoke_test.cpp
+    ├── smoke_test.cpp          # 无框架 Model 冒烟测试
+    ├── model_test.cpp          # Model Qt Test
+    ├── viewmodel_test.cpp      # ViewModel Qt Test
+    └── view_test.cpp           # View/App Qt Widgets Test
 ```
 
 ---
@@ -80,30 +83,64 @@ View → ViewModel (信号直连 public slots)
 
 ## 构建
 
-需要 **CMake ≥ 3.16** + **Qt 6（或 5.15+）**。
+需要 **CMake ≥ 3.16** + **Qt 6（或 5.15+）**，编译器需与 Qt 版本匹配（Qt 6.11 要求 GCC 11+）。在 Windows 上必须使用 **Windows 原生终端**（PowerShell / Git Bash / cmd），不能用 WSL——WSL 的 CMake 不认识 `MinGW Makefiles` 生成器，也无法运行 Windows 版编译器。
 
-```bash
-mkdir build && cd build
+以下命令为 **PowerShell** 语法（续行符是反引号 `` ` ``，不是 `\`）。
+
+### 版本一：系统 PATH 里的编译器版本已满足要求（GCC ≥ 11，且 `make`/`mingw32-make` 已在 PATH 中）
+
+```powershell
+mkdir build
+cd build
 cmake .. -G "MinGW Makefiles"
 make -j
 ```
 
-产物：`SanguoshaQt.exe`、`libSanguoshaModel.a`、`ModelSmokeTest.exe`
+### 版本二：系统 PATH 中默认编译器版本过低（如本机 `C:/mingw64` 是 GCC 8.1，编不过 Qt 6.11 头文件），显式指定 Qt 自带的 MinGW 工具链
+
+```powershell
+cmake -B build -G "MinGW Makefiles" `
+  -DCMAKE_CXX_COMPILER=D:/QT/Tools/mingw1310_64/bin/g++.exe `
+  -DCMAKE_MAKE_PROGRAM=D:/QT/Tools/mingw1310_64/bin/mingw32-make.exe
+cmake --build build -j
+```
+
+运行/测试前需把 Qt DLL 加入 PATH（每个新终端执行一次，否则 exe 会因找不到 `Qt6Core.dll` 等而启动失败）：
+
+```powershell
+$env:PATH = "D:\QT\6.11.1\mingw_64\bin;D:\QT\Tools\mingw1310_64\bin;$env:PATH"
+```
+
+> 判断该用哪个版本：先跑 `g++ --version` 和 `make --version`，若报错或版本 < 11，用版本二；若系统只有 `mingw32-make` 没有 `make`，版本一的 `make -j` 也要相应换成 `mingw32-make -j`。
+
+产物：`SanguoshaQt.exe`、`libSanguoshaModel.a`、`ModelSmokeTest.exe`、`ModelTest.exe`、`ViewModelTest.exe`、`ViewTest.exe`
 
 ---
 
 ## 运行
 
-```bash
+```powershell
 cd build
-./SanguoshaQt.exe
+.\SanguoshaQt.exe   # 终端运行需先将 Qt 与 MinGW 的 bin 目录加入 PATH
 ```
 
 ---
 
 ## 测试
 
-```bash
-cd build
-./ModelSmokeTest.exe     # 95/95
+```powershell
+cmake --build build --parallel 4
+ctest --test-dir build --output-on-failure
 ```
+
+当前注册 4 个测试：`ModelSmokeTest`、`ModelTest`、`ViewModelTest` 和 `ViewTest`。`ViewTest` 通过 CTest 自动使用 `QT_QPA_PLATFORM=offscreen`，不需要桌面显示服务器。
+
+直接运行单个 Qt Test 时，可以使用对应的构建产物：
+
+```powershell
+.\build\ModelTest.exe
+.\build\ViewModelTest.exe
+$env:QT_QPA_PLATFORM = "offscreen"; .\build\ViewTest.exe
+```
+
+当前完整套件通过，4 个测试目标均为正常断言通过；覆盖卡牌规则、响应权限、濒死救援、目标选择、主要 QWidget 和 App 生命周期。

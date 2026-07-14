@@ -51,6 +51,9 @@ void Player::setHp(int value)
 {
     int oldHp = m_hp;
     m_hp = std::max(0, value);
+    if (m_hp > 0 && oldHp <= 0) {
+        m_deathNotified = false;
+    }
     if (m_hp != oldHp) {
         emit hpChanged(m_hp);
         emit stateChanged();
@@ -90,6 +93,14 @@ void Player::setDying(bool dying_)
             emit revived(m_playerId);
         }
     }
+}
+
+void Player::markDead()
+{
+    if (m_hp > 0 || m_deathNotified) return;
+
+    m_deathNotified = true;
+    emit died(m_playerId);
 }
 
 bool Player::isFullHp() const { return m_hp >= maxHp(); }

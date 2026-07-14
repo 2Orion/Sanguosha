@@ -19,6 +19,11 @@ struct PendingActionInfo {
     std::string description;
     bool    canSkip = false;
     std::vector<Player*> remainingTargets;
+
+    // AOE 目标进入濒死时，救援完成后恢复原响应链。
+    Player* continuationSource = nullptr;
+    CardType continuationCardType = CardType::Kill;
+    std::vector<Player*> continuationTargets;
 };
 
 class GameState : public QObject {

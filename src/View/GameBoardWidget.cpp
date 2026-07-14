@@ -95,17 +95,38 @@ void GameBoardWidget::onHandCardsUpdated(int playerId, const CardList& data)
         m_topHandArea->setCards(data, true);
 }
 
+void GameBoardWidget::onTargetSelectionStarted(const QVector<int>& targetIds)
+{
+    m_state = State::SelectingTarget;
+    m_topPlayerInfo->setTargetable(targetIds.contains(m_topPlayerInfo->playerId()));
+    m_bottomPlayerInfo->setTargetable(targetIds.contains(m_bottomPlayerInfo->playerId()));
+    m_actionPanel->setHint(QStringLiteral("请选择目标角色"));
+}
+
+void GameBoardWidget::onTargetSelectionFinished()
+{
+    m_topPlayerInfo->setTargetable(false);
+    m_bottomPlayerInfo->setTargetable(false);
+    if (m_state == State::SelectingTarget) {
+        m_state = State::Idle;
+    }
+}
+
 void GameBoardWidget::onPendingActionCreated(const PendingActionData& info)
 {
+    onTargetSelectionFinished();
     m_state = State::Responding;
-    m_responderId = info.targetId;   // 记住需要响应的玩家 ID
+    m_responderId = (info.requiredCardType == CardType::Peach)
+            ? info.sourceId : info.targetId;
     m_actionPanel->updateForPendingAction(info);
     onLogMessage(info.description);
 }
 
 void GameBoardWidget::onPendingActionCleared()
 {
+    onTargetSelectionFinished();
     m_state = State::Idle;
+    m_responderId = -1;
     // 恢复操作面板到当前阶段应有的按钮状态
     m_actionPanel->updateForPhase(m_currentPhase, false);
 }

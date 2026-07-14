@@ -11,11 +11,11 @@ if(MSVC)
 endif()
 
 # Qt包查找
-find_package(Qt6 QUIET COMPONENTS Widgets)
+find_package(Qt6 QUIET COMPONENTS Widgets Test)
 if(Qt6_FOUND)
     set(QT_VERSION_MAJOR 6)
 else()
-    find_package(Qt5 5.15 QUIET COMPONENTS Widgets)
+    find_package(Qt5 5.15 QUIET COMPONENTS Widgets Test)
     if(Qt5_FOUND)
         set(QT_VERSION_MAJOR 5)
     endif()
@@ -150,3 +150,74 @@ target_link_libraries(ModelSmokeTest PRIVATE
 )
 
 add_test(NAME ModelSmokeTest COMMAND ModelSmokeTest)
+
+# ==================== Qt Test coverage ====================
+
+add_executable(ModelTest
+    tests/model_test.cpp
+)
+
+target_include_directories(ModelTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/Common
+    ${CMAKE_SOURCE_DIR}/src/Model
+)
+
+target_link_libraries(ModelTest PRIVATE
+    SanguoshaModel
+    Qt${QT_VERSION_MAJOR}::Core
+    Qt${QT_VERSION_MAJOR}::Test
+)
+
+add_test(NAME ModelTest COMMAND ModelTest)
+
+add_executable(ViewModelTest
+    tests/viewmodel_test.cpp
+    ${VIEWMODEL_SOURCES}
+    ${VIEWMODEL_HEADERS}
+)
+
+target_include_directories(ViewModelTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/Common
+    ${CMAKE_SOURCE_DIR}/src/Model
+    ${CMAKE_SOURCE_DIR}/src/ViewModel
+)
+
+target_link_libraries(ViewModelTest PRIVATE
+    SanguoshaModel
+    Qt${QT_VERSION_MAJOR}::Core
+    Qt${QT_VERSION_MAJOR}::Test
+)
+
+add_test(NAME ViewModelTest COMMAND ViewModelTest)
+
+add_executable(ViewTest
+    tests/view_test.cpp
+    ${VIEW_SOURCES}
+    ${VIEW_HEADERS}
+    ${VIEWMODEL_SOURCES}
+    ${VIEWMODEL_HEADERS}
+    ${APP_SOURCES}
+    ${APP_HEADERS}
+)
+
+target_include_directories(ViewTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/Common
+    ${CMAKE_SOURCE_DIR}/src/Model
+    ${CMAKE_SOURCE_DIR}/src/ViewModel
+    ${CMAKE_SOURCE_DIR}/src/View
+    ${CMAKE_SOURCE_DIR}/src/App
+)
+
+target_link_libraries(ViewTest PRIVATE
+    SanguoshaModel
+    Qt${QT_VERSION_MAJOR}::Widgets
+    Qt${QT_VERSION_MAJOR}::Test
+)
+
+add_test(NAME ViewTest COMMAND ViewTest)
+set_tests_properties(ViewTest PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

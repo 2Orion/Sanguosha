@@ -2,6 +2,24 @@
 
 ## Bug Fixes
 
+### [2026-07-14] 修复濒死响应、权限校验、目标选择和旧局生命周期
+
+- 致命伤害进入濒死后不再清掉救援待定动作；`checkDeath()` 会发出一次 `Player::died` 信号。
+- 响应牌必须属于当前响应者并匹配要求牌型；濒死响应者统一使用 `source`，且【酒】可用于救援。
+- 出牌、弃牌和响应接口补充持有者校验；过河拆桥/顺手牵羊没有合法目标时不会被使用或消耗。
+- 多目标出牌等待界面选择目标，并同步恢复/清理界面目标选择状态。
+- 新局开始或对局结束时对旧 `GameViewModel` 使用 `deleteLater()`，避免旧对象图泄漏。
+
+**验证**：`ModelSmokeTest`、`ModelTest`、`ViewModelTest`、`ViewTest` 共 4/4 通过，已移除对应的预期失败断言。
+
+### [2026-07-14] 补充分层自动化测试
+
+新增 Qt Test 测试目标，覆盖 Model、ViewModel、View 和 App 组合根，并通过 CTest 统一运行。View 测试在 `QT_QPA_PLATFORM=offscreen` 环境下执行，避免依赖桌面显示服务器。
+
+**涉及文件**：`tests/model_test.cpp`、`tests/viewmodel_test.cpp`、`tests/view_test.cpp`、`CMakeLists.txt`
+
+**验证**：新增测试目标最初共 4/4 通过；本轮已将此前跟踪的缺陷断言改为正常断言并完成修复。
+
 ### [2026-07-14] 出牌阶段无法主动使用武将转化技能（武圣/龙胆）
 
 **现象**：关羽无法将红色牌当【杀】主动使用，赵云无法将【闪】当【杀】主动使用。转化牌在出牌阶段不高亮、双击无反应。（响应阶段的转化一直正常，如用红牌响应南蛮入侵。）
@@ -24,7 +42,7 @@
 
 **涉及文件**：`src/ViewModel/ActionViewModel.h/cpp`
 
-**验证**：构建通过，冒烟测试 95/95（仅覆盖 Model 层，本改动在 ViewModel 层，需手动跑 `SanguoshaQt.exe` 用关羽/赵云实测转化出杀）。
+**验证（当时）**：构建通过，冒烟测试 95/95；当时仍需手动运行 `SanguoshaQt.exe` 用关羽/赵云实测主动转化出杀。当前已补充分层 Qt Test，但关羽/赵云主动转化的端到端断言仍需单独补齐。
 
 ### [2026-07-14] 选将后点击「开始对战」闪退
 
@@ -106,9 +124,9 @@ CardWidget::mousePressEvent → emit clicked(cardId)
 
 **现象**：需要打出响应牌（如杀后的闪）时，点击手牌无反应。
 
-**根因**：`GameBoardWidget::onCardClicked` 在 `State::Responding` 分支中发射 `respondCardRequested(cardId, m_currentPlayerId)`，其中 `m_currentPlayerId` 是当前回合玩家（攻击者），而非需要响应的玩家（目标）。ViewModel 收到错误 ID 后找不到对应的响应者，`respondCard` 因 `!responder` 直接返回。
+**根因**：`GameBoardWidget::onCardClicked` 在 `State::Responding` 分支中不能直接使用当前回合玩家作为响应者；普通响应的响应者是动作 `target`，濒死救援的响应者是动作 `source`。
 
-**修复**：在 `onPendingActionCreated` 中记录 `m_responderId = info.targetId`，`onCardClicked` 的 Responding 分支改为 `emit respondCardRequested(cardId, m_responderId)`。
+**修复**：在 `onPendingActionCreated` 中按要求牌型记录响应者 ID：普通响应使用 `targetId`，濒死救援使用 `sourceId`；`ActionViewModel` 再校验动作目标、牌型和持有者。
 
 **涉及文件**：`src/View/GameBoardWidget.h/cpp`
 

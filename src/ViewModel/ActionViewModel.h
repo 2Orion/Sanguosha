@@ -49,6 +49,8 @@ public slots:
 signals:
     void logMessage(const QString& msg);
     void actionCompleted();
+    void targetSelectionStarted(const QVector<int>& targetIds);
+    void targetSelectionFinished();
 
 private:
     // === 内部 Model 对象查找 ===

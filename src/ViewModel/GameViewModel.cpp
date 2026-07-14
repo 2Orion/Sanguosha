@@ -6,6 +6,15 @@
 #include "Card.h"
 #include "Character.h"
 
+namespace {
+
+Player* pendingResponder(const PendingActionInfo& info)
+{
+    return info.requiredCardType == CardType::Peach ? info.source : info.target;
+}
+
+} // namespace
+
 GameViewModel::GameViewModel(QObject* parent)
     : QObject(parent)
 {
@@ -272,10 +281,14 @@ void GameViewModel::onModelPendingActionCreated(const PendingActionInfo& info)
     for (Player* p : info.remainingTargets)
         if (p) vm.remainingTargetIds.push_back(p->playerId());
 
-    // 自动跳过：目标玩家没有可用响应牌
-    auto responseCards = m_actionVM->getResponseCardIds(vm.targetId, vm.requiredCardType);
+    // 普通响应由 target 负责，濒死救援由 source（当前救援者）负责。
+    Player* responder = pendingResponder(info);
+    int responderId = responder ? responder->playerId() : -1;
+
+    // 自动跳过：当前响应者没有可用响应牌
+    auto responseCards = m_actionVM->getResponseCardIds(responderId, vm.requiredCardType);
     if (responseCards.empty()) {
-        m_actionVM->skipResponse(vm.targetId, true);
+        m_actionVM->skipResponse(responderId, true);
         return;
     }
 
@@ -323,7 +336,9 @@ void GameViewModel::onAdvanceRequested() { advancePhase(); }
 void GameViewModel::onSkipRequested()
 {
     if (!m_state || !m_state->hasPendingAction()) return;
-    int responderId = m_state->pendingActionInfo().target->playerId();
+    Player* responder = pendingResponder(m_state->pendingActionInfo());
+    if (!responder) return;
+    int responderId = responder->playerId();
     m_actionVM->skipResponse(responderId, true);
 }
 

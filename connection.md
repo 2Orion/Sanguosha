@@ -20,6 +20,8 @@ View (信号) ────直连────► ViewModel (public slots)
 | ViewModel → View | Qt 信号直达 View 槽 | SGSApp（组合根） |
 | View → ViewModel | View 信号直达 ViewModel 的 public slots | SGSApp（组合根） |
 
+待定动作的响应者规则保持一致：普通【杀】/AOE 响应由 `target` 负责，濒死救援（`requiredCardType == Peach`）由 `source` 负责；因此 View、GameViewModel 自动跳过和 ActionViewModel 校验都按该规则取响应者。
+
 与第一次重构的区别：`GameBootstrap` 时代 View 信号先进 App 层的私有槽做校验/路由再调 VM 方法，且 `phaseChanged`/`pendingActionCreated` 会被 App 层拦截。现在这些逻辑全部在 ViewModel 内部（见第 3 节），SGSApp 只做 `connect`，View 和 VM 之间是纯直连。
 
 ---
@@ -61,6 +63,8 @@ void GameBoardWidget::onHandCardsUpdated(int playerId, const CardList& cards) { 
 | `pendingActionCleared()` | `onPendingActionCleared` | 无参数 |
 | `gameOver(int)` | `onGameOver` | int |
 | `logMessage(QString)` | `onLogMessage` | QString |
+| `ActionViewModel::targetSelectionStarted(QVector<int>)` | `onTargetSelectionStarted` | 合法目标 ID |
+| `ActionViewModel::targetSelectionFinished()` | `onTargetSelectionFinished` | 无参数 |
 
 原来由 App 层拦截槽（`onPhaseFromVM`/`onPendingActionFromVM`）承担的"自动跳过"判断，现在在信号发出**之前**就已在 GameViewModel 内部完成（见第 3 节），所以 View 收到的信号都是"确实需要 UI 呈现"的。
 
@@ -82,7 +86,9 @@ View 不知道 ViewModel 的存在。它发出信号，SGSApp 把这些信号直
   → 检查 isOwnCard + canPlayCard（含技能转化判定 playsAsKill）
   → 获取合法目标 getValidTargetIds
   → 0/1 目标：直接 playCard(…)
-  → N 目标：暂存 m_pendingCardId/m_pendingTargetIds，等待 targetPlayerSelected
+  → N 目标：暂存 m_pendingCardId/m_pendingTargetIds，发出 targetSelectionStarted
+              → View 进入 SelectingTarget，用户点击目标
+              → targetPlayerSelected → targetSelectionFinished → playCard(…)
 ```
 
 ### 全部 View → ViewModel 命令（均为直连）
@@ -126,6 +132,8 @@ void SGSApp::startLocalGame(int charId1, int charId2) {
     connect(m_gvm, &GameViewModel::phaseChanged,         m_board, &GameBoardWidget::onPhaseChanged);
     connect(m_gvm, &GameViewModel::playerDataUpdated,    m_board, &GameBoardWidget::onPlayerDataUpdated);
     connect(m_gvm, &GameViewModel::handCardsUpdated,     m_board, &GameBoardWidget::onHandCardsUpdated);
+    connect(avm, &ActionViewModel::targetSelectionStarted,  m_board, &GameBoardWidget::onTargetSelectionStarted);
+    connect(avm, &ActionViewModel::targetSelectionFinished, m_board, &GameBoardWidget::onTargetSelectionFinished);
     connect(m_gvm, &GameViewModel::pendingActionCreated, m_board, &GameBoardWidget::onPendingActionCreated);
     connect(m_gvm, &GameViewModel::pendingActionCleared, m_board, &GameBoardWidget::onPendingActionCleared);
     connect(m_gvm, &GameViewModel::gameOver,             m_board, &GameBoardWidget::onGameOver);
@@ -137,6 +145,8 @@ void SGSApp::startLocalGame(int charId1, int charId2) {
     m_gvm->startGame(charId1, charId2);
 }
 ```
+
+`SGSApp::startLocalGame()` 在创建新局前会对上一局的 Board 和 GameViewModel 调用 `deleteLater()`；对局结束时同样安排两者删除，再切回选将页，避免旧 Model、卡牌和信号连接残留。
 
 ### 3.2 拦截逻辑的新位置：GameViewModel 内部
 
@@ -159,9 +169,10 @@ void GameViewModel::setNextPhase(PhaseType phase) {
 // GameViewModel::onModelPendingActionCreated —— 无响应牌自动跳过（原 onPendingActionFromVM）
 void GameViewModel::onModelPendingActionCreated(const PendingActionInfo& info) {
     PendingActionData vm; /* Model 结构体 → 值类型翻译 */
-    auto responseCards = m_actionVM->getResponseCardIds(vm.targetId, vm.requiredCardType);
+    int responderId = vm.requiredCardType == CardType::Peach ? vm.sourceId : vm.targetId;
+    auto responseCards = m_actionVM->getResponseCardIds(responderId, vm.requiredCardType);
     if (responseCards.empty()) {
-        m_actionVM->skipResponse(vm.targetId, true);  // 不 emit pendingActionCreated
+        m_actionVM->skipResponse(responderId, true);  // 不 emit pendingActionCreated
         return;
     }
     emit pendingActionCreated(vm);

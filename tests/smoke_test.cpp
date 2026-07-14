@@ -212,6 +212,10 @@ int main()
 
     // ==================== 10. 无中生有 ====================
     int p1HandBeforeBountiful = p1.handCardCount();
+    KillCard refillA(CardSuit::Spade, 1);
+    DodgeCard refillB(CardSuit::Heart, 2);
+    cardManager.discard(&refillA);
+    cardManager.discard(&refillB);
     GameRule::executeBountiful(&state, &p1);
     check(p1.handCardCount() == p1HandBeforeBountiful + 2, "无中生有: 摸2张牌");
 
@@ -261,8 +265,8 @@ int main()
 
     Card* peachForSave = takeOfType(pool, CardType::Peach);
     check(peachForSave != nullptr, "测试准备: 取到一张桃用于救援");
-    p3.addHandCard(peachForSave);
-    bool saved = GameRule::handleDyingPeach(&state, &p2, &p3, peachForSave);
+    p1.addHandCard(peachForSave);
+    bool saved = GameRule::handleDyingPeach(&state, &p2, &p1, peachForSave);
     check(saved, "濒死: handleDyingPeach 返回救援成功");
     check(p2.hp() == 1, "濒死: 被救玩家回复到1点血");
     check(!p2.isDying(), "濒死: 被救玩家不再处于濒死状态");

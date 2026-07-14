@@ -111,8 +111,17 @@ void executeKill(GameState* state, Player* user, Player* target)
 void handleKillResponse(GameState* state, Player* responder, Card* dodgeCard)
 {
     if (!state || !responder) return;
+    if (!state->hasPendingAction()) return;
 
-    const PendingActionInfo& info = state->pendingActionInfo();
+    PendingActionInfo info = state->pendingActionInfo();
+    if (info.requiredCardType != CardType::Dodge || info.target != responder) return;
+    if (dodgeCard && (!responder->hasCard(dodgeCard) ||
+                      (dodgeCard->cardType() != CardType::Dodge &&
+                       (!responder->character() ||
+                        responder->character()->skillTransformCard(dodgeCard) != CardType::Dodge)))) {
+        return;
+    }
+
     Player* attacker = info.source;
 
     if (dodgeCard) {
@@ -129,7 +138,16 @@ void handleKillResponse(GameState* state, Player* responder, Card* dodgeCard)
         }
 
         dealDamage(state, responder, damageValue, attacker);
-        state->clearPendingAction();
+        // dealDamage() may replace the kill response with the dying response.
+        // Only clear the original response when the target remains alive.
+        if (!responder->isDying() && state->hasPendingAction()) {
+            const PendingActionInfo& current = state->pendingActionInfo();
+            if (current.source != info.source || current.target != info.target ||
+                current.requiredCardType != CardType::Dodge) {
+                return;
+            }
+            state->clearPendingAction();
+        }
     }
 }
 
@@ -274,9 +292,17 @@ void executePeachGarden(GameState* state)
 void handleAoeKillResponse(GameState* state, Player* responder, Card* killCard)
 {
     if (!state || !responder) return;
+    if (!state->hasPendingAction()) return;
 
     // 复制一份，避免 clearPendingAction() 重置内部状态后引用失效
     PendingActionInfo info = state->pendingActionInfo();
+    if (info.requiredCardType != CardType::Kill || info.target != responder) return;
+    if (killCard && (!responder->hasCard(killCard) ||
+                     (killCard->cardType() != CardType::Kill &&
+                      (!responder->character() ||
+                       responder->character()->skillTransformCard(killCard) != CardType::Kill)))) {
+        return;
+    }
 
     if (killCard) {
         responder->removeHandCard(killCard);
@@ -285,6 +311,7 @@ void handleAoeKillResponse(GameState* state, Player* responder, Card* killCard)
         }
     } else {
         dealDamage(state, responder, 1, info.source);
+        if (responder->isDying() || !state->hasPendingAction()) return;
     }
 
     state->clearPendingAction();
@@ -314,9 +341,17 @@ void handleAoeKillResponse(GameState* state, Player* responder, Card* killCard)
 void handleAoeDodgeResponse(GameState* state, Player* responder, Card* dodgeCard)
 {
     if (!state || !responder) return;
+    if (!state->hasPendingAction()) return;
 
     // 复制一份，避免 clearPendingAction() 重置内部状态后引用失效
     PendingActionInfo info = state->pendingActionInfo();
+    if (info.requiredCardType != CardType::Dodge || info.target != responder) return;
+    if (dodgeCard && (!responder->hasCard(dodgeCard) ||
+                      (dodgeCard->cardType() != CardType::Dodge &&
+                       (!responder->character() ||
+                        responder->character()->skillTransformCard(dodgeCard) != CardType::Dodge)))) {
+        return;
+    }
 
     if (dodgeCard) {
         responder->removeHandCard(dodgeCard);
@@ -325,6 +360,7 @@ void handleAoeDodgeResponse(GameState* state, Player* responder, Card* dodgeCard
         }
     } else {
         dealDamage(state, responder, 1, info.source);
+        if (responder->isDying() || !state->hasPendingAction()) return;
     }
 
     state->clearPendingAction();
@@ -389,8 +425,21 @@ void startDyingProcess(GameState* state, Player* dyingPlayer)
 {
     if (!state || !dyingPlayer) return;
 
+    PendingActionInfo previousAction;
+    const bool hasAoeContinuation = state->hasPendingAction() &&
+            state->pendingActionInfo().target == dyingPlayer &&
+            !state->pendingActionInfo().remainingTargets.empty() &&
+            (state->pendingActionInfo().requiredCardType == CardType::Kill ||
+             state->pendingActionInfo().requiredCardType == CardType::Dodge);
+    if (hasAoeContinuation) {
+        previousAction = state->pendingActionInfo();
+    }
+
     std::vector<Player*> saviors = state->alivePlayers();
-    if (saviors.empty()) return;
+    if (saviors.empty()) {
+        checkDeath(state, dyingPlayer);
+        return;
+    }
 
     Player* firstSavior = saviors.front();
 
@@ -401,6 +450,11 @@ void startDyingProcess(GameState* state, Player* dyingPlayer)
     info.requiredCardType = CardType::Peach;
     info.description = (dyingPlayer->displayName() + " 濒死，" + firstSavior->displayName() + " 可以使用【桃】或【酒】").toStdString();
     info.canSkip = true;
+    if (hasAoeContinuation) {
+        info.continuationSource = previousAction.source;
+        info.continuationCardType = previousAction.requiredCardType;
+        info.continuationTargets = previousAction.remainingTargets;
+    }
 
     state->setPendingAction(info);
 }
@@ -408,6 +462,16 @@ void startDyingProcess(GameState* state, Player* dyingPlayer)
 bool handleDyingPeach(GameState* state, Player* dyingPlayer, Player* peachUser, Card* peachCard)
 {
     if (!state || !dyingPlayer || !peachUser || !peachCard) return false;
+    if (!state->hasPendingAction()) return false;
+
+    const PendingActionInfo info = state->pendingActionInfo();
+    if (info.requiredCardType != CardType::Peach ||
+        info.source != peachUser || info.target != dyingPlayer ||
+        !peachUser->hasCard(peachCard) ||
+        (peachCard->cardType() != CardType::Peach &&
+         peachCard->cardType() != CardType::Wine)) {
+        return false;
+    }
 
     peachUser->removeHandCard(peachCard);
     if (state->cardManager()) {
@@ -423,6 +487,29 @@ bool handleDyingPeach(GameState* state, Player* dyingPlayer, Player* peachUser, 
     if (dyingPlayer->hp() > 0) {
         dyingPlayer->setDying(false);
         state->clearPendingAction();
+
+        std::vector<Player*> remainingTargets;
+        for (Player* player : info.continuationTargets) {
+            if (player && player->isAlive()) remainingTargets.push_back(player);
+        }
+        if (info.continuationSource && !remainingTargets.empty()) {
+            Player* nextTarget = remainingTargets.front();
+            PendingActionInfo nextInfo;
+            nextInfo.source = info.continuationSource;
+            nextInfo.target = nextTarget;
+            nextInfo.sourceCard = nullptr;
+            nextInfo.requiredCardType = info.continuationCardType;
+            nextInfo.description = (info.continuationSource->displayName() +
+                    (info.continuationCardType == CardType::Kill
+                         ? " 使用了【南蛮入侵】，" : " 使用了【万箭齐发】，") +
+                    nextTarget->displayName() +
+                    (info.continuationCardType == CardType::Kill
+                         ? " 需打出【杀】" : " 需打出【闪】")).toStdString();
+            nextInfo.canSkip = true;
+            nextInfo.remainingTargets = std::vector<Player*>(remainingTargets.begin() + 1,
+                                                               remainingTargets.end());
+            state->setPendingAction(nextInfo);
+        }
         return true;
     }
 
@@ -432,8 +519,10 @@ bool handleDyingPeach(GameState* state, Player* dyingPlayer, Player* peachUser, 
 void skipDyingResponse(GameState* state, Player* dyingPlayer)
 {
     if (!state || !dyingPlayer) return;
+    if (!state->hasPendingAction()) return;
 
     const PendingActionInfo& info = state->pendingActionInfo();
+    if (info.requiredCardType != CardType::Peach || info.target != dyingPlayer) return;
     Player* currentSavior = info.source;
 
     std::vector<Player*> allPlayers = state->alivePlayers();
@@ -465,7 +554,10 @@ void checkDeath(GameState* state, Player* player)
 
     if (player->hp() <= 0) {
         player->setDying(false);
-        state->clearPendingAction();
+        player->markDead();
+        if (state->hasPendingAction()) {
+            state->clearPendingAction();
+        }
         checkGameOver(state);
     }
 }
