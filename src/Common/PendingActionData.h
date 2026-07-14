@@ -1,12 +1,12 @@
-#ifndef PENDINGACTIONVM_H
-#define PENDINGACTIONVM_H
+#ifndef PENDINGACTIONDATA_H
+#define PENDINGACTIONDATA_H
 
 #include <QString>
 #include <QVector>
 #include "CommonTypes.h"
 
 /// 待定动作信息（值类型，跨层传递用）
-struct PendingActionVM {
+struct PendingActionData {
     int sourceId = -1;
     int targetId = -1;
     int sourceCardId = -1;
@@ -16,4 +16,4 @@ struct PendingActionVM {
     QVector<int> remainingTargetIds;
 };
 
-#endif // PENDINGACTIONVM_H
+#endif // PENDINGACTIONDATA_H

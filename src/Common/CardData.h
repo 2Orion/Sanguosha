@@ -1,12 +1,12 @@
-#ifndef CARDDISPLAYDATA_H
-#define CARDDISPLAYDATA_H
+#ifndef CARDDATA_H
+#define CARDDATA_H
 
 #include <QString>
 #include <QVector>
 #include "CommonTypes.h"
 
 /// 卡牌展示数据（值类型，无指针，跨层传递用）
-struct CardDisplayData {
+struct CardData {
     int cardId = -1;
     CardType cardType = CardType::Kill;
     CardSuit suit = CardSuit::Spade;
@@ -24,6 +24,6 @@ struct CardDisplayData {
     int ownerId = -1;
 };
 
-using CardDisplayList = QVector<CardDisplayData>;
+using CardList = QVector<CardData>;
 
-#endif // CARDDISPLAYDATA_H
+#endif // CARDDATA_H

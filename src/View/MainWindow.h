@@ -9,7 +9,7 @@
 
 class GameBoardWidget;
 
-/// 主窗口 — 纯 UI，不持有任何 GameBootstrap/ViewModel 引用
+/// 主窗口 — 纯 UI，不持有任何 SGSApp/ViewModel 引用
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:

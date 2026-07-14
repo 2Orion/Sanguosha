@@ -43,7 +43,7 @@ void MainWindow::showGamePage(GameBoardWidget* board)
 
 void MainWindow::showSelectionPage()
 {
-    // 游戏页面由 GameBootstrap 负责清理
+    // 游戏页面由 SGSApp 负责清理
     m_centralStack->setCurrentWidget(m_selectionPage);
     updateStartButton();
 }

@@ -7,7 +7,7 @@ static const QString EMPTY_HEART = QStringLiteral("🖤");
 
 PlayerInfoWidget::PlayerInfoWidget(QWidget* parent) : QWidget(parent) { setupUi(); }
 
-void PlayerInfoWidget::setDisplayData(const PlayerDisplayData& data)
+void PlayerInfoWidget::setDisplayData(const PlayerData& data)
 {
     m_playerId = data.playerId;
 

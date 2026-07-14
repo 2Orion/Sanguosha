@@ -6,16 +6,16 @@
 #include <QPushButton>
 #include <QHBoxLayout>
 #include "CommonTypes.h"
-#include "PendingActionVM.h"
+#include "PendingActionData.h"
 
-/// 操作按钮面板 — 依赖 Common 层 PendingActionVM
+/// 操作按钮面板 — 依赖 Common 层 PendingActionData
 class ActionPanelWidget : public QWidget {
     Q_OBJECT
 public:
     explicit ActionPanelWidget(QWidget* parent = nullptr);
 
     void updateForPhase(PhaseType phase, bool hasPendingAction);
-    void updateForPendingAction(const PendingActionVM& info);
+    void updateForPendingAction(const PendingActionData& info);
     void setHint(const QString& text);
 
 signals:

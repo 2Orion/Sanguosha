@@ -1,6 +1,6 @@
 #include <QApplication>
 #include <QFont>
-#include "GameBootstrap.h"
+#include "App/SGSApp.h"
 
 int main(int argc, char* argv[])
 {
@@ -8,8 +8,8 @@ int main(int argc, char* argv[])
     app.setFont(QFont("Microsoft YaHei", 10));
 
     // 组合根创建所有对象（MainWindow、ViewModel、View 等）
-    GameBootstrap bootstrap;
-    bootstrap.mainWindow()->show();
+    SGSApp sgsApp;
+    sgsApp.mainWindow()->show();
 
     return app.exec();
 }

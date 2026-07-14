@@ -5,13 +5,13 @@
 #include <QLabel>
 #include <QTimer>
 #include "CommonTypes.h"
-#include "CardDisplayData.h"
-#include "PlayerDisplayData.h"
+#include "CardData.h"
+#include "PlayerData.h"
 
 class PlayerInfoWidget;
 class HandCardAreaWidget;
 class ActionPanelWidget;
-struct PendingActionVM;
+struct PendingActionData;
 
 /// 游戏桌面 — 零 ViewModel 依赖，全信号驱动
 class GameBoardWidget : public QWidget {
@@ -21,7 +21,7 @@ public:
     ~GameBoardWidget() override;
 
 signals:
-    // View → GameBootstrap（命令）
+    // View → ViewModel（命令）
     void playCardRequested(int cardId, int playerId);
     void respondCardRequested(int cardId, int responderId);
     void discardCardRequested(int cardId, int playerId);
@@ -33,11 +33,11 @@ signals:
     void gameFinished();
 
 public slots:
-    // GameBootstrap/ViewModel → View（状态推送）
+    // ViewModel → View（状态推送）
     void onPhaseChanged(PhaseType phase);
-    void onPlayerDataUpdated(int playerId, const PlayerDisplayData& data);
-    void onHandCardsUpdated(int playerId, const CardDisplayList& data);
-    void onPendingActionCreated(const PendingActionVM& info);
+    void onPlayerDataUpdated(int playerId, const PlayerData& data);
+    void onHandCardsUpdated(int playerId, const CardList& data);
+    void onPendingActionCreated(const PendingActionData& info);
     void onPendingActionCleared();
     void onGameOver(int winnerId);
     void onLogMessage(const QString& msg);

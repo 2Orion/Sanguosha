@@ -9,7 +9,7 @@ HandCardAreaWidget::HandCardAreaWidget(QWidget* parent) : QWidget(parent)
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 }
 
-void HandCardAreaWidget::setCards(const CardDisplayList& cards, bool faceUp)
+void HandCardAreaWidget::setCards(const CardList& cards, bool faceUp)
 {
     m_cards = cards;
     m_faceUp = faceUp;

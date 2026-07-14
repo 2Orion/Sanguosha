@@ -135,7 +135,7 @@ void ActionPanelWidget::updateForPhase(PhaseType phase, bool hasPendingAction)
     }
 }
 
-void ActionPanelWidget::updateForPendingAction(const PendingActionVM& info)
+void ActionPanelWidget::updateForPendingAction(const PendingActionData& info)
 {
     hideAllButtons();
 
