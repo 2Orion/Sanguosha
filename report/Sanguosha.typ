@@ -65,9 +65,9 @@ Sanguosha/
 │   ├── main.cpp              # 应用程序入口
 │   ├── Common/               # 值类型结构体（跨层共享）
 │   │   ├── CommonTypes.h     # 枚举
-│   │   ├── CardDisplayData.h # 卡牌展示数据
-│   │   ├── PlayerDisplayData.h # 玩家展示数据
-│   │   └── PendingActionVM.h # 待定动作值类型
+│   │   ├── CardData.h        # 卡牌展示数据
+│   │   ├── PlayerData.h      # 玩家展示数据
+│   │   └── PendingActionData.h # 待定动作值类型
 │   ├── Model/                # QObject + 信号
 │   │   ├── Card.h/cpp
 │   │   ├── CardManager.h/cpp
@@ -85,8 +85,8 @@ Sanguosha/
 │   │   ├── PlayerInfoWidget.h/cpp
 │   │   ├── HandCardAreaWidget.h/cpp
 │   │   └── ActionPanelWidget.h/cpp
-│   └── App/                  # 组合根 + 中介者
-│       └── GameBootstrap.h/cpp
+│   └── App/                  # 纯组合根
+│       └── SGSApp.h/cpp
 └── tests/
     └── smoke_test.cpp
 ```

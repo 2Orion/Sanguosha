@@ -136,6 +136,20 @@ CardWidget::mousePressEvent → emit clicked(cardId)
 
 **涉及文件**：`src/App/GameBootstrap.h/cpp`、`src/ViewModel/GameViewModel.h`
 
+### [2026-07-14] 架构调整（第二次重构）：GameBootstrap 更名 SGSApp，路由/拦截逻辑下沉 ViewModel
+
+> 晚于下一条（第一次重构）。本文件中早于本次重构的条目提到的 `GameBootstrap` 均对应现在的 `SGSApp`，`CardDisplayData`/`PlayerDisplayData`/`PendingActionVM` 均对应现在的 `CardData`/`PlayerData`/`PendingActionData`；历史条目不改写。
+
+**调整内容**：
+- `GameBootstrap` 更名 `SGSApp`，退化为纯组合根：只创建对象、在 `startLocalGame()` 里建立 View ↔ ViewModel 信号槽直连、管理对局生命周期，零业务逻辑
+- 原 App 层路由槽（`onPlayCardRequested`/`onTargetSelected`/`onRespondCardRequested` → `ActionViewModel`；`onDiscardCardRequested`/`onEndPlayRequested`/`onAdvanceRequested`/`onSkipRequested` → `GameViewModel`）改为 ViewModel 的 public slots，View 信号直连
+- 原 App 层拦截逻辑下沉：弃牌数 ≤0 自动跳过 → `GameViewModel::setNextPhase`；无响应牌自动跳过 → `GameViewModel::onModelPendingActionCreated`
+- Common 值类型改名：`CardDisplayData` → `CardData`（新增列表别名 `CardList`）、`PlayerDisplayData` → `PlayerData`、`PendingActionVM` → `PendingActionData`
+
+**涉及文件**：`src/App/SGSApp.h/cpp`（原 `GameBootstrap.h/cpp`）、`src/ViewModel/*`、`src/Common/*`、`src/View/*`（仅头文件名变更）、`src/main.cpp`
+
+**文档同步**：`connection.md`、`README.md`、`CLAUDE.md`、`interface.md` §8/§9、`plan2.0.md` §2/§7 顶部阅读说明均已按新架构更新。
+
 ### [2026-07-14] 架构调整：GameBootstrap 作为程序入口
 
 **调整内容**：

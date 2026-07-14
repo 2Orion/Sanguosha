@@ -819,44 +819,38 @@ namespace GameRule {
 ~~~
 Model 信号
     ↓
-GameViewModel 读取 Model 指针并转换为值类型
+GameViewModel 读取 Model 指针，转换为值类型并完成拦截判断（自动跳过等）
     ↓
-GameViewModel 信号
-    ↓
-GameBootstrap 连接、转发或拦截
-    ↓
-View 槽
+GameViewModel 信号 ──（SGSApp 建立的直连）──► View 槽
 
-View 信号
-    ↓
-GameBootstrap
-    ↓
-ActionViewModel / GameViewModel
+View 信号 ──（SGSApp 建立的直连）──► ActionViewModel / GameViewModel 的 public slots
     ↓
 GameRule 和 Model
 ~~~
+
+> `SGSApp`（原 `GameBootstrap`，第二次重构更名）是纯组合根：只在 `startLocalGame()` 里建立上述 connect，不参与转发或拦截；路由/拦截逻辑全部在 ViewModel 内部。
 
 ### 8.1 Model 信号的使用
 
 | Model 信号 | ViewModel 处理方式 |
 |------------|-------------------|
 | GameState::phaseChanged(PhaseType) | 转发为 GameViewModel::phaseChanged(PhaseType) |
-| GameState::pendingActionCreated(PendingActionInfo) | 转换为 PendingActionVM，将玩家和卡牌指针转换为 ID |
+| GameState::pendingActionCreated(PendingActionInfo) | 转换为 PendingActionData，将玩家和卡牌指针转换为 ID；无响应牌时在 VM 内直接自动跳过，不发信号 |
 | GameState::pendingActionCleared() | 转发为 ViewModel 的同名信号 |
 | GameState::gameOver(int) | 转换并转发为 ViewModel 的 gameOver(int) |
-| Player::handCardsChanged() | 读取卡牌对象，生成 CardDisplayList |
-| Player::stateChanged() | 生成 PlayerDisplayData |
+| Player::handCardsChanged() | 读取卡牌对象，生成 CardList（QVector\<CardData\>） |
+| Player::stateChanged() | 生成 PlayerData |
 | Player::died(int) | 由 ViewModel 接收并记录死亡日志；当前 Model 实现尚未主动发出该信号 |
 
 ### 8.2 跨 View 边界的值类型
 
 View 不应接收 PendingActionInfo、Player*、Card* 等 Model 指针。跨越 View 边界的值类型位于 src/Common/：
 
-- PendingActionVM：玩家 ID、卡牌 ID、响应类型、描述和剩余目标 ID。
-- CardDisplayData：卡牌展示所需的 ID、类型、花色、名称、描述和可用状态。
-- PlayerDisplayData：玩家 ID、名称、武将、体力和手牌数量等展示数据。
+- PendingActionData：来源/目标玩家 ID、来源卡牌 ID、响应类型、描述、可否跳过和剩余目标 ID。
+- CardData（列表别名 CardList）：卡牌展示所需的 ID、类型、花色、点数、名称、描述和可选/可出/高亮状态。
+- PlayerData：玩家 ID、名称、武将与技能、体力、手牌数量/上限等展示数据。
 
-View/ViewModel 的完整连接表和 GameBootstrap 的中介逻辑见 connection.md。本文件只定义 Model 的对象接口，不再描述 View 与 ViewModel 的直接调用流程。
+View/ViewModel 的完整连接表和 ViewModel 内的路由/拦截逻辑见 connection.md。本文件只定义 Model 的对象接口，不再描述 View 与 ViewModel 的直接调用流程。
 
 ---
 
@@ -866,9 +860,9 @@ View/ViewModel 的完整连接表和 GameBootstrap 的中介逻辑见 connection
 src/
 ├── Common/
 │   ├── CommonTypes.h       # 跨层共享枚举
-│   ├── PendingActionVM.h   # 待定动作值类型
-│   ├── CardDisplayData.h   # 卡牌展示值类型
-│   └── PlayerDisplayData.h # 玩家展示值类型
+│   ├── PendingActionData.h # 待定动作值类型
+│   ├── CardData.h          # 卡牌展示值类型（含 CardList 别名）
+│   └── PlayerData.h        # 玩家展示值类型
 ├── Model/
 │   ├── CommonTypes.h       # CommonTypes.h 的 Model 转发头
 │   ├── GameState.h/.cpp    # 游戏状态与 PendingActionInfo
@@ -881,7 +875,7 @@ src/
 │   ├── GameViewModel.h/.cpp
 │   └── ActionViewModel.h/.cpp
 ├── App/
-│   └── GameBootstrap.h/.cpp
+│   └── SGSApp.h/.cpp
 └── View/
     └── ...
 ~~~
