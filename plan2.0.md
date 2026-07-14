@@ -133,9 +133,9 @@ namespace GameRule {
 
 #### ViewModel + View 层修改
 
-- `PlayerData`（`src/Common/PlayerData.h`）新增 `equipCards` 字段（`QVector<CardData>` 或按槽的等价结构），`GameViewModel::pushPlayerData` 里补充赋值
+- `PlayerData`（`src/Common/PlayerData.h`）新增装备区字段。**实际落地为按槽的两个 `CardData`：`weaponCard` / `armorCard`（`cardId == -1` 表示空槽），Mount 槽预留**——不是本节早稿设想的 `equipCards`（`QVector<CardData>`）。`GameViewModel::pushPlayerData` 里补充赋值
 - `PlayerInfoWidget` 新增装备区显示（在体力下方或右侧），从 `onPlayerDataUpdated` 收到的 `PlayerData` 里读取
-- `CardData`（`src/Common/CardData.h`）新增 `isEquipment` / `equipSlot` 字段，`GameViewModel` 在构造 `CardData` 时填充
+- `CardData`（`src/Common/CardData.h`）新增 `isEquipment` / `equipSlot` / `attackRange` 字段（**已落地**，比早稿多一个 `attackRange`：武器攻击距离加成），`GameViewModel` 在构造 `CardData` 时填充
 - 装备牌的手绘渲染（`CardWidget::drawCardFront`）增加"装备"分类标签和特殊边框
 
 ### 1.2 锦囊牌补充
@@ -920,7 +920,7 @@ std::vector<int> ActionViewModel::getResponseCardIds(int playerId, CardType requ
 
 乙的序列化依赖甲给 Common 值类型加的新字段，这是本切法最大的串行依赖，处理方式：
 
-1. **甲先提交 Common 新字段的结构定义**——`PlayerData::equipCards`、`CardData::isEquipment`/`equipSlot`（§1.1），哪怕 Model 逻辑还没写，先把结构体定下来。
+1. **甲先提交 Common 新字段的结构定义**——✅ 已完成：`PlayerData::weaponCard`/`armorCard`（按槽的 `CardData`，非早稿的 `equipCards` 列表）、`CardData::isEquipment`/`equipSlot`/`attackRange`、`CommonTypes.h` 的 `EquipSlot` 枚举与 9 种装备 `CardType`。坐骑（Mount）槽位已预留枚举、暂无对应牌。乙的序列化以这些实际字段为准。
 2. **乙随后冻结 `Network/Protocol.h`**：消息枚举 + 消息结构体，字段直接对齐 `GameViewModel`/`ActionViewModel` 的 slots/signals（§2.2 已列全）；并写 Common 值类型的 `QDataStream <<`/`>>` 运算符（甲评审）。建议协议加版本号字段，字段变更时递增。
 3. **乙的 `ServerApp`/`ClientApp` 组装最先合入**：先完成服务器 headless 启动和客户端信号翻译，再接入完整网络流程。
 

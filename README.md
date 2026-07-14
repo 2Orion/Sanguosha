@@ -41,6 +41,9 @@ Sanguosha/
 │   │   ├── PlayerData.h      # 玩家展示数据
 │   │   └── PendingActionData.h # 待定动作值类型
 │   ├── Model/                # QObject + 信号
+│   ├── Network/              # 网络层（局域网对战，开发中）
+│   │   ├── Protocol.h        # 协议版本号 + MessageType + 消息结构体
+│   │   └── MessageSerializer.h/cpp # QDataStream 序列化 + 帧封装/解码
 │   ├── ViewModel/            # QObject + 信号/槽
 │   │   ├── ActionViewModel.h/cpp
 │   │   └── GameViewModel.h/cpp
@@ -57,7 +60,8 @@ Sanguosha/
     ├── smoke_test.cpp          # 无框架 Model 冒烟测试
     ├── model_test.cpp          # Model Qt Test
     ├── viewmodel_test.cpp      # ViewModel Qt Test
-    └── view_test.cpp           # View/App Qt Widgets Test
+    ├── view_test.cpp           # View/App Qt Widgets Test
+    └── network_test.cpp        # Network Qt Test（序列化/帧解码）
 ```
 
 ---
@@ -113,7 +117,7 @@ $env:PATH = "D:\QT\6.11.1\mingw_64\bin;D:\QT\Tools\mingw1310_64\bin;$env:PATH"
 
 > 判断该用哪个版本：先跑 `g++ --version` 和 `make --version`，若报错或版本 < 11，用版本二；若系统只有 `mingw32-make` 没有 `make`，版本一的 `make -j` 也要相应换成 `mingw32-make -j`。
 
-产物：`SanguoshaQt.exe`、`libSanguoshaModel.a`、`ModelSmokeTest.exe`、`ModelTest.exe`、`ViewModelTest.exe`、`ViewTest.exe`
+产物：`SanguoshaQt.exe`、`libSanguoshaModel.a`、`libSanguoshaNetwork.a`、`ModelSmokeTest.exe`、`ModelTest.exe`、`ViewModelTest.exe`、`ViewTest.exe`、`NetworkTest.exe`
 
 ---
 
@@ -133,7 +137,7 @@ cmake --build build --parallel 4
 ctest --test-dir build --output-on-failure
 ```
 
-当前注册 4 个测试：`ModelSmokeTest`、`ModelTest`、`ViewModelTest` 和 `ViewTest`。`ViewTest` 通过 CTest 自动使用 `QT_QPA_PLATFORM=offscreen`，不需要桌面显示服务器。
+当前注册 5 个测试：`ModelSmokeTest`、`ModelTest`、`ViewModelTest`、`ViewTest` 和 `NetworkTest`。`ViewTest` 通过 CTest 自动使用 `QT_QPA_PLATFORM=offscreen`，不需要桌面显示服务器。
 
 直接运行单个 Qt Test 时，可以使用对应的构建产物：
 
@@ -141,6 +145,7 @@ ctest --test-dir build --output-on-failure
 .\build\ModelTest.exe
 .\build\ViewModelTest.exe
 $env:QT_QPA_PLATFORM = "offscreen"; .\build\ViewTest.exe
+.\build\NetworkTest.exe
 ```
 
-当前完整套件通过，4 个测试目标均为正常断言通过；覆盖卡牌规则、响应权限、濒死救援、目标选择、主要 QWidget 和 App 生命周期。
+当前完整套件通过，5 个测试目标均为正常断言通过；覆盖卡牌规则、响应权限、濒死救援、目标选择、主要 QWidget、App 生命周期和网络协议序列化/帧解码（半包/粘包）。

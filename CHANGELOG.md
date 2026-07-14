@@ -1,5 +1,17 @@
 # Changelog
 
+## Features
+
+### [2026-07-15] 网络层 Step 1：协议定义 + 消息序列化 + 帧封装（plan2.0.md §2）
+
+新建 `src/Network/Protocol.h`（协议版本号 v1、`MessageType` 枚举、消息结构体，字段与 `GameViewModel`/`ActionViewModel` 的 public slots/signals 一一对齐）和 `src/Network/MessageSerializer.h/cpp`（`CardData`/`PlayerData`/`PendingActionData` 的 `QDataStream <<`/`>>`，含甲新增的装备字段；帧格式为 quint32 长度前缀 + quint8 类型 + payload，`decodeFrames` 处理半包/粘包并拒绝损坏的长度前缀）。QDataStream 版本固定为 `Qt_5_15` 保证两端一致。
+
+CMake 新增 `Qt::Network` 组件、`SanguoshaNetwork` 静态库和 `NetworkTest` 测试目标。
+
+**涉及文件**：`src/Network/Protocol.h`、`src/Network/MessageSerializer.h/cpp`、`tests/network_test.cpp`、`CMakeLists.txt`
+
+**验证**：`NetworkTest` 21 个用例通过（全部消息类型帧级 round-trip、逐字节半包、三帧粘包 + 半帧残留、损坏长度前缀拒绝）；全套件 5/5 通过。
+
 ## Bug Fixes
 
 ### [2026-07-14] 修复濒死响应、权限校验、目标选择和旧局生命周期

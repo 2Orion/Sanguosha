@@ -11,11 +11,11 @@ if(MSVC)
 endif()
 
 # Qt包查找
-find_package(Qt6 QUIET COMPONENTS Widgets Test)
+find_package(Qt6 QUIET COMPONENTS Widgets Test Network)
 if(Qt6_FOUND)
     set(QT_VERSION_MAJOR 6)
 else()
-    find_package(Qt5 5.15 QUIET COMPONENTS Widgets Test)
+    find_package(Qt5 5.15 QUIET COMPONENTS Widgets Test Network)
     if(Qt5_FOUND)
         set(QT_VERSION_MAJOR 5)
     endif()
@@ -60,6 +60,35 @@ target_include_directories(SanguoshaModel
 target_link_libraries(SanguoshaModel
     PUBLIC
     Qt${QT_VERSION_MAJOR}::Core
+)
+
+# ==================== Network 层 ====================
+
+set(NETWORK_SOURCES
+    src/Network/MessageSerializer.cpp
+)
+
+set(NETWORK_HEADERS
+    src/Network/Protocol.h
+    src/Network/MessageSerializer.h
+)
+
+add_library(SanguoshaNetwork STATIC
+    ${NETWORK_SOURCES}
+    ${NETWORK_HEADERS}
+)
+
+target_include_directories(SanguoshaNetwork
+    PUBLIC
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/Common
+    ${CMAKE_SOURCE_DIR}/src/Network
+)
+
+target_link_libraries(SanguoshaNetwork
+    PUBLIC
+    Qt${QT_VERSION_MAJOR}::Core
+    Qt${QT_VERSION_MAJOR}::Network
 )
 
 # ==================== ViewModel 层 ====================
@@ -221,3 +250,23 @@ add_test(NAME ViewTest COMMAND ViewTest)
 set_tests_properties(ViewTest PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+# ==================== Network 层测试 ====================
+
+add_executable(NetworkTest
+    tests/network_test.cpp
+)
+
+target_include_directories(NetworkTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/Common
+    ${CMAKE_SOURCE_DIR}/src/Network
+)
+
+target_link_libraries(NetworkTest PRIVATE
+    SanguoshaNetwork
+    Qt${QT_VERSION_MAJOR}::Core
+    Qt${QT_VERSION_MAJOR}::Test
+)
+
+add_test(NAME NetworkTest COMMAND NetworkTest)
