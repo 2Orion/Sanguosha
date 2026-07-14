@@ -812,6 +812,8 @@ std::vector<Card*> ActionViewModel::getResponseCards(Player* player, CardType re
 
 ## 5. 实施路线图
 
+> 三人分工（按内容顺序切分：人员职责、契约前置、时间线错位、联调里程碑、协调规则）见第 7 节。任务归属：阶段一 → 甲；阶段二 → 乙（其中 MainWindow 联网入口、NetworkConfigDialog 两项纯 View 任务划给丙）；阶段三 → 丙。
+
 ### 阶段一：基础拓展（约 2 周）
 | 任务 | 文件 | 优先级 |
 |------|------|--------|
@@ -878,3 +880,59 @@ std::vector<Card*> ActionViewModel::getResponseCards(Player* player, CardType re
 ```
 
 **关键约束**：`GameClient` 和服务器侧的网络转发代码永远不能持有或传递 `Model::Player*`/`Model::Card*` 指针。所有跨网络的数据必须是 `src/Common/` 里已有的值类型（`CardDisplayData`/`PlayerDisplayData`/`PendingActionVM`）或更基础的 `int`/`QString`/枚举——这和本地模式 View 对 Model 的约束完全一致，只是把"跨层"换成了"跨网络"。
+
+---
+
+## 7. 三人分工方案（按内容顺序切分）
+
+> 与第 5 节路线图配套。按文档内容章节切分：甲负责 §1+§4（卡牌与规则），乙负责 §2 全部（网络对战），丙负责 §3+阶段三（UI 与稳定性）。这个切法的特点是**乙的网络主线 + 甲丙两条支线定期汇入**——网络的服务器/客户端两端由一人完成，信号翻译逻辑高度对称，一人写不容易两边对不上；代价是工作量不均（§2 是 4 周，§1/§3 各 2 周）和两处串行依赖，必须用 7.2 的契约前置和 7.5 的时间线错位来消化。
+
+### 7.1 总体划分
+
+| 成员 | 内容 | 对应章节 | 涉及文件 |
+|------|------|---------|---------|
+| **甲：卡牌与规则** | 装备牌、锦囊、牌堆、武将、技能 Bug 验证 | §1、§4、阶段一 | `Model/*`、`Common/*`（加字段）、`PlayerInfoWidget`（装备区显示） |
+| **乙：网络对战** | 协议、序列化、GameServer、GameClient、ClientBootstrap、GameBootstrap 改造 | §2 全部、阶段二 | `Network/*`（全部新建）、`App/*` |
+| **丙：UI 与稳定性** | 动画、特效、布局、日志、联网入口 UI、冒烟测试补充 | §3、阶段三 | `View/*`、`tests/smoke_test.cpp` |
+
+其中 §2.5 表格里的两个纯 View 文件（`MainWindow` 联网入口、`NetworkConfigDialog`）划给丙而不是乙——它们不依赖 Network 层类型（通过信号传出 host/port），本质是 UI 内容，同时给乙减量。
+
+### 7.2 第 0 步：契约前置（约 2 天，不能省）
+
+乙的序列化依赖甲给 Common 值类型加的新字段，这是本切法最大的串行依赖，处理方式：
+
+1. **甲先提交 Common 新字段的结构定义**——`PlayerDisplayData::equipCards`、`CardDisplayData::isEquipment`/`equipSlot`（§1.1），哪怕 Model 逻辑还没写，先把结构体定下来。
+2. **乙随后冻结 `Network/Protocol.h`**：消息枚举 + 消息结构体，字段直接抄 `GameBootstrap` 现有槽/信号的参数（§2.2 已列全）；并写 Common 值类型的 `QDataStream <<`/`>>` 运算符（甲评审）。建议协议加版本号字段，字段变更时递增。
+3. **乙的 `GameBootstrap` 改造最先合入**：路由槽改 `public slots` + 新增 `startHeadlessGame()`（§2.3 改造点 1-3）。
+
+### 7.3 乙的网络主线（约 4 周）
+
+| 顺序 | 任务 | 说明 |
+|------|------|------|
+| 1 | `Protocol.h` + `MessageSerializer` | 用 QDataStream，不手写帧校验（§2.2 建议） |
+| 2 | `GameBootstrap` headless 路径 | 不创建 MainWindow/GameBoardWidget 的启动路径 |
+| 3 | `GameServer` | QTcpServer，连接管理、playerId 分配、握手/选将流程 |
+| 4 | **手牌脱敏** | 对手手牌只发 cardId + 数量，牌面字段清空（§2.2 强调的安全点，P0） |
+| 5 | `GameClient` | 暴露与 GameViewModel/ActionViewModel 同形状的信号和方法，纯转发，零 Model |
+| 6 | `ClientBootstrap` | GameBoardWidget 信号 → GameClient 发送方法、GameClient 信号 → View 槽，照抄 `wireAll()` 连接形状 |
+| 7 | 心跳保活 | Ping/Pong + 超时踢出（§2.7）；断线重连留到联调后，首版可不做 |
+
+### 7.4 甲、丙的支线与汇入点
+
+**甲（第 1-2 周做 §1+§4，第 3-4 周支援联调）**：按阶段一优先级——技能 Bug 验证（先实跑一局确认 §4.1 四个武将，不要假设问题存在）→ 装备牌系统 → 锦囊补充 → 牌堆调整 → 武将拓展。第 3 周起加入联调，扮演第二个客户端做双人联调测试（M2 的脱敏互看必须两个真实客户端）。
+
+**丙（第 1-2 周做 §3 动画 + 联网 UI，第 3-4 周做测试）**：卡牌动画、伤害/濒死特效、`MainWindow` 联网入口、`NetworkConfigDialog`；第 3-4 周补冒烟测试断言（95→150+，覆盖甲的新卡牌）、按冒烟测试思路写"网络对局回归清单"。丙后半段的测试工作依赖甲的卡牌落地和乙的联调进度，如出现空档优先消化阶段三的 P2 项（牌桌美化、日志增强）。
+
+### 7.5 联调里程碑（乙主导，甲丙第 3 周起加入，约 1 周）
+
+1. **M1 握手**：连接 → HandshakeAck → 双方选将 → GameStarted
+2. **M2 单向同步**：服务器跑一局，客户端只收不发，验证 UI 渲染 + 脱敏正确（用两个客户端互看对方手牌是否为牌背——需要甲扮演第二客户端）
+3. **M3 完整对局**：出杀 → 响应闪 → 伤害结算 → 游戏结束
+4. **M4 异常**：中途拔线、心跳超时、非法消息（如非当前回合出牌）
+
+### 7.6 风险与协调规则
+
+1. **工作量不均是本切法的固有代价**：乙 4 周网络主线无人分担。缓解手段已内置在 7.1（View 侧网络 UI 划给丙）和 7.4（甲第 3 周汇入联调）——如果乙进度落后，优先砍掉的是心跳保活和断线重连（首版可不做，见 §2.7），而不是手牌脱敏（P0）。
+2. **Common 值类型字段变更必须走三人同步**：甲加字段 → 乙补序列化 → 丙补 View 渲染（§1.1 和 §2.2 都依赖这条链）。甲在阶段一中途如需再加字段，必须先通知乙升协议版本号。
+3. **`GameBootstrap.h/cpp` 是甲乙冲突热点**（乙改造它，甲的新拦截逻辑也加在这）。规则：乙的改造 PR 最先合入，甲的拦截逻辑改动之后再进。
+4. **View 层零改动是验收标准**：如果联调中发现 `GameBoardWidget` 需要为网络模式改代码，说明设计跑偏了——先回头查 ClientBootstrap 的信号翻译，而不是改 View。丙的动画改动只加新方法，不改现有槽的签名，否则会波及乙的连接代码。
