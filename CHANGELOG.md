@@ -111,3 +111,18 @@ CardWidget::mousePressEvent → emit clicked(cardId)
 **修复**：`GameBootstrap` 拦截 `phaseChanged` 信号，在 `Discard` 阶段先调用 `avm->getDiscardCount(curId)`。若 ≤ 0 则直接 `gvm->advancePhase()` 跳过弃牌阶段。
 
 **涉及文件**：`src/App/GameBootstrap.h/cpp`、`src/ViewModel/GameViewModel.h`
+
+### [2026-07-14] 架构调整：GameBootstrap 作为程序入口
+
+**调整内容**：
+- `MainWindow` 不再包含 `GameBootstrap`，改为纯 UI 层，由 `GameBootstrap` 创建并拥有
+- `GameBootstrap` 成为真正的 Composition Root，创建 `MainWindow`、`GameViewModel`、`GameBoardWidget`
+- `main.cpp` 直接创建 `GameBootstrap`，不直接引用 `MainWindow`
+
+**依赖关系变更**：
+```
+旧: main → MainWindow → GameBootstrap → GameViewModel/GameBoardWidget
+新: main → GameBootstrap → MainWindow + GameViewModel + GameBoardWidget
+```
+
+**涉及文件**：`src/main.cpp`、`src/App/GameBootstrap.h/cpp`、`src/View/MainWindow.h/cpp`

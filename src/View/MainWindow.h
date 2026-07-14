@@ -6,22 +6,28 @@
 #include <QPushButton>
 #include <QButtonGroup>
 #include <QLabel>
-#include <QGroupBox>
-#include <memory>
 
-class GameBootstrap;
 class GameBoardWidget;
 
-/// 主窗口 — 选将界面 ↔ 游戏界面切换
+/// 主窗口 — 纯 UI，不持有任何 GameBootstrap/ViewModel 引用
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override;
 
+    /// 切换到游戏页面
+    void showGamePage(GameBoardWidget* board);
+
+    /// 切换到选将页面
+    void showSelectionPage();
+
+signals:
+    /// 用户选择武将后点击开始对战
+    void startGameRequested(int charId1, int charId2);
+
 private slots:
-    void onStartGame();
-    void onGameFinished();
+    void onStartClicked();
     void onP1CharChanged(int id);
     void onP2CharChanged(int id);
 
@@ -38,10 +44,6 @@ private:
     QPushButton*  m_startBtn;
     QLabel*       m_p1SelectedLabel;
     QLabel*       m_p2SelectedLabel;
-
-    // 组合根（负责创建和管理 GameViewModel + GameBoardWidget）
-    GameBootstrap*  m_bootstrap = nullptr;
-    GameBoardWidget* m_gameBoard = nullptr;
 };
 
 #endif // MAINWINDOW_H

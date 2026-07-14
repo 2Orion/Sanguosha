@@ -3,32 +3,29 @@
 
 #include <QObject>
 #include <QVector>
-#include <QWidget>
+#include <QMainWindow>
+#include <memory>
 #include "PendingActionVM.h"
 
 class GameViewModel;
 class GameBoardWidget;
-class GameState;
 
-/// 组合根 — 唯一知道 ViewModel 和 View 具体类型的模块
-/// 负责连接 View 信号 ↔ ViewModel 方法，以及 ViewModel 信号 ↔ View 槽
+/// 组合根 — 应用程序入口，创建并拥有所有顶层对象
 class GameBootstrap : public QObject {
     Q_OBJECT
 public:
-    explicit GameBootstrap(QWidget* boardParent, QObject* parent = nullptr);
+    explicit GameBootstrap(QObject* parent = nullptr);
 
+    /// 主窗口（main.cpp 只需 show()，不需要知道 MainWindow 的具体类型）
+    QMainWindow* mainWindow() const { return m_mainWindow; }
+
+    /// 开始一局新游戏
     void startLocalGame(int charId1, int charId2);
-    GameBoardWidget* boardWidget() const { return m_board; }
-
-signals:
-    void gameFinished();
 
 private slots:
-    // ViewModel 事件拦截
+    void onGameFinished();
     void onPendingActionFromVM(const PendingActionVM& info);
     void onPhaseFromVM(PhaseType phase);
-
-    // View → ViewModel 路由
     void onPlayCardRequested(int cardId, int playerId);
     void onRespondCardRequested(int cardId, int responderId);
     void onDiscardCardRequested(int cardId, int playerId);
@@ -40,9 +37,9 @@ private slots:
 private:
     void wireAll();
 
+    QMainWindow*      m_mainWindow = nullptr;
     GameViewModel*   m_gvm = nullptr;
     GameBoardWidget* m_board = nullptr;
-    QWidget*         m_boardParent = nullptr;
 
     // 目标选择暂存
     int m_pendingCardId = -1;

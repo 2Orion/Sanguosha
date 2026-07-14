@@ -1,14 +1,15 @@
 #include <QApplication>
 #include <QFont>
-#include "MainWindow.h"
+#include "GameBootstrap.h"
 
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
     app.setFont(QFont("Microsoft YaHei", 10));
 
-    MainWindow window;
-    window.show();
+    // 组合根创建所有对象（MainWindow、ViewModel、View 等）
+    GameBootstrap bootstrap;
+    bootstrap.mainWindow()->show();
 
     return app.exec();
 }
