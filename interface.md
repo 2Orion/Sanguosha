@@ -1,117 +1,108 @@
 # Model 层公开接口定义
 
-> 本文档定义 Model 层所有类的公开接口，作为与 ViewModel 层的契约。
-> 人员 B（ViewModel）和人员 C（View）以此为准进行开发，可先基于此 mock 数据。
-
----
+> 本文档描述当前代码中 Model 层及其共享类型的公开接口，作为 ViewModel 层调用 Model 的契约。
+> 最后核对日期：2026-07-14。接口代码块以仓库中的头文件为准；private 成员不在本文档中重复列出。
 
 ## 目录
 
-1. [公共枚举与类型](#1-公共枚举与类型)
+1. [共享枚举与类型](#1-共享枚举与类型)
 2. [游戏状态 GameState](#2-游戏状态-gamestate)
-3. [待定动作 PendingActionInfo](#3-待定动作-pendingactioninfo)
-4. [卡牌基类 Card](#4-卡牌基类-card)
-5. [基本牌子类](#5-基本牌子类)
-6. [锦囊牌子类](#6-锦囊牌子类)
-7. [武将基类 Character](#7-武将基类-character)
-8. [具体武将](#8-具体武将)
-9. [玩家 Player](#9-玩家-player)
-10. [牌堆管理 CardManager](#10-牌堆管理-cardmanager)
-11. [规则引擎 GameRule](#11-规则引擎-gamerule)
-12. [数据流示例](#12-数据流示例)
-13. [接口依赖关系与关键设计](#13-接口依赖关系与关键设计)
+3. [卡牌 Card](#3-卡牌-card)
+4. [武将 Character](#4-武将-character)
+5. [玩家 Player](#5-玩家-player)
+6. [牌堆管理 CardManager](#6-牌堆管理-cardmanager)
+7. [规则命名空间 GameRule](#7-规则命名空间-gamerule)
+8. [Model 与 ViewModel 的边界](#8-model-与-viewmodel-的边界)
+9. [文件结构](#9-文件结构)
+10. [所有权与生命周期](#10-所有权与生命周期)
 
 ---
 
-## 1. 公共枚举与类型
+## 1. 共享枚举与类型
 
-```cpp
-#ifndef COMMONTYPES_H
-#define COMMONTYPES_H
+### 1.1 规范定义位置
 
-#include <QObject>
+共享枚举的规范定义在 src/Common/CommonTypes.h：
 
-// ==================== 卡牌枚举 ====================
+~~~cpp
+#ifndef CORE_COMMONTYPES_H
+#define CORE_COMMONTYPES_H
 
-/// 卡牌花色
 enum class CardSuit {
-    Spade,   // 黑桃 ♠
-    Heart,   // 红桃 ♥
-    Club,    // 梅花 ♣
-    Diamond  // 方块 ♦
+    Spade,
+    Heart,
+    Club,
+    Diamond
 };
 
-/// 卡牌颜色（根据花色派生）
 enum class CardColor {
-    Red,   // ♥♦
-    Black  // ♠♣
+    Red,
+    Black
 };
 
-/// 卡牌大类
 enum class CardCategory {
-    Basic,     // 基本牌
-    Strategy,  // 锦囊牌
-    Equipment  // 装备牌（暂不实现）
+    Basic,
+    Strategy,
+    Equipment
 };
 
-/// 卡牌类型
 enum class CardType {
-    // 基本牌
-    Kill,       // 杀
-    Dodge,      // 闪
-    Peach,      // 桃
-    Wine,       // 酒
-
-    // 锦囊牌
-    Dismantle,          // 过河拆桥
-    Steal,              // 顺手牵羊
-    Bountiful,          // 无中生有
-    BarbarianInvasion,  // 南蛮入侵
-    Volley,             // 万箭齐发
-    PeachGarden,        // 桃园结义
+    Kill,
+    Dodge,
+    Peach,
+    Wine,
+    Dismantle,
+    Steal,
+    Bountiful,
+    BarbarianInvasion,
+    Volley,
+    PeachGarden,
 };
 
-// ==================== 游戏流程枚举 ====================
-
-/// 回合阶段
 enum class PhaseType {
-    Prepare,  // 准备阶段
-    Judge,    // 判定阶段
-    Draw,     // 摸牌阶段
-    Play,     // 出牌阶段
-    Discard,  // 弃牌阶段
-    End,      // 结束阶段
+    Prepare,
+    Judge,
+    Draw,
+    Play,
+    Discard,
+    End,
 };
 
-/// 卡牌所在区域
 enum class CardArea {
-    Hand,      // 手牌区
-    Equipment, // 装备区（预留）
-    Judgment,  // 判定区（预留）
-    Pending    // 处理中
+    Hand,
+    Equipment,
+    Judgment,
+    Pending
 };
 
-/// 游戏事件枚举（用于武将技能触发判断）
 enum class GameEvent {
-    OnDamage,          // 受到伤害后
-    OnDamageCaused,    // 造成伤害后
-    OnCardPlayed,      // 使用牌后
-    OnCardResponded,   // 打出牌响应后
-    OnDrawPhase,       // 摸牌阶段
-    OnTurnStart,       // 回合开始
-    OnDying,           // 濒死时
+    OnDamage,
+    OnDamageCaused,
+    OnCardPlayed,
+    OnCardResponded,
+    OnDrawPhase,
+    OnTurnStart,
+    OnDying,
 };
 
-/// 动作结果（ViewModel 据此判断下一步）
 enum class ActionResult {
-    Completed,         // 动作已完成，无后续
-    RequiresDodge,     // 目标需要出闪
-    RequiresKill,      // 目标需要出杀
-    RequiresPeach,     // 濒死需要出桃
-    RequiresDiscard,   // 需要弃牌
+    Completed,
+    RequiresDodge,
+    RequiresKill,
+    RequiresPeach,
+    RequiresDiscard,
 };
 
-// ==================== 转发声明 ====================
+#endif // CORE_COMMONTYPES_H
+~~~
+
+src/Model/CommonTypes.h 不是枚举的第二份定义，而是 Model 层的转发头：
+
+~~~cpp
+#ifndef MODEL_COMMONTYPES_H
+#define MODEL_COMMONTYPES_H
+
+#include "Common/CommonTypes.h"
 
 class Player;
 class Card;
@@ -119,36 +110,68 @@ class GameState;
 class CardManager;
 class Character;
 
-#endif // COMMONTYPES_H
-```
+#endif // MODEL_COMMONTYPES_H
+~~~
+
+### 1.2 枚举用途
+
+| 类型 | 用途 |
+|------|------|
+| CardSuit | 卡牌花色 |
+| CardColor | 卡牌颜色，由花色派生 |
+| CardCategory | 基本牌、锦囊牌、装备牌 |
+| CardType | 具体卡牌类型 |
+| PhaseType | 回合阶段 |
+| CardArea | 卡牌所在区域，装备区和判定区暂留 |
+| GameEvent | 武将技能触发事件 |
+| ActionResult | 卡牌执行后是否需要后续响应 |
 
 ---
 
 ## 2. 游戏状态 GameState
 
-> 游戏全局状态的快照。ViewModel 通过监听 GameState 的信号来驱动 UI 刷新。
-> 由 GameViewModel 创建并持有，每个回合更新。
+### 2.1 PendingActionInfo
 
-```cpp
-#ifndef GAMESTATE_H
-#define GAMESTATE_H
+PendingActionInfo 用于描述当前等待玩家响应的动作。它属于 Model 内部类型，包含 Model 对象指针，不应直接传给 View。
 
+~~~cpp
+#include <string>
+#include <vector>
+
+struct PendingActionInfo {
+    Player* source = nullptr;
+    Player* target = nullptr;
+    Card* sourceCard = nullptr;
+    CardType requiredCardType = CardType::Kill;
+    std::string description;
+    bool canSkip = false;
+    std::vector<Player*> remainingTargets;
+};
+~~~
+
+字段含义：
+
+| 字段 | 含义 |
+|------|------|
+| source | 动作来源玩家 |
+| target | 当前需要响应的玩家或动作目标 |
+| sourceCard | 触发动作的卡牌，可为空 |
+| requiredCardType | 当前要求的响应牌类型 |
+| description | Model 内部使用的 UTF-8 文本 |
+| canSkip | 当前响应是否允许跳过 |
+| remainingTargets | AOE 动作中尚未处理的目标 |
+
+### 2.2 公共接口
+
+~~~cpp
 #include <QObject>
-#include <QList>
+#include <string>
+#include <vector>
 #include "CommonTypes.h"
 
 class Player;
 class CardManager;
-
-/// 待定动作信息（当需要玩家响应时填充此结构）
-struct PendingActionInfo {
-    Player* source;             // 动作来源（使用牌的玩家）
-    Player* target;             // 需要响应的玩家
-    Card*   sourceCard;         // 触发动作的卡牌
-    CardType requiredCardType;  // 需要打出的卡牌类型
-    QString description;        // 界面提示文字（如"请打出一张【闪】"）
-    bool    canSkip;            // 是否可以跳过响应
-};
+class Card;
 
 class GameState : public QObject {
     Q_OBJECT
@@ -156,415 +179,293 @@ public:
     explicit GameState(QObject* parent = nullptr);
     ~GameState() override = default;
 
-    // ---- 阶段管理 ----
     PhaseType currentPhase() const;
     void setCurrentPhase(PhaseType phase);
 
-    // ---- 玩家管理 ----
     int currentPlayerIndex() const;
     void setCurrentPlayerIndex(int index);
     Player* currentPlayer() const;
     Player* player(int index) const;
     int playerCount() const;
     void addPlayer(Player* player);
-    QList<Player*> alivePlayers() const;
-    QList<Player*> allPlayers() const;
+    std::vector<Player*> alivePlayers() const;
+    std::vector<Player*> allPlayers() const;
 
-    // ---- 回合追踪 ----
     int turnCount() const;
     void incrementTurn();
 
-    // ---- 待定动作 ----
     bool hasPendingAction() const;
     const PendingActionInfo& pendingActionInfo() const;
     void setPendingAction(const PendingActionInfo& info);
     void clearPendingAction();
 
-    // ---- 牌堆管理器 ----
     CardManager* cardManager() const;
     void setCardManager(CardManager* mgr);
 
-    // ---- 游戏结束 ----
     bool isGameOver() const;
     Player* winner() const;
     void setGameOver(Player* winnerPlayer);
 
 signals:
-    void phaseChanged(PhaseType newPhase);
+    void phaseChanged(PhaseType phase);
     void currentPlayerChanged(int playerIndex);
     void pendingActionCreated(const PendingActionInfo& info);
     void pendingActionCleared();
-    void gameOver(Player* winner);
-    void stateRefreshed();  // 通用刷新信号
-
-private:
-    PhaseType m_currentPhase = PhaseType::Prepare;
-    int m_currentPlayerIndex = 0;
-    int m_turnCount = 0;
-    QList<Player*> m_players;
-    CardManager* m_cardManager = nullptr;
-    bool m_hasPendingAction = false;
-    PendingActionInfo m_pendingAction;
-    bool m_gameOver = false;
-    Player* m_winner = nullptr;
+    void gameOver(int winnerId);
+    void stateRefreshed();
 };
+~~~
 
-#endif // GAMESTATE_H
-```
+行为约定：
+
+- 默认阶段是 PhaseType::Prepare，默认当前玩家索引为 0。
+- setCurrentPlayerIndex 只接受当前玩家列表范围内的索引。
+- addPlayer 忽略空指针和重复指针；它只保存指针，不负责删除玩家。
+- alivePlayers 返回 hp() > 0 的玩家；返回值是新的 std::vector。
+- setPendingAction 会保存动作并发出 pendingActionCreated。
+- clearPendingAction 会清除标志、重置动作结构并发出 pendingActionCleared。
+- setGameOver 将状态设为结束，并以获胜玩家的 playerId 发出 gameOver；平局或没有获胜者时传出 -1。
+- cardManager 是非拥有指针。调用方负责保证其生命周期。
+- stateRefreshed 是预留的通用刷新信号；当前 GameState.cpp 不会自动发出它。
 
 ---
 
-## 3. 卡牌基类 Card
+## 3. 卡牌 Card
 
-> 所有卡牌的基类。通过虚方法实现多态行为。
-> 每张卡牌在游戏中有唯一 ID。
+### 3.1 基类
 
-```cpp
-#ifndef CARD_H
-#define CARD_H
+Card 是普通 C++ 多态基类，不继承 QObject，没有 Q_OBJECT，也没有 Qt 父对象参数。文本使用 std::string，目标列表使用 std::vector。
 
-#include <QObject>
-#include <QString>
-#include <QList>
+~~~cpp
+#include <string>
+#include <vector>
 #include "CommonTypes.h"
 
 class GameState;
 class Player;
 
-class Card : public QObject {
-    Q_OBJECT
+class Card {
 public:
-    /// @param type   卡牌类型
-    /// @param suit   花色
-    /// @param number 点数（1-13，A-K）
-    Card(CardType type, CardSuit suit, int number, QObject* parent = nullptr);
-    ~Card() override = default;
+    Card(CardType type, CardSuit suit, int number);
+    virtual ~Card() = default;
 
-    // ==================== 只读属性 ====================
-
-    /// 全局唯一卡牌 ID
     int id() const;
-
-    /// 卡牌类型
     CardType cardType() const;
-
-    /// 花色
     CardSuit suit() const;
-
-    /// 点数（1=A, 2-10, 11=J, 12=Q, 13=K）
     int number() const;
-
-    /// 卡牌颜色（红/黑）
     CardColor color() const;
-
-    /// 卡牌名称（中文，如"杀"、"顺手牵羊"）
-    QString cardName() const;
-
-    /// 卡牌说明文字
-    QString description() const;
-
-    // ==================== 分类判断 ====================
+    std::string cardName() const;
+    std::string description() const;
 
     CardCategory category() const;
     bool isBasic() const;
     bool isStrategy() const;
-    bool isEquipment() const;  // 装备牌（预留）
+    bool isEquipment() const;
     bool isRed() const;
     bool isBlack() const;
 
-    // ==================== 游戏逻辑接口（子类重写）====================
-
-    /// 判断玩家在当前状态下是否能使用此牌
     virtual bool canUse(const GameState* state, const Player* user) const;
-
-    /// 判断某玩家是否可以作为此牌的合法目标
     virtual bool canTarget(const GameState* state,
                            const Player* user,
                            const Player* target) const;
-
-    /// 获取所有合法目标列表
-    virtual QList<Player*> getValidTargets(const GameState* state,
-                                            const Player* user) const;
-
-    /// 执行卡牌效果
-    /// @return 动作结果，指示是否需要玩家进一步响应
+    virtual std::vector<Player*> getValidTargets(const GameState* state,
+                                                  const Player* user) const;
     virtual ActionResult execute(GameState* state,
                                   Player* user,
-                                  const QList<Player*>& targets);
+                                  const std::vector<Player*>& targets);
 
-    // ==================== 工具方法 ====================
-
-    /// 根据 CardType 获取中文名称
-    static QString cardTypeName(CardType type);
-
-    /// 花色符号字符串
-    QString suitSymbol() const;
-
-    /// 点数显示字符串
-    QString numberString() const;
+    static std::string cardTypeName(CardType type);
+    std::string suitSymbol() const;
+    std::string numberString() const;
 
 protected:
-    /// 子类在构造函数中调用以设置自定义名称/描述
-    void setCardName(const QString& name);
-    void setDescription(const QString& desc);
-
-private:
-    int m_id;
-    CardType m_type;
-    CardSuit m_suit;
-    int m_number;
-    QString m_cardName;
-    QString m_description;
-
-    static int s_nextCardId;  // 全局自增 ID
+    void setCardName(const std::string& name);
+    void setDescription(const std::string& desc);
 };
+~~~
 
-#endif // CARD_H
-```
+基类默认行为：
 
----
+- 卡牌 ID 由 Card::s_nextCardId 全局递增生成。
+- 构造时卡牌名称默认为 cardTypeName(type)。
+- color() 将红桃、方块判为红色，其余花色判为黑色。
+- 基类 canUse、canTarget 默认返回 false。
+- 基类 getValidTargets 返回空列表。
+- 基类 execute 返回 ActionResult::Completed。
+- numberString 将 1/11/12/13 显示为 A/J/Q/K，其他点数显示数字。
 
-## 4. 基本牌子类
+### 3.2 基本牌与锦囊牌声明
 
-### 4.1 杀 (Kill)
-
-```cpp
+~~~cpp
 class KillCard : public Card {
-    Q_OBJECT
 public:
-    KillCard(CardSuit suit, int number, QObject* parent = nullptr);
+    KillCard(CardSuit suit, int number);
     ~KillCard() override = default;
 
     bool canUse(const GameState* state, const Player* user) const override;
     bool canTarget(const GameState* state,
                    const Player* user,
                    const Player* target) const override;
-    QList<Player*> getValidTargets(const GameState* state,
-                                    const Player* user) const override;
+    std::vector<Player*> getValidTargets(const GameState* state,
+                                          const Player* user) const override;
     ActionResult execute(GameState* state,
                           Player* user,
-                          const QList<Player*>& targets) override;
+                          const std::vector<Player*>& targets) override;
 };
-```
 
-**规则**：出牌阶段每回合限一次（张飞咆哮除外），目标为对手且存活，执行后对手需出闪或受伤。
-
----
-
-### 4.2 闪 (Dodge)
-
-```cpp
 class DodgeCard : public Card {
-    Q_OBJECT
 public:
-    DodgeCard(CardSuit suit, int number, QObject* parent = nullptr);
+    DodgeCard(CardSuit suit, int number);
     ~DodgeCard() override = default;
 
-    /// 闪不能在出牌阶段主动使用，始终返回 false
     bool canUse(const GameState* state, const Player* user) const override;
 };
-```
 
-**规则**：只作为响应打出，不由 `canUse` 判定。ViewModel 在响应流程中直接调用 `GameRule`。
-
----
-
-### 4.3 桃 (Peach)
-
-```cpp
 class PeachCard : public Card {
-    Q_OBJECT
 public:
-    PeachCard(CardSuit suit, int number, QObject* parent = nullptr);
+    PeachCard(CardSuit suit, int number);
     ~PeachCard() override = default;
 
     bool canUse(const GameState* state, const Player* user) const override;
     bool canTarget(const GameState* state,
                    const Player* user,
                    const Player* target) const override;
-    QList<Player*> getValidTargets(const GameState* state,
-                                    const Player* user) const override;
+    std::vector<Player*> getValidTargets(const GameState* state,
+                                          const Player* user) const override;
     ActionResult execute(GameState* state,
                           Player* user,
-                          const QList<Player*>& targets) override;
+                          const std::vector<Player*>& targets) override;
 };
-```
 
-**规则**：
-- 出牌阶段：仅对自己使用，体力不满时可用，回复 1 体力
-- 濒死时：可由任意玩家对濒死角色使用（由 `GameRule::startDyingProcess` 管理）
-
----
-
-### 4.4 酒 (Wine)
-
-```cpp
 class WineCard : public Card {
-    Q_OBJECT
 public:
-    WineCard(CardSuit suit, int number, QObject* parent = nullptr);
+    WineCard(CardSuit suit, int number);
     ~WineCard() override = default;
 
     bool canUse(const GameState* state, const Player* user) const override;
-    QList<Player*> getValidTargets(const GameState* state,
-                                    const Player* user) const override;
+    std::vector<Player*> getValidTargets(const GameState* state,
+                                          const Player* user) const override;
     ActionResult execute(GameState* state,
                           Player* user,
-                          const QList<Player*>& targets) override;
+                          const std::vector<Player*>& targets) override;
 };
-```
 
-**规则**：
-- 出牌阶段：对自己使用，下张杀伤害 +1，不可叠加
-- 濒死时：可当桃自救（由 ViewModel 决定使用方式）
-
----
-
-## 5. 锦囊牌子类
-
-### 5.1 锦囊牌基类
-
-```cpp
 class StrategyCard : public Card {
-    Q_OBJECT
 public:
-    StrategyCard(CardType type, CardSuit suit, int number, QObject* parent = nullptr);
+    StrategyCard(CardType type, CardSuit suit, int number);
     ~StrategyCard() override = default;
 
     bool canUse(const GameState* state, const Player* user) const override;
 };
-```
 
----
-
-### 5.2 过河拆桥 (Dismantle)
-
-```cpp
 class DismantleCard : public StrategyCard {
-    Q_OBJECT
 public:
-    DismantleCard(CardSuit suit, int number, QObject* parent = nullptr);
+    DismantleCard(CardSuit suit, int number);
 
     bool canTarget(const GameState* state,
                    const Player* user,
                    const Player* target) const override;
-    QList<Player*> getValidTargets(const GameState* state,
-                                    const Player* user) const override;
+    std::vector<Player*> getValidTargets(const GameState* state,
+                                          const Player* user) const override;
     ActionResult execute(GameState* state,
                           Player* user,
-                          const QList<Player*>& targets) override;
+                          const std::vector<Player*>& targets) override;
 };
-```
 
----
-
-### 5.3 顺手牵羊 (Steal)
-
-```cpp
 class StealCard : public StrategyCard {
-    Q_OBJECT
 public:
-    StealCard(CardSuit suit, int number, QObject* parent = nullptr);
+    StealCard(CardSuit suit, int number);
 
     bool canTarget(const GameState* state,
                    const Player* user,
                    const Player* target) const override;
-    QList<Player*> getValidTargets(const GameState* state,
-                                    const Player* user) const override;
+    std::vector<Player*> getValidTargets(const GameState* state,
+                                          const Player* user) const override;
     ActionResult execute(GameState* state,
                           Player* user,
-                          const QList<Player*>& targets) override;
+                          const std::vector<Player*>& targets) override;
 };
-```
 
----
-
-### 5.4 无中生有 (Bountiful)
-
-```cpp
 class BountifulCard : public StrategyCard {
-    Q_OBJECT
 public:
-    BountifulCard(CardSuit suit, int number, QObject* parent = nullptr);
+    BountifulCard(CardSuit suit, int number);
 
-    QList<Player*> getValidTargets(const GameState* state,
-                                    const Player* user) const override;
+    std::vector<Player*> getValidTargets(const GameState* state,
+                                          const Player* user) const override;
     ActionResult execute(GameState* state,
                           Player* user,
-                          const QList<Player*>& targets) override;
+                          const std::vector<Player*>& targets) override;
 };
-```
 
----
-
-### 5.5 南蛮入侵 (Barbarian Invasion)
-
-```cpp
 class BarbarianCard : public StrategyCard {
-    Q_OBJECT
 public:
-    BarbarianCard(CardSuit suit, int number, QObject* parent = nullptr);
+    BarbarianCard(CardSuit suit, int number);
 
     bool canTarget(const GameState* state,
                    const Player* user,
                    const Player* target) const override;
-    QList<Player*> getValidTargets(const GameState* state,
-                                    const Player* user) const override;
+    std::vector<Player*> getValidTargets(const GameState* state,
+                                          const Player* user) const override;
     ActionResult execute(GameState* state,
                           Player* user,
-                          const QList<Player*>& targets) override;
+                          const std::vector<Player*>& targets) override;
 };
-```
 
----
-
-### 5.6 万箭齐发 (Volley)
-
-```cpp
 class VolleyCard : public StrategyCard {
-    Q_OBJECT
 public:
-    VolleyCard(CardSuit suit, int number, QObject* parent = nullptr);
+    VolleyCard(CardSuit suit, int number);
 
     bool canTarget(const GameState* state,
                    const Player* user,
                    const Player* target) const override;
-    QList<Player*> getValidTargets(const GameState* state,
-                                    const Player* user) const override;
+    std::vector<Player*> getValidTargets(const GameState* state,
+                                          const Player* user) const override;
     ActionResult execute(GameState* state,
                           Player* user,
-                          const QList<Player*>& targets) override;
+                          const std::vector<Player*>& targets) override;
 };
-```
 
----
-
-### 5.7 桃园结义 (Peach Garden)
-
-```cpp
 class PeachGardenCard : public StrategyCard {
-    Q_OBJECT
 public:
-    PeachGardenCard(CardSuit suit, int number, QObject* parent = nullptr);
+    PeachGardenCard(CardSuit suit, int number);
 
-    QList<Player*> getValidTargets(const GameState* state,
-                                    const Player* user) const override;
+    std::vector<Player*> getValidTargets(const GameState* state,
+                                          const Player* user) const override;
     ActionResult execute(GameState* state,
                           Player* user,
-                          const QList<Player*>& targets) override;
+                          const std::vector<Player*>& targets) override;
 };
-```
+~~~
+
+### 3.3 卡牌行为
+
+| 卡牌 | 使用与目标判断 | execute 结果和效果 |
+|------|----------------|-------------------|
+| KillCard | 仅出牌阶段、玩家存活且满足 GameRule::canPlayKill；目标必须是其他存活玩家 | 调用 GameRule::executeKill，返回 RequiresDodge |
+| DodgeCard | canUse 始终返回 false | 只通过响应流程处理 |
+| PeachCard | 出牌阶段可对自己使用，且自己未满体力 | 调用 executePeach，回复 1 点体力，返回 Completed |
+| WineCard | 出牌阶段、玩家存活且当前未处于酒强化状态 | 调用 executeWine，强化下一次杀，返回 Completed |
+| StrategyCard | 仅出牌阶段且玩家存活 | 作为锦囊牌基类 |
+| DismantleCard | 目标是其他存活且有手牌或装备的玩家 | 弃置目标一张牌 |
+| StealCard | 目标条件同过河拆桥 | 将目标一张手牌或装备牌移给使用者 |
+| BountifulCard | 合法目标列表为使用者自己 | 摸两张牌 |
+| BarbarianCard | 合法目标为除使用者外的所有存活玩家 | 建立依次要求出杀的响应链，返回 RequiresKill |
+| VolleyCard | 合法目标为除使用者外的所有存活玩家 | 建立依次要求出闪的响应链，返回 RequiresDodge |
+| PeachGardenCard | 合法目标列表为所有存活玩家 | 所有未满体力的玩家回复 1 点体力 |
+
+卡牌的 execute 通常只处理传入目标列表的第一个目标；AOE 卡牌的目标链由 GameRule 和 PendingActionInfo::remainingTargets 管理。
 
 ---
 
-## 6. 武将基类 Character
+## 4. 武将 Character
 
-```cpp
-#ifndef CHARACTER_H
-#define CHARACTER_H
+### 4.1 基类接口
 
+Character 仍然是 QObject，但名称、技能名称和技能描述在 Model 内部使用 std::string。只有技能信号使用 QString。
+
+~~~cpp
+#include <string>
 #include <QObject>
-#include <QString>
 #include "CommonTypes.h"
 
 class GameState;
@@ -574,153 +475,93 @@ class Card;
 class Character : public QObject {
     Q_OBJECT
 public:
-    explicit Character(const QString& name, int maxHp,
-                       const QString& skillName, const QString& skillDesc,
-                       QObject* parent = nullptr);
+    Character(const std::string& name, int maxHp,
+              const std::string& skillName, const std::string& skillDesc,
+              QObject* parent = nullptr);
     ~Character() override = default;
 
-    // ==================== 只读属性 ====================
-
-    QString characterName() const;
+    std::string characterName() const;
     int maxHp() const;
-    QString skillName() const;
-    QString skillDescription() const;
+    std::string skillName() const;
+    std::string skillDescription() const;
 
-    // ==================== 技能系统（子类重写）====================
-
-    /// 是否拥有技能（默认 true）
     virtual bool hasSkill() const;
-
-    /// 判断技能触发条件是否满足
     virtual bool triggerCondition(GameEvent event,
                                   const GameState* state,
                                   const Player* self) const;
-
-    /// 执行技能效果
     virtual void triggerSkill(GameState* state, Player* self);
-
-    /// 是否可将某张牌转化为另一种牌使用
-    /// 关羽：红牌→杀；赵云：杀↔闪
-    /// @return 可转化成的 CardType，若不能转化则返回 card 的原始类型
     virtual CardType skillTransformCard(const Card* card) const;
 
 signals:
-    /// 技能发动信号（ViewModel 用来显示"XX发动了技能"）
     void skillTriggered(const QString& skillName);
-
-protected:
-    QString m_name;
-    int m_maxHp;
-    QString m_skillName;
-    QString m_skillDescription;
 };
+~~~
 
-#endif // CHARACTER_H
-```
+默认行为：
 
----
+- hasSkill() 返回 true。
+- triggerCondition() 返回 false。
+- triggerSkill() 不执行动作。
+- skillTransformCard() 返回原卡牌类型。
 
-## 7. 具体武将
+### 4.2 具体武将接口
 
-### 7.1 曹操 — 奸雄
-
-```cpp
+~~~cpp
 class CaoCao : public Character {
     Q_OBJECT
 public:
-    explicit CaoCao(QObject* parent = nullptr);
-
+    CaoCao(QObject* parent = nullptr);
     bool hasSkill() const override;
     bool triggerCondition(GameEvent event,
                           const GameState* state,
                           const Player* self) const override;
     void triggerSkill(GameState* state, Player* self) override;
 };
-```
 
-| 项目 | 内容 |
-|------|------|
-| 体力 | 4 血 |
-| 技能 | **奸雄**：受到伤害后，获得造成伤害的牌（简化版：受到伤害后摸 1 张牌）|
-| 触发时机 | `OnDamage`（受到伤害后）|
-
----
-
-### 7.2 关羽 — 武圣
-
-```cpp
 class GuanYu : public Character {
     Q_OBJECT
 public:
-    explicit GuanYu(QObject* parent = nullptr);
-
+    GuanYu(QObject* parent = nullptr);
     bool hasSkill() const override;
     CardType skillTransformCard(const Card* card) const override;
 };
-```
 
-| 项目 | 内容 |
-|------|------|
-| 体力 | 4 血 |
-| 技能 | **武圣**：红色牌可当【杀】使用或打出 |
-| 实现 | `skillTransformCard`：若 card 为红色则返回 `CardType::Kill` |
-
----
-
-### 7.3 张飞 — 咆哮
-
-```cpp
 class ZhangFei : public Character {
     Q_OBJECT
 public:
-    explicit ZhangFei(QObject* parent = nullptr);
-
+    ZhangFei(QObject* parent = nullptr);
     bool hasSkill() const override;
     bool triggerCondition(GameEvent event,
                           const GameState* state,
                           const Player* self) const override;
     void triggerSkill(GameState* state, Player* self) override;
 };
-```
 
-| 项目 | 内容 |
-|------|------|
-| 体力 | 4 血 |
-| 技能 | **咆哮**：出牌阶段可使用任意张【杀】 |
-| 实现 | `GameRule::canPlayKill` 中检查武将类型，若为张飞则始终返回 true |
-
----
-
-### 7.4 赵云 — 龙胆
-
-```cpp
 class ZhaoYun : public Character {
     Q_OBJECT
 public:
-    explicit ZhaoYun(QObject* parent = nullptr);
-
+    ZhaoYun(QObject* parent = nullptr);
     bool hasSkill() const override;
     CardType skillTransformCard(const Card* card) const override;
 };
-```
+~~~
 
-| 项目 | 内容 |
-|------|------|
-| 体力 | 4 血 |
-| 技能 | **龙胆**：可将【杀】当【闪】，【闪】当【杀】使用或打出 |
-| 实现 | `skillTransformCard`：Kill→Dodge, Dodge→Kill |
+| 武将 | 当前实现 |
+|------|----------|
+| CaoCao | OnDamage 满足触发条件，触发后从牌堆摸一张牌 |
+| GuanYu | 红色牌通过 skillTransformCard 转为 CardType::Kill |
+| ZhangFei | GameRule::canPlayKill 对张飞放宽本回合杀次数；自身 triggerCondition 当前返回 false |
+| ZhaoYun | Kill 与 Dodge 互相转换，其他牌保持原类型 |
 
 ---
 
-## 8. 玩家 Player
+## 5. 玩家 Player
 
-```cpp
-#ifndef PLAYER_H
-#define PLAYER_H
+### 5.1 公共接口
 
+~~~cpp
+#include <vector>
 #include <QObject>
-#include <QList>
-#include <QString>
 #include "CommonTypes.h"
 
 class Card;
@@ -733,112 +574,92 @@ public:
     explicit Player(QObject* parent = nullptr);
     ~Player() override;
 
-    // ==================== 身份标识 ====================
-
     int playerId() const;
     void setPlayerId(int id);
     QString displayName() const;
     void setDisplayName(const QString& name);
-
-    // ==================== 武将管理 ====================
 
     void setCharacter(Character* character);
     Character* character() const;
     QString characterName() const;
     bool hasCharacter() const;
 
-    // ==================== 体力管理 ====================
-
     int hp() const;
     void setHp(int value);
-    int maxHp() const;           // 委托给 Character
+    int maxHp() const;
     void damage(int value);
     void heal(int value);
     bool isAlive() const;
     bool isDying() const;
     void setDying(bool dying);
     bool isFullHp() const;
-    double hpRatio() const;      // hp / maxHp（用于血条显示）
-    int handCardLimit() const;   // = 当前体力值
+    double hpRatio() const;
+    int handCardLimit() const;
 
-    // ==================== 手牌管理 ====================
-
-    const QList<Card*>& handCards() const;
+    const std::vector<Card*>& handCards() const;
     int handCardCount() const;
     bool hasCard(const Card* card) const;
     void addHandCard(Card* card);
     void removeHandCard(Card* card);
     bool hasHandCards() const;
-    Card* getRandomHandCard() const;  // 随机获取一张手牌
+    Card* getRandomHandCard() const;
 
-    // ==================== 装备区（预留） ====================
-
-    const QList<Card*>& equipCards() const;
+    const std::vector<Card*>& equipCards() const;
     bool hasEquipCards() const;
     void addEquipCard(Card* card);
     void removeEquipCard(Card* card);
 
-    // ==================== 判定区（预留） ====================
-
-    const QList<Card*>& judgmentCards() const;
+    const std::vector<Card*>& judgmentCards() const;
     bool hasJudgmentCards() const;
     void addJudgmentCard(Card* card);
     void removeJudgmentCard(Card* card);
 
-    // ==================== 回合状态 ====================
-
-    void resetTurnState();              // 回合开始时调用
+    void resetTurnState();
     bool hasUsedKillThisTurn() const;
     void setUsedKillThisTurn(bool used);
     bool isWineEnhanced() const;
     void setWineEnhanced(bool enhanced);
 
-    // ==================== 工具 ====================
-
-    /// 获取所有可被选中的牌（手牌 + 装备区）
-    QList<Card*> allSelectableCards() const;
+    std::vector<Card*> allSelectableCards() const;
 
 signals:
-    void hpChanged(int newHp);
-    void maxHpChanged(int newMaxHp);
-    void dying(Player* self);
-    void died(Player* self);
-    void revived(Player* self);       // 从濒死救回
-    void handCardAdded(Card* card);
-    void handCardRemoved(Card* card);
-    void handCardsChanged();          // 批量手牌变化
-    void characterChanged(Character* character);
-    void stateChanged();              // 通用刷新
-
-private:
-    int m_playerId = -1;
-    QString m_displayName;
-    Character* m_character = nullptr;
-
-    int m_hp = 0;
-    bool m_dying = false;
-
-    QList<Card*> m_handCards;
-    QList<Card*> m_equipCards;
-    QList<Card*> m_judgmentCards;
-
-    bool m_usedKillThisTurn = false;
-    bool m_wineEnhanced = false;
+    void hpChanged(int hp);
+    void maxHpChanged(int maxHp);
+    void dying(int playerId);
+    void died(int playerId);
+    void revived(int playerId);
+    void handCardAdded(int cardId);
+    void handCardRemoved(int cardId);
+    void handCardsChanged();
+    void characterChanged(const QString& charName);
+    void stateChanged();
 };
+~~~
 
-#endif // PLAYER_H
-```
+### 5.2 行为约定
+
+- setCharacter 保存武将指针，并将当前体力初始化为武将最大体力。
+- Player 的名称和字符展示字段使用 QString；Character 的内部名称字段使用 std::string。
+- maxHp() 没有武将时返回 0；有武将时返回武将的最大体力。
+- setHp 将体力限制为不小于 0；damage 和 heal 只处理正数。
+- isAlive() 等价于 hp() > 0；isFullHp() 等价于 hp() >= maxHp()。
+- handCardLimit() 等于当前体力值的非负部分。
+- 手牌、装备区和判定区都使用 std::vector<Card*>，容器不拥有卡牌。
+- allSelectableCards() 返回手牌和装备区的合并列表，不包含判定区。
+- setDying(true) 发出 dying(playerId)；从濒死状态恢复时发出 revived(playerId)。
+- handCardAdded、handCardRemoved 的参数是卡牌 ID，不是 Card*。
+- 当前 Player.cpp 会发出 dying、revived 和手牌变化信号；died(int) 已声明，但当前实现没有在 Player 内部主动发出该信号。
+- setCharacter、手牌变化和体力变化会触发对应的状态信号；装备区和判定区变化通过 stateChanged() 通知。
 
 ---
 
-## 9. 牌堆管理 CardManager
+## 6. 牌堆管理 CardManager
 
-```cpp
-#ifndef CARDMANAGER_H
-#define CARDMANAGER_H
+### 6.1 公共接口
 
+~~~cpp
+#include <vector>
 #include <QObject>
-#include <QList>
 #include "CommonTypes.h"
 
 class Card;
@@ -849,112 +670,88 @@ public:
     explicit CardManager(QObject* parent = nullptr);
     ~CardManager() override;
 
-    // ==================== 初始化与洗牌 ====================
-
-    /// 创建所有卡牌并洗牌（简化版牌堆，共约 48 张）
-    /// 杀×15 闪×10 桃×6 酒×3
-    /// 过河拆桥×3 顺手牵羊×3 无中生有×3
-    /// 南蛮入侵×2 万箭齐发×2 桃园结义×1
     void initialize();
-
-    /// 洗牌（Fisher-Yates）
     void shuffle();
 
-    // ==================== 摸牌 ====================
-
-    /// 摸一张（牌堆空时自动回收弃牌堆）
     Card* drawCard();
-
-    /// 摸多张
-    QList<Card*> drawCards(int count);
-
-    /// 剩余张数
+    std::vector<Card*> drawCards(int count);
     int remainingCount() const;
-
-    /// 总张数
     int totalCardCount() const;
 
-    // ==================== 弃牌 ====================
-
     void discard(Card* card);
-    void discardMultiple(const QList<Card*>& cards);
+    void discardMultiple(const std::vector<Card*>& cards);
     int discardPileCount() const;
-
-    // ==================== 回收 ====================
 
     void reshuffleDiscardPile();
 
-    // ==================== 查找 ====================
-
     Card* findCardById(int id) const;
+
+    const std::vector<Card*>& getDrawPile() const;
 
 signals:
     void drawPileEmpty();
     void reshuffled();
-    void cardDiscarded(Card* card);
-
-private:
-    Card* createCard(CardType type, CardSuit suit, int number);
-    CardSuit randomSuit() const;
-
-    QList<Card*> m_drawPile;
-    QList<Card*> m_discardPile;
-    QList<Card*> m_allCards;  // 全量卡牌（管理生命周期）
-    int m_nextCardId = 1;
+    void cardDiscarded(int cardId);
 };
+~~~
 
-#endif // CARDMANAGER_H
-```
+### 6.2 行为约定
+
+initialize() 创建并洗牌一副 48 张的简化牌堆：
+
+| 卡牌 | 数量 |
+|------|------|
+| 杀 | 15 |
+| 闪 | 10 |
+| 桃 | 6 |
+| 酒 | 3 |
+| 过河拆桥 | 3 |
+| 顺手牵羊 | 3 |
+| 无中生有 | 3 |
+| 南蛮入侵 | 2 |
+| 万箭齐发 | 2 |
+| 桃园结义 | 1 |
+
+- drawCard() 从牌堆取一张；牌堆为空时会先尝试回收弃牌堆并洗牌。
+- 牌堆和弃牌堆都为空时，drawCard() 返回 nullptr 并发出 drawPileEmpty()。
+- drawCards(count) 最多返回 count 张；牌堆无法继续提供卡牌时提前结束。
+- discard 和 discardMultiple 只负责把卡牌放入弃牌堆，不会自动从玩家区域移除卡牌。
+- 卡牌进入弃牌堆时发出 cardDiscarded(cardId)。
+- reshuffleDiscardPile() 将弃牌堆全部放回牌堆、清空弃牌堆、洗牌并发出 reshuffled()。
+- getDrawPile() 返回内部牌堆的只读引用；调用方不能通过该引用修改容器，但必须保证 CardManager 不被销毁。
+- CardManager 通过 m_allCards 管理所有已创建卡牌，并在析构或重新初始化时删除它们。
+- 卡牌 ID 由 Card 的静态计数器生成，不由 CardManager 单独维护。
 
 ---
 
-## 10. 规则引擎 GameRule
+## 7. 规则命名空间 GameRule
 
-> 纯函数命名空间，不持有状态，所有状态通过 `GameState*` 传入。
+GameRule 是不保存自身状态的命名空间。函数通过 GameState*、Player* 和 Card* 读取或修改 Model 状态。调用方应在进入规则函数前保证指针有效；多数函数对空指针直接返回。
 
-```cpp
-#ifndef GAMERULE_H
-#define GAMERULE_H
+### 7.1 完整声明
 
-class GameState;
-class Player;
-class Card;
-
+~~~cpp
 namespace GameRule {
+    constexpr int INITIAL_HAND_COUNT = 4;
+    constexpr int DRAW_PHASE_COUNT = 2;
 
-    // ==================== 常量 ====================
-
-    constexpr int INITIAL_HAND_COUNT = 4;  // 初始手牌数
-    constexpr int DRAW_PHASE_COUNT = 2;    // 摸牌阶段摸牌数
-
-    // ==================== 规则判断 ====================
-
-    /// 玩家当前是否可以使用【杀】（含张飞咆哮判定）
     bool canPlayKill(const GameState* state, const Player* player);
+    bool canPlayCard(const GameState* state,
+                     const Player* player,
+                     const Card* card);
 
-    /// 玩家是否可以使用某张牌（通用入口）
-    bool canPlayCard(const GameState* state, const Player* player, const Card* card);
-
-    /// 手牌上限（= 当前体力值）
     int handLimit(const Player* player);
-
-    /// 是否有闪可响应
     bool hasDodgeToRespond(const Player* player);
-
-    /// 是否有杀可响应（南蛮入侵）
     bool hasKillToRespond(const Player* player);
-
-    /// 是否有桃可救濒死玩家
-    bool hasPeachToSave(const Player* player, const Player* dyingPlayer);
-
-    // ==================== 卡牌执行 ====================
+    bool hasPeachToSave(const Player* player,
+                        const Player* dyingPlayer);
 
     void executeKill(GameState* state, Player* user, Player* target);
-    void handleKillResponse(GameState* state, Player* responder, Card* dodgeCard);
+    void handleKillResponse(GameState* state,
+                            Player* responder,
+                            Card* dodgeCard);
     void executePeach(GameState* state, Player* user, Player* target);
     void executeWine(GameState* state, Player* user);
-
-    // ==================== 锦囊执行 ====================
 
     void executeDismantle(GameState* state, Player* user, Player* target);
     void executeSteal(GameState* state, Player* user, Player* target);
@@ -963,174 +760,143 @@ namespace GameRule {
     void executeVolley(GameState* state, Player* user);
     void executePeachGarden(GameState* state);
 
-    // ==================== AOE 响应处理 ====================
-
-    void handleAoeKillResponse(GameState* state, Player* responder, Card* killCard);
-    void handleAoeDodgeResponse(GameState* state, Player* responder, Card* dodgeCard);
+    void handleAoeKillResponse(GameState* state,
+                               Player* responder,
+                               Card* killCard);
+    void handleAoeDodgeResponse(GameState* state,
+                                Player* responder,
+                                Card* dodgeCard);
     void handleAoeSkipResponse(GameState* state, Player* responder);
 
-    // ==================== 伤害与濒死 ====================
-
-    void dealDamage(GameState* state, Player* target, int value, Player* source);
+    void dealDamage(GameState* state,
+                    Player* target,
+                    int value,
+                    Player* source);
     void startDyingProcess(GameState* state, Player* dyingPlayer);
-    bool handleDyingPeach(GameState* state, Player* dyingPlayer, Player* peachUser, Card* peachCard);
+    bool handleDyingPeach(GameState* state,
+                          Player* dyingPlayer,
+                          Player* peachUser,
+                          Card* peachCard);
     void skipDyingResponse(GameState* state, Player* dyingPlayer);
     void checkDeath(GameState* state, Player* player);
     void checkGameOver(GameState* state);
 
-    // ==================== 弃牌阶段 ====================
-
-    /// 返回需要弃置的张数（0 则不需要）
     int getDiscardCount(const Player* player);
+}
+~~~
 
-} // namespace GameRule
+### 7.2 规则分组
 
-#endif // GAMERULE_H
-```
+| 分组 | 接口 | 说明 |
+|------|------|------|
+| 使用判断 | canPlayKill、canPlayCard | 判断是否允许出牌；张飞由 canPlayKill 放宽杀次数 |
+| 响应判断 | hasDodgeToRespond、hasKillToRespond、hasPeachToSave | 检查手牌及武将转化后的响应能力 |
+| 基本牌 | executeKill、handleKillResponse、executePeach、executeWine | 处理杀、闪、桃、酒的实际效果 |
+| 锦囊牌 | executeDismantle、executeSteal、executeBountiful、executeBarbarianInvasion、executeVolley、executePeachGarden | 处理锦囊牌效果 |
+| AOE 响应 | handleAoeKillResponse、handleAoeDodgeResponse、handleAoeSkipResponse | 处理南蛮入侵和万箭齐发的逐目标响应 |
+| 伤害与濒死 | dealDamage、startDyingProcess、handleDyingPeach、skipDyingResponse、checkDeath、checkGameOver | 伤害、救援、死亡及终局判定 |
+| 弃牌 | getDiscardCount | 返回手牌数超过体力上限的数量 |
 
----
+行为要点：
 
-## 11. 文件结构总览（含新增）
-
-```
-src/Model/
-├── CommonTypes.h      ← 新增：所有枚举与前向声明
-├── Card.h / .cpp      ← 卡牌基类 + 4基本牌 + 6锦囊牌
-├── Character.h / .cpp ← 武将基类 + 4具体武将
-├── Player.h / .cpp    ← 玩家
-├── CardManager.h / .cpp  ← 牌堆管理
-├── GameState.h / .cpp ← 新增：游戏状态（含 PendingActionInfo）
-└── GameRule.h / .cpp  ← 规则引擎
-```
-
----
-
-## 12. 数据流示例
-
-### 杀 → 闪 流程
-
-```
-View (C)            ViewModel (B)               Model (A)
-  │                     │                          │
-  │ 点击"杀"选目标      │                          │
-  │────────────────────>│                          │
-  │                     │ playCard(kill, B)        │
-  │                     │─────────────────────────>│
-  │                     │                          │ KillCard::execute
-  │                     │                          │ → GameRule::executeKill
-  │                     │                          │ → setPendingAction(B需出闪)
-  │                     │     pendingActionCreated │
-  │                     │<─────────────────────────│
-  │ 提示"请出闪"        │     actionRequired       │
-  │<────────────────────│                          │
-  │                     │                          │
-  │ 玩家B点"出闪"       │                          │
-  │────────────────────>│                          │
-  │                     │ respondCard(闪)          │
-  │                     │─────────────────────────>│
-  │                     │                          │ GameRule::handleKillResponse
-  │                     │                          │ → clearPendingAction
-  │                     │     pendingActionCleared │
-  │                     │<─────────────────────────│
-  │ 刷新UI              │     hpChanged(不变)      │
-  │<────────────────────│                          │
-```
-
-### 南蛮入侵 → 不出杀 → 受伤 → 濒死流程
-
-```
-View (C)            ViewModel (B)               Model (A)
-  │                     │                          │
-  │ 使用南蛮入侵         │ playCard(南蛮, B)        │
-  │────────────────────>│─────────────────────────>│
-  │                     │                          │ → setPendingAction(B需出杀)
-  │ 提示"请出杀响应"     │     pendingActionCreated │
-  │<────────────────────│<─────────────────────────│
-  │                     │                          │
-  │ B跳过(不出杀)        │ skipAction()             │
-  │────────────────────>│─────────────────────────>│
-  │                     │                          │ GameRule::handleAoeSkip
-  │                     │                          │ → dealDamage(B, 1, A)
-  │                     │                          │ → B: hp→0, dying=true
-  │                     │                          │ → startDyingProcess
-  │                     │                          │ → setPendingAction(需出桃)
-  │                     │     hpChanged(0) / dying │
-  │                     │<─────────────────────────│
-  │ 提示"请用桃救"       │     pendingActionCreated │
-  │<────────────────────│<─────────────────────────│
-  │                     │                          │
-  │ A选择不出桃          │ skipAction()             │
-  │────────────────────>│─────────────────────────>│
-  │                     │                          │ skipDyingResponse
-  │                     │                          │ → B死亡
-  │                     │                          │ → checkGameOver
-  │                     │     died / gameOver(A)   │
-  │                     │<─────────────────────────│
-  │ 显示"游戏结束"       │                          │
-  │<────────────────────│                          │
-```
+- INITIAL_HAND_COUNT 为 4，DRAW_PHASE_COUNT 为 2。
+- executeKill 会设置攻击者本回合已使用杀，并在 GameState 中创建要求出闪的待定动作。
+- handleKillResponse 传入有效卡牌时会移除并弃置该牌；传入 nullptr 时对响应者造成伤害。攻击者有酒强化时伤害为 2，随后消耗强化状态。
+- executeBarbarianInvasion 和 executeVolley 会按存活目标顺序创建响应链。
+- AOE 响应处理完成当前目标后，会根据 remainingTargets 创建下一个待定动作。
+- dealDamage 会触发受伤武将技能；目标体力不大于 0 且尚未濒死时，会进入 startDyingProcess。
+- hasPeachToSave 当前将桃和酒都视为可用于濒死救援的牌。
+- handleDyingPeach 的调用方应先确认卡牌确实是桃或酒；函数成功救回目标时返回 true 并清除待定动作。
+- 所有存活玩家都跳过濒死救援后，checkDeath 会清除濒死状态并调用 checkGameOver。
+- 仅剩一名存活玩家时，该玩家获胜；没有存活玩家时，游戏以 nullptr 获胜者结束。
 
 ---
 
-## 13. 接口依赖关系图
+## 8. Model 与 ViewModel 的边界
 
-```
-                     ┌──────────────┐
-                     │  CommonTypes │  (枚举、前向声明)
-                     └──────┬───────┘
-                            │
-           ┌────────────────┼─────────────────┐
-           │                │                 │
-    ┌──────┴──────┐  ┌─────┴──────┐   ┌──────┴───────┐
-    │    Card     │  │ Character  │   │   Player     │
-    │  (基类+子类) │  │ (基类+子类) │   │              │
-    └──────┬──────┘  └─────┬──────┘   └──────┬───────┘
-           │               │                 │
-           └───────────────┼─────────────────┘
-                           │
-                   ┌───────┴────────┐
-                   │   GameState    │  (聚合所有 Model 对象)
-                   └───────┬────────┘
-                           │
-                   ┌───────┴────────┐
-                   │  CardManager   │
-                   └────────────────┘
+当前跨层结构如下：
 
-    GameRule 命名空间：无状态，所有函数接收 GameState*
-```
+~~~
+Model 信号
+    ↓
+GameViewModel 读取 Model 指针并转换为值类型
+    ↓
+GameViewModel 信号
+    ↓
+GameBootstrap 连接、转发或拦截
+    ↓
+View 槽
+
+View 信号
+    ↓
+GameBootstrap
+    ↓
+ActionViewModel / GameViewModel
+    ↓
+GameRule 和 Model
+~~~
+
+### 8.1 Model 信号的使用
+
+| Model 信号 | ViewModel 处理方式 |
+|------------|-------------------|
+| GameState::phaseChanged(PhaseType) | 转发为 GameViewModel::phaseChanged(PhaseType) |
+| GameState::pendingActionCreated(PendingActionInfo) | 转换为 PendingActionVM，将玩家和卡牌指针转换为 ID |
+| GameState::pendingActionCleared() | 转发为 ViewModel 的同名信号 |
+| GameState::gameOver(int) | 转换并转发为 ViewModel 的 gameOver(int) |
+| Player::handCardsChanged() | 读取卡牌对象，生成 CardDisplayList |
+| Player::stateChanged() | 生成 PlayerDisplayData |
+| Player::died(int) | 由 ViewModel 接收并记录死亡日志；当前 Model 实现尚未主动发出该信号 |
+
+### 8.2 跨 View 边界的值类型
+
+View 不应接收 PendingActionInfo、Player*、Card* 等 Model 指针。跨越 View 边界的值类型位于 src/Common/：
+
+- PendingActionVM：玩家 ID、卡牌 ID、响应类型、描述和剩余目标 ID。
+- CardDisplayData：卡牌展示所需的 ID、类型、花色、名称、描述和可用状态。
+- PlayerDisplayData：玩家 ID、名称、武将、体力和手牌数量等展示数据。
+
+View/ViewModel 的完整连接表和 GameBootstrap 的中介逻辑见 connection.md。本文件只定义 Model 的对象接口，不再描述 View 与 ViewModel 的直接调用流程。
 
 ---
 
-## 14. 关键设计决策
+## 9. 文件结构
 
-### 14.1 卡牌虚方法 vs switch
+~~~
+src/
+├── Common/
+│   ├── CommonTypes.h       # 跨层共享枚举
+│   ├── PendingActionVM.h   # 待定动作值类型
+│   ├── CardDisplayData.h   # 卡牌展示值类型
+│   └── PlayerDisplayData.h # 玩家展示值类型
+├── Model/
+│   ├── CommonTypes.h       # CommonTypes.h 的 Model 转发头
+│   ├── GameState.h/.cpp    # 游戏状态与 PendingActionInfo
+│   ├── Card.h/.cpp         # Card 及基本牌、锦囊牌
+│   ├── Character.h/.cpp    # Character 及四名武将
+│   ├── Player.h/.cpp       # 玩家状态、区域和信号
+│   ├── CardManager.h/.cpp  # 牌堆、弃牌堆和卡牌生命周期
+│   └── GameRule.h/.cpp     # 无状态规则函数
+├── ViewModel/
+│   ├── GameViewModel.h/.cpp
+│   └── ActionViewModel.h/.cpp
+├── App/
+│   └── GameBootstrap.h/.cpp
+└── View/
+    └── ...
+~~~
 
-每个具体卡牌类重写 `canUse` / `canTarget` / `execute`，添加新卡牌时无需修改现有代码（开闭原则）。`GameRule` 中的函数作为底层规则实现，由 `Card::execute` 内部调用。
+---
 
-### 14.2 GameRule 是命名空间而非类
+## 10. 所有权与生命周期
 
-规则函数是纯逻辑，不持有状态。所有可变状态通过 `GameState*` 传入，便于测试和复用。
+- CardManager::m_allCards 拥有所有由牌堆创建的 Card 对象，并在析构或重新初始化时删除。
+- Player 的手牌、装备区和判定区只保存 Card*，不拥有卡牌。
+- GameState 的玩家列表和 cardManager 字段都是非拥有指针。
+- 当前本地游戏由 GameViewModel 持有 GameState、CardManager 和 ActionViewModel；玩家以 GameState 为 QObject 父对象创建。
+- 当前本地游戏中的武将以 GameViewModel 为 QObject 父对象创建，Player::m_character 只保存指针。
+- Card 不属于 QObject 父子树，不能使用 setParent 或 Qt parent 构造参数管理生命周期。
+- GameRule 不拥有任何对象，也不保存全局游戏状态。
+- Model 的指针型信号只适合在 Model 和 ViewModel 内部使用；发送到 View 时必须先转换为 src/Common/ 中的值类型。
 
-### 14.3 PendingAction 响应流程
-
-1. 卡牌 `execute` 调用 `GameRule` 函数
-2. 如需响应，`GameRule` 调用 `GameState::setPendingAction()`
-3. ViewModel 监听 `pendingActionCreated`，展示 UI 提示
-4. 用户操作后，ViewModel 调用对应 `GameRule::handle*Response()` 函数
-5. 完成后调用 `GameState::clearPendingAction()`
-
-### 14.4 内存管理
-
-- **Card**：`CardManager::m_allCards` 持有全部卡牌生命周期
-- **Character**：由 `Player` 持有
-- **Player**：由 `GameState` 持有
-- **GameState**：由 `GameViewModel` 持有
-- 全部通过 QObject 父子关系管理析构顺序
-
-### 14.5 初版简化说明
-
-1. **判定区**：第一版不使用，延迟锦囊不实现
-2. **装备区**：预留接口，第一版不实现具体装备牌
-3. **距离**：双人版忽略所有距离限制
-4. **武将技能**：简化实现，仅保留核心效果
-5. **牌堆**：标准牌堆 108 张，简化版约 48 张
+当头文件声明与本文档不一致时，应先更新本文档或说明设计变更，再让 ViewModel 依赖新的接口。
