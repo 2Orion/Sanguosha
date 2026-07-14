@@ -50,6 +50,16 @@ std::vector<int> ActionViewModel::getValidTargetIds(int cardId, int playerId) co
     Card* card = findCard(cardId);
     Player* user = findPlayer(playerId);
     if (!m_state || !card || !user) return {};
+
+    // 技能转化为【杀】使用时，目标规则按杀处理（除自己外的存活角色）
+    if (playsAsKill(card, user)) {
+        std::vector<int> result;
+        for (Player* p : m_state->alivePlayers()) {
+            if (p && p != user) result.push_back(p->playerId());
+        }
+        return result;
+    }
+
     std::vector<Player*> targets = card->getValidTargets(m_state, user);
     std::vector<int> result;
     for (Player* t : targets) {
@@ -73,7 +83,8 @@ bool ActionViewModel::canPlayCard(int cardId, int playerId) const
     Card* card = findCard(cardId);
     Player* player = findPlayer(playerId);
     if (!m_state || !card || !player) return false;
-    return card->canUse(m_state, player) && GameRule::canPlayCard(m_state, player, card);
+    if (card->canUse(m_state, player) && GameRule::canPlayCard(m_state, player, card)) return true;
+    return playsAsKill(card, player);
 }
 
 ActionResult ActionViewModel::playCard(int cardId, int playerId,
@@ -87,6 +98,23 @@ ActionResult ActionViewModel::playCard(int cardId, int playerId,
     for (int tid : targetIds) {
         Player* t = findPlayer(tid);
         if (t) targets.push_back(t);
+    }
+
+    // 技能转化为【杀】使用：不执行原牌效果，走杀的结算（关羽武圣 / 赵云龙胆）
+    if (playsAsKill(card, user)) {
+        if (targets.empty()) return ActionResult::Completed;
+        GameRule::executeKill(m_state, user, targets.front());
+        user->removeHandCard(card);
+        if (m_state->cardManager()) m_state->cardManager()->discard(card);
+
+        QString skillName = user->character()
+                ? QString::fromStdString(user->character()->skillName()) : QString();
+        emitLog(user->displayName() + QStringLiteral(" 发动【") + skillName +
+                QStringLiteral("】，将【") + QString::fromStdString(card->cardName()) +
+                QStringLiteral("】当【杀】使用 → ") + targets.front()->displayName());
+
+        emit actionCompleted();
+        return ActionResult::RequiresDodge;
     }
 
     ActionResult result = card->execute(m_state, user, targets);
@@ -250,11 +278,27 @@ std::vector<Card*> ActionViewModel::getPlayableCards(Player* player) const
     if (!m_state || !player) return result;
     for (Card* card : player->handCards()) {
         if (!card) continue;
-        if (!card->canUse(m_state, player)) continue;
-        if (!GameRule::canPlayCard(m_state, player, card)) continue;
-        result.push_back(card);
+        if (card->canUse(m_state, player) && GameRule::canPlayCard(m_state, player, card)) {
+            result.push_back(card);
+            continue;
+        }
+        // 本体不可用，但武将技能可将其当【杀】主动使用
+        if (playsAsKill(card, player)) result.push_back(card);
     }
     return result;
+}
+
+/// 出牌阶段主动技能转化判定：卡牌本体不可用，但武将技能（武圣/龙胆）
+/// 可将其当【杀】使用。本体可用时优先按本体使用（如关羽缺血时的红桃仍按桃使用）。
+bool ActionViewModel::playsAsKill(const Card* card, const Player* player) const
+{
+    if (!m_state || !card || !player) return false;
+    if (m_state->currentPhase() != PhaseType::Play) return false;
+    if (!player->isAlive() || !player->character()) return false;
+    if (card->cardType() == CardType::Kill) return false;
+    if (card->canUse(m_state, player)) return false;
+    if (player->character()->skillTransformCard(card) != CardType::Kill) return false;
+    return GameRule::canPlayKill(m_state, player);
 }
 
 void ActionViewModel::emitLog(const QString& msg)

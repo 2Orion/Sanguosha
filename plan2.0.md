@@ -211,6 +211,15 @@ public:
 
 ## 2. 局域网双人对战（核心拓展）
 
+> ⚠️ **第二次架构变更后的阅读说明（2026-07-14）**：本节写于第一次重构（`GameBootstrap` 中介者）之后，之后代码又经历了第二次重构：`GameBootstrap` 更名 **`SGSApp`**（纯组合根，View ↔ VM 改为信号槽直连），路由/拦截逻辑下沉到 ViewModel（出牌路由在 `ActionViewModel::onPlayCardRequested` 等 public slots，自动跳过弃牌/响应在 `GameViewModel::setNextPhase`/`onModelPendingActionCreated`），Common 值类型改名（`CardDisplayData`→`CardData`、`PlayerDisplayData`→`PlayerData`、`PendingActionVM`→`PendingActionData`、`CardDisplayList`→`CardList`）。阅读下文时按此映射，核心设计（服务器=网络化 View、客户端=网络化 ViewModel、协议字段对齐信号/槽参数）**仍然成立且变得更简单**：
+>
+> - 文中的"GameBootstrap 服务器变体" → 一个不创建 View 的 `ServerApp` 组合根：把 `GameViewModel`/`ActionViewModel` 的信号 connect 到 `GameServer` 的广播槽，`GameServer` 收到客户端消息后直接调用 VM 的 public slots。
+> - 文中的"GameBootstrap 客户端变体" → `ClientApp` 组合根：把 `GameBoardWidget` 信号 connect 到 `GameClient` 的发送方法、`GameClient` 的同形状信号 connect 到 View 槽。
+> - **2.3 改造点 1（路由槽改 public）已天然满足**——路由槽已是 ViewModel 的 public slots，无需任何放宽；改造点 2/3（headless 启动路径、按模式连接）转化为"新写 ServerApp/ClientApp 两个小组合根"，`SGSApp` 本身可以不动。
+> - 拦截逻辑（自动跳过）已在 VM 内部、发信号之前完成，服务器端**自动免费获得**这些逻辑，不再需要"复用 GameBootstrap 拦截槽"的步骤。
+>
+> 当前信号/槽的权威映射见 [`connection.md`](connection.md)。
+>
 > ⚠️ 本节已重写。原稿基于 `EventListener<T>` 观察者模式和 `GameController` 虚接口设计，与当前代码实际采用的 **Qt 信号/槽 + GameBootstrap 中介者**架构不符（该架构在两次重构后才成型，详见 `connection.md`）。原稿如果照搬实现，会引入一套与现有代码风格完全不同的第二套通信机制，且需要 View 持有一个 Controller 指针——直接违反当前"View 对 ViewModel/Model 零依赖、零持有"的核心约束。下面的设计改为复用现有的信号槽形状，把网络层做成 **GameBootstrap 中介逻辑的两个变体**，而不是给 View 层新增抽象。
 
 ### 2.1 架构设计
@@ -885,6 +894,8 @@ std::vector<Card*> ActionViewModel::getResponseCards(Player* player, CardType re
 
 ## 7. 三人分工方案（按内容顺序切分）
 
+> ⚠️ 文中出现的 `GameBootstrap` 均对应现在的 `SGSApp`（第二次重构后更名，见 §2 顶部说明）；"GameBootstrap 改造"任务大幅缩水——路由槽已是 ViewModel 的 public slots，乙只需新写 `ServerApp`/`ClientApp` 两个组合根，`SGSApp` 不动，甲乙在 App 层的文件冲突随之消失。值类型按 `CardData`/`PlayerData`/`PendingActionData` 理解。
+>
 > 与第 5 节路线图配套。按文档内容章节切分：甲负责 §1+§4（卡牌与规则），乙负责 §2 全部（网络对战），丙负责 §3+阶段三（UI 与稳定性）。这个切法的特点是**乙的网络主线 + 甲丙两条支线定期汇入**——网络的服务器/客户端两端由一人完成，信号翻译逻辑高度对称，一人写不容易两边对不上；代价是工作量不均（§2 是 4 周，§1/§3 各 2 周）和两处串行依赖，必须用 7.2 的契约前置和 7.5 的时间线错位来消化。
 
 ### 7.1 总体划分

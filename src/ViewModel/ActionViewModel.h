@@ -55,6 +55,7 @@ private:
     Player* findPlayer(int playerId) const;
     Card* findCard(int cardId) const;
     std::vector<Card*> getPlayableCards(Player* player) const;
+    bool playsAsKill(const Card* card, const Player* player) const;
     void emitLog(const QString& msg);
 
     GameState* m_state = nullptr;

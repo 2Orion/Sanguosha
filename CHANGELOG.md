@@ -2,6 +2,30 @@
 
 ## Bug Fixes
 
+### [2026-07-14] 出牌阶段无法主动使用武将转化技能（武圣/龙胆）
+
+**现象**：关羽无法将红色牌当【杀】主动使用，赵云无法将【闪】当【杀】主动使用。转化牌在出牌阶段不高亮、双击无反应。（响应阶段的转化一直正常，如用红牌响应南蛮入侵。）
+
+**根因**：`Character::skillTransformCard` 只接入了响应路径（`ActionViewModel::getResponseCardIds`、`GameRule::hasDodgeToRespond`/`hasKillToRespond`），出牌路径的三个入口全部只认卡牌本体：
+
+1. `ActionViewModel::getPlayableCards` / `canPlayCard` 只检查 `card->canUse()`——关羽的红闪（`DodgeCard::canUse` 恒 false）和赵云的闪永远不可出
+2. `ActionViewModel::getValidTargetIds` 调用 `card->getValidTargets()`——闪的目标列表恒为空
+3. `ActionViewModel::playCard` 直接 `card->execute()`——即使放开校验，执行的也是原牌效果而非杀的结算
+
+张飞（咆哮，`GameRule::canPlayKill` 已特判）和曹操（奸雄，被动触发）不受影响。
+
+**修复**：`ActionViewModel` 新增私有判定 `playsAsKill(card, player)`（条件：出牌阶段、玩家存活、卡牌本体不可用、技能转化结果为杀、通过 `canPlayKill` 出杀次数检查），并接入出牌路径三个入口：
+
+1. `getPlayableCards` / `canPlayCard`：本体不可用时，`playsAsKill` 成立即视为可出（高亮 + 校验放行）
+2. `getValidTargetIds`：转化为杀时按杀的目标规则返回（除自己外的存活角色）
+3. `playCard`：转化为杀时不执行原牌 `execute()`，改走 `GameRule::executeKill()` 结算（酒加成、闪响应流程与真杀一致），并输出"发动【武圣】，将【X】当【杀】使用"日志
+
+**设计取舍**：本体可用时优先按本体使用——如关羽缺血时的红桃按桃使用，不能当杀（满血时红桃本体不可用，可当杀）。当前 UI 是双击出牌，没有"选择用法"的交互，此规则保证行为确定；后续如加装备/技能按钮 UI 可再放开。
+
+**涉及文件**：`src/ViewModel/ActionViewModel.h/cpp`
+
+**验证**：构建通过，冒烟测试 95/95（仅覆盖 Model 层，本改动在 ViewModel 层，需手动跑 `SanguoshaQt.exe` 用关羽/赵云实测转化出杀）。
+
 ### [2026-07-14] 选将后点击「开始对战」闪退
 
 **现象**：选择武将后点击开始对战，程序短暂无响应后异常中止。

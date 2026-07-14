@@ -8,23 +8,23 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  App 层 — GameBootstrap（组合根 / 中介者）                   │
+│  App 层 — SGSApp（纯组合根）                                  │
 │  唯一知道 ViewModel 和 View 具体类型的模块                    │
-│  连接 View 信号 ↔ ViewModel 方法 / ViewModel 信号 ↔ View 槽  │
+│  只做：创建对象 + 建立信号槽直连 + 生命周期，零业务逻辑        │
 ├──────────────────────────────────────────────────────────────┤
 │                                                               │
 │  View 层 (Qt Widgets)             ViewModel 层 (QObject)      │
-│  只依赖 Common + App              依赖 Model + Common          │
+│  只依赖 Common                    依赖 Model + Common          │
 │  不依赖 ViewModel                 对外暴露 Qt 信号 + 值类型    │
-│  不依赖 Model                                                  │
+│  不依赖 Model                     含全部路由/拦截逻辑          │
 │                                                               │
 │  Common 层（值类型结构体，跨层传递）                             │
-│  CardDisplayData / PlayerDisplayData / PendingActionVM         │
+│  CardData / PlayerData / PendingActionData                     │
 │                                                               │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-View 层 **零编译依赖**于 ViewModel 和 Model，只包含 Common 层头文件。所有通信通过 Qt 信号/槽经 GameBootstrap 中转。
+View 层 **零编译依赖**于 ViewModel 和 Model，只包含 Common 层头文件。View 信号直连 ViewModel 的 public slots，ViewModel 信号直连 View 的槽，所有连接由 `SGSApp::startLocalGame()` 集中建立。
 
 ---
 
@@ -37,9 +37,9 @@ Sanguosha/
 │   ├── main.cpp              # 应用程序入口
 │   ├── Common/               # 值类型结构体（跨层共享）
 │   │   ├── CommonTypes.h     # 枚举
-│   │   ├── CardDisplayData.h # 卡牌展示数据
-│   │   ├── PlayerDisplayData.h # 玩家展示数据
-│   │   └── PendingActionVM.h # 待定动作值类型
+│   │   ├── CardData.h        # 卡牌展示数据（含 CardList 别名）
+│   │   ├── PlayerData.h      # 玩家展示数据
+│   │   └── PendingActionData.h # 待定动作值类型
 │   ├── Model/                # QObject + 信号
 │   ├── ViewModel/            # QObject + 信号/槽
 │   │   ├── ActionViewModel.h/cpp
@@ -51,8 +51,8 @@ Sanguosha/
 │   │   ├── PlayerInfoWidget.h/cpp
 │   │   ├── HandCardAreaWidget.h/cpp
 │   │   └── ActionPanelWidget.h/cpp
-│   └── App/                  # 组合根 + 中介者
-│       └── GameBootstrap.h/cpp
+│   └── App/                  # 组合根
+│       └── SGSApp.h/cpp
 └── tests/
     └── smoke_test.cpp
 ```
@@ -62,16 +62,16 @@ Sanguosha/
 ## 通信流向
 
 ```
-ViewModel → View (信号)
-  GameViewModel::handCardsUpdated(CardDisplayList)
+ViewModel → View (信号直连)
+  GameViewModel::handCardsUpdated(CardList)
     → GameBoardWidget::onHandCardsUpdated
-  GameViewModel::playerDataUpdated(PlayerDisplayData)
+  GameViewModel::playerDataUpdated(PlayerData)
     → GameBoardWidget::onPlayerDataUpdated
 
-View → ViewModel (信号 → GameBootstrap 中转)
+View → ViewModel (信号直连 public slots)
   GameBoardWidget::playCardRequested(cardId, playerId)
-    → GameBootstrap::onPlayCardRequested
-      → ActionViewModel::playCard(…)
+    → ActionViewModel::onPlayCardRequested
+      → 校验 + 目标选择 + playCard(…)
 ```
 
 详见 [`connection.md`](connection.md)。
