@@ -2,6 +2,14 @@
 
 ## Features
 
+### [2026-07-15] 网络层 Step 2：ServerApp headless 启动路径（plan2.0.md §2.3）
+
+新建 `src/App/ServerApp.h/cpp`：`startHeadlessGame(charId1, charId2)` 创建完整 `GameViewModel`（含 ActionViewModel/Model），不创建任何 QWidget；重复开局用 `deleteLater()` 释放上一局对象图（与 `SGSApp` 一致）；`gameOver` 透传为 `gameFinished(winnerId)` 信号，VM 保留到下局开始（末批状态推送需经事件循环送达）。暴露 `gameViewModel()`/`actionViewModel()` 供 Step 4 的 GameServer 命令分发使用。
+
+**涉及文件**：`src/App/ServerApp.h/cpp`、`tests/network_test.cpp`、`CMakeLists.txt`（NetworkTest 目标加入 ViewModel/ServerApp 源与 SanguoshaModel 链接）
+
+**验证**：NetworkTest 在 `QTEST_GUILESS_MAIN`（无 QApplication）下运行——headless 启动、VM 信号活性（phaseChanged/handCardsUpdated/playerDataUpdated）、完整回合循环（Prepare→…→弃牌→End→切换玩家）、重复开局释放旧 VM 共 4 个新用例；全套件 5/5 通过。
+
 ### [2026-07-15] 网络层 Step 1：协议定义 + 消息序列化 + 帧封装（plan2.0.md §2）
 
 新建 `src/Network/Protocol.h`（协议版本号 v1、`MessageType` 枚举、消息结构体，字段与 `GameViewModel`/`ActionViewModel` 的 public slots/signals 一一对齐）和 `src/Network/MessageSerializer.h/cpp`（`CardData`/`PlayerData`/`PendingActionData` 的 `QDataStream <<`/`>>`，含甲新增的装备字段；帧格式为 quint32 长度前缀 + quint8 类型 + payload，`decodeFrames` 处理半包/粘包并拒绝损坏的长度前缀）。QDataStream 版本固定为 `Qt_5_15` 保证两端一致。

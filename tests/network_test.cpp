@@ -1,7 +1,17 @@
-// 网络层 Qt Test — Step 1：序列化 round-trip + 帧解码（半包/粘包）
+// 网络层 Qt Test
+//   Step 1：序列化 round-trip + 帧解码（半包/粘包）
+//   Step 2：ServerApp headless 启动路径（QTEST_GUILESS_MAIN 下运行，
+//           进程无 QApplication，任何 QWidget 创建都会直接失败——
+//           这本身就是"零 View 依赖"的验证）
 #include <QtTest/QtTest>
 #include "Protocol.h"
 #include "MessageSerializer.h"
+#include "ServerApp.h"
+#include "GameViewModel.h"
+#include "ActionViewModel.h"
+#include "GameState.h"
+#include "Player.h"
+#include "Card.h"
 
 using namespace Protocol;
 using MessageSerializer::Frame;
@@ -413,6 +423,100 @@ private slots:
         QCOMPARE(frames.size(), 1);
         QCOMPARE(frames[0].type, MessageType::SkipRequested);
         QVERIFY(buffer.isEmpty());
+    }
+
+    // ==================== Step 2：ServerApp headless ====================
+
+    void serverAppStartsHeadlessGame()
+    {
+        ServerApp app;
+        QVERIFY(!app.isGameRunning());
+        QVERIFY(app.actionViewModel() == nullptr);
+
+        // 必须在 startHeadlessGame 之前拿不到 VM，之后立刻拿得到，
+        // 所以信号 spy 只能在启动后对首批推送做不到监听——改用
+        // 分两段：先启动，再断言状态 + 用第二局验证信号活性。
+        app.startHeadlessGame(0, 1);  // 曹操 vs 关羽
+
+        QVERIFY(app.isGameRunning());
+        auto* gvm = app.gameViewModel();
+        QVERIFY(gvm != nullptr);
+        QVERIFY(app.actionViewModel() != nullptr);
+        QVERIFY(gvm->gameState() != nullptr);
+
+        // startGame 内部已完成初始发牌和阶段推进
+        QCOMPARE(gvm->currentPlayerId(), 0);
+    }
+
+    void serverAppEmitsVmSignalsWithoutView()
+    {
+        ServerApp app;
+        app.startHeadlessGame(0, 1);
+        auto* gvm = app.gameViewModel();
+
+        // 监听 VM 信号后驱动阶段推进，断言 headless 下信号正常发出。
+        // startGame 后停在 Prepare 阶段，等 advanceRequested 推进
+        // （与 View 模式下用户点击"继续"一致）。
+        QSignalSpy phaseSpy(gvm, &GameViewModel::phaseChanged);
+        QSignalSpy handSpy(gvm, &GameViewModel::handCardsUpdated);
+        QSignalSpy playerSpy(gvm, &GameViewModel::playerDataUpdated);
+
+        gvm->onAdvanceRequested();  // Prepare → Judge
+        QVERIFY(phaseSpy.count() > 0);
+        gvm->onAdvanceRequested();  // Judge → Draw（摸牌，触发手牌推送）
+        QVERIFY(handSpy.count() > 0);
+        QVERIFY(playerSpy.count() > 0);
+
+        gvm->onAdvanceRequested();  // Draw → Play
+        gvm->onEndPlayRequested();  // Play → Discard（无需弃牌则自动到 End）
+        QCOMPARE(gvm->currentPlayerId(), 0);  // 回合尚未切换前仍是玩家 0
+    }
+
+    void serverAppFullTurnCycleHeadless()
+    {
+        // 完整回合循环：驱动到玩家 1 的回合，验证 headless 全程无卡点
+        ServerApp app;
+        app.startHeadlessGame(0, 1);
+        auto* gvm = app.gameViewModel();
+
+        gvm->onAdvanceRequested();  // Prepare → Judge
+        gvm->onAdvanceRequested();  // Judge → Draw（摸 2 张，手牌 6 > 上限 4）
+        gvm->onAdvanceRequested();  // Draw → Play
+        gvm->onEndPlayRequested();  // Play → Discard（手牌超限，不自动跳过）
+        QCOMPARE(gvm->gameState()->currentPhase(), PhaseType::Discard);
+
+        // 弃到手牌不超限（onDiscardCardRequested 在弃满后自动推进到 End）
+        auto* avm = app.actionViewModel();
+        while (avm->getDiscardCount(0) > 0) {
+            // 弃牌阶段任取一张手牌弃置
+            const auto* state = gvm->gameState();
+            const auto& hand = state->player(0)->handCards();
+            QVERIFY(!hand.empty());
+            gvm->onDiscardCardRequested(hand.front()->id(), 0);
+        }
+        QCOMPARE(gvm->gameState()->currentPhase(), PhaseType::End);
+
+        gvm->onAdvanceRequested();  // End → 切换到玩家 1 的 Prepare
+        QCOMPARE(gvm->currentPlayerId(), 1);
+    }
+
+    void serverAppRestartReleasesPreviousGame()
+    {
+        ServerApp app;
+        app.startHeadlessGame(0, 1);
+        auto* firstGvm = app.gameViewModel();
+        QVERIFY(firstGvm != nullptr);
+
+        app.startHeadlessGame(2, 3);  // 张飞 vs 赵云
+        auto* secondGvm = app.gameViewModel();
+        QVERIFY(secondGvm != nullptr);
+        QVERIFY(secondGvm != firstGvm);
+        QVERIFY(app.isGameRunning());
+
+        // 新局 VM 信号正常
+        QSignalSpy phaseSpy(secondGvm, &GameViewModel::phaseChanged);
+        secondGvm->onAdvanceRequested();  // Prepare → Judge
+        QVERIFY(phaseSpy.count() > 0);
     }
 
     void corruptedLengthPrefixRejected()

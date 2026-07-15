@@ -133,6 +133,15 @@ set(APP_HEADERS
     src/App/SGSApp.h
 )
 
+# 网络模式组合根（headless，不依赖 View；单独分组避免 SanguoshaQt 强制链接 Qt::Network）
+set(SERVER_APP_SOURCES
+    src/App/ServerApp.cpp
+)
+
+set(SERVER_APP_HEADERS
+    src/App/ServerApp.h
+)
+
 # ==================== Qt 版可执行程序 ====================
 
 add_executable(SanguoshaQt
@@ -255,16 +264,24 @@ set_tests_properties(ViewTest PROPERTIES
 
 add_executable(NetworkTest
     tests/network_test.cpp
+    ${VIEWMODEL_SOURCES}
+    ${VIEWMODEL_HEADERS}
+    ${SERVER_APP_SOURCES}
+    ${SERVER_APP_HEADERS}
 )
 
 target_include_directories(NetworkTest PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/Common
+    ${CMAKE_SOURCE_DIR}/src/Model
+    ${CMAKE_SOURCE_DIR}/src/ViewModel
     ${CMAKE_SOURCE_DIR}/src/Network
+    ${CMAKE_SOURCE_DIR}/src/App
 )
 
 target_link_libraries(NetworkTest PRIVATE
     SanguoshaNetwork
+    SanguoshaModel
     Qt${QT_VERSION_MAJOR}::Core
     Qt${QT_VERSION_MAJOR}::Test
 )

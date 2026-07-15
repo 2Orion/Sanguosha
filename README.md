@@ -55,13 +55,14 @@ Sanguosha/
 │   │   ├── HandCardAreaWidget.h/cpp
 │   │   └── ActionPanelWidget.h/cpp
 │   └── App/                  # 组合根
-│       └── SGSApp.h/cpp
+│       ├── SGSApp.h/cpp      # 本地模式（View + ViewModel 直连）
+│       └── ServerApp.h/cpp   # 网络服务器模式（headless，零 View 依赖）
 └── tests/
     ├── smoke_test.cpp          # 无框架 Model 冒烟测试
     ├── model_test.cpp          # Model Qt Test
     ├── viewmodel_test.cpp      # ViewModel Qt Test
     ├── view_test.cpp           # View/App Qt Widgets Test
-    └── network_test.cpp        # Network Qt Test（序列化/帧解码）
+    └── network_test.cpp        # Network Qt Test（序列化/帧解码/ServerApp headless）
 ```
 
 ---
@@ -148,4 +149,4 @@ $env:QT_QPA_PLATFORM = "offscreen"; .\build\ViewTest.exe
 .\build\NetworkTest.exe
 ```
 
-当前完整套件通过，5 个测试目标均为正常断言通过；覆盖卡牌规则、响应权限、濒死救援、目标选择、主要 QWidget、App 生命周期和网络协议序列化/帧解码（半包/粘包）。
+当前完整套件通过，5 个测试目标均为正常断言通过；覆盖卡牌规则、响应权限、濒死救援、目标选择、主要 QWidget、App 生命周期、网络协议序列化/帧解码（半包/粘包）和 ServerApp headless 启动路径（无 QApplication 环境下完整回合循环）。
