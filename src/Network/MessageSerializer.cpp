@@ -293,13 +293,19 @@ QDataStream& operator>>(QDataStream& in, TargetSelectionStartedMsg& m)
 
 namespace MessageSerializer {
 
-QByteArray encode(Protocol::MessageType type)
+QByteArray wrapFrame(Protocol::MessageType type, const QByteArray& payload)
 {
     QByteArray frame;
     QDataStream out(&frame, QDataStream::WriteOnly);
     out.setVersion(kStreamVersion);
-    out << quint32(1) << quint8(type);
+    out << quint32(1 + payload.size()) << quint8(type);
+    frame.append(payload);
     return frame;
+}
+
+QByteArray encode(Protocol::MessageType type)
+{
+    return wrapFrame(type);
 }
 
 bool decodeFrames(QByteArray& buffer, QVector<Frame>& outFrames)

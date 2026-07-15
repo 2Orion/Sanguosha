@@ -6,8 +6,12 @@
 //   Step 3：GameServer 连接管理与握手（同进程 loopback；注意不能用
 //           waitForConnected 之类的阻塞等待，必须用 QTest::qWaitFor
 //           驱动主事件循环，否则 QTcpServer 收不到连接）
+//   Step 4：ServerApp 接线 GameServer（VM 广播 + 客户端命令分发，
+//           含身份伪造防护——服务器必须用连接层 playerId 覆盖消息体
+//           里客户端自称的 playerId，不能盲目转发）
 #include <QtTest/QtTest>
 #include <QTcpSocket>
+#include <algorithm>
 #include "Protocol.h"
 #include "MessageSerializer.h"
 #include "GameServer.h"
@@ -172,6 +176,22 @@ struct RawClient {
             MessageSerializer::decodePayload<HandshakeAckMsg>(frames[0].payload);
         frames.clear();
         return ack.playerId;
+    }
+
+    void selectCharacter(int characterId)
+    {
+        SelectCharacterMsg msg;
+        msg.characterId = characterId;
+        send(MessageType::SelectCharacter, msg);
+    }
+
+    /// 已收帧中第一个匹配类型的下标；找不到返回 -1
+    int indexOfFrame(MessageType type, int fromIndex = 0) const
+    {
+        for (int i = fromIndex; i < frames.size(); ++i)
+            if (frames[i].type == type)
+                return i;
+        return -1;
     }
 };
 
@@ -739,6 +759,588 @@ private slots:
         c.socket.write(garbage);
         QVERIFY(c.waitDisconnected());
         QCOMPARE(server.connectedClientCount(), 0);
+    }
+
+    // ==================== Step 4：ServerApp 接线 GameServer ====================
+
+    void bothPlayersReadyBroadcastsGameStartedThenState()
+    {
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        RawClient c0, c1;
+        QCOMPARE(c0.handshake(port), 0);
+        QCOMPARE(c1.handshake(port), 1);
+
+        c0.selectCharacter(0);  // 曹操
+        c1.selectCharacter(1);  // 关羽
+
+        // GameStarted + 开局 pushAllData（2 玩家 × playerData/handCards）+ 1 条日志 = 7 帧
+        QVERIFY(c0.waitFrames(7));
+        QVERIFY(app.isGameRunning());
+
+        const int gameStartedIdx = c0.indexOfFrame(MessageType::GameStarted);
+        const int phaseIdx = c0.indexOfFrame(MessageType::PhaseChanged);
+        const int handIdx = c0.indexOfFrame(MessageType::HandCardsUpdated);
+        QCOMPARE(gameStartedIdx, 0);  // 必须是收到的第一帧
+        QVERIFY(phaseIdx > gameStartedIdx);
+        QVERIFY(handIdx > phaseIdx);
+
+        const auto started = MessageSerializer::decodePayload<GameStartedMsg>(
+            c0.frames[gameStartedIdx].payload);
+        QCOMPARE(started.characterId0, 0);
+        QCOMPARE(started.characterId1, 1);
+
+        const auto phase = MessageSerializer::decodePayload<PhaseChangedMsg>(
+            c0.frames[phaseIdx].payload);
+        QCOMPARE(phase.phase, PhaseType::Prepare);
+    }
+
+    void playCardCommandUsesConnectionIdentityNotClaimedPlayerId()
+    {
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        RawClient c0, c1;
+        QCOMPARE(c0.handshake(port), 0);
+        QCOMPARE(c1.handshake(port), 1);
+        c0.selectCharacter(0);
+        c1.selectCharacter(1);
+        QVERIFY(c0.waitFrames(7));
+        c0.frames.clear();
+        c1.frames.clear();
+
+        auto* gvm = app.gameViewModel();
+        auto* avm = app.actionViewModel();
+
+        // 手动注入一张确定可出的杀，不依赖随机发牌里是否恰好有可出的牌
+        // （CardManager 洗牌无固定种子，起始手牌理论上可能全是闪/满血时的桃）
+        KillCard extra(CardSuit::Diamond, 4);
+        gvm->gameState()->player(0)->addHandCard(&extra);
+
+        gvm->onAdvanceRequested();  // Prepare → Judge
+        gvm->onAdvanceRequested();  // Judge → Draw
+        gvm->onAdvanceRequested();  // Draw → Play
+
+        const auto playable = avm->getPlayableCardIds(0);
+        QVERIFY(!playable.empty());  // 起始手牌至少有一张可出（杀/桃/酒等）
+        const int cardId = playable.front();
+        const int handSizeBefore =
+            int(gvm->gameState()->player(0)->handCards().size());
+
+        c0.frames.clear();
+        c1.frames.clear();
+
+        // 玩家 1 的连接，却在消息体里冒充 playerId=0 出玩家 0 的牌
+        PlayCardMsg spoofed;
+        spoofed.cardId = cardId;
+        spoofed.playerId = 0;
+        c1.send(MessageType::PlayCardRequested, spoofed);
+        QTest::qWait(200);  // 给服务器处理时间；预期无效，不产生任何广播
+
+        QCOMPARE(int(gvm->gameState()->player(0)->handCards().size()), handSizeBefore);
+        const auto& p0Hand = gvm->gameState()->player(0)->handCards();
+        const bool stillOwned = std::any_of(p0Hand.begin(), p0Hand.end(),
+            [cardId](Card* c) { return c && c->id() == cardId; });
+        QVERIFY(stillOwned);
+
+        // 玩家 0 的连接，用自己真实的 playerId 出这张牌 —— 应当成功
+        PlayCardMsg legit;
+        legit.cardId = cardId;
+        legit.playerId = 0;
+        c0.send(MessageType::PlayCardRequested, legit);
+
+        QVERIFY(QTest::qWaitFor([&] {
+            c0.recvBuffer.append(c0.socket.readAll());
+            MessageSerializer::decodeFrames(c0.recvBuffer, c0.frames);
+            for (const auto& f : c0.frames) {
+                if (f.type != MessageType::HandCardsUpdated) continue;
+                const auto hc = MessageSerializer::decodePayload<HandCardsMsg>(f.payload);
+                if (hc.playerId == 0 && hc.cards.size() == handSizeBefore - 1)
+                    return true;
+            }
+            return false;
+        }, 3000));
+    }
+
+    void discardCommandUsesConnectionIdentityNotClaimedPlayerId()
+    {
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        RawClient c0, c1;
+        QCOMPARE(c0.handshake(port), 0);
+        QCOMPARE(c1.handshake(port), 1);
+        c0.selectCharacter(0);
+        c1.selectCharacter(1);
+        QVERIFY(c0.waitFrames(7));
+
+        auto* gvm = app.gameViewModel();
+        auto* avm = app.actionViewModel();
+
+        // 手动注入一张多余的牌，确保弃牌阶段一定有牌可弃（不依赖随机发牌是否超限）
+        KillCard extra(CardSuit::Diamond, 3);
+        gvm->gameState()->player(0)->addHandCard(&extra);
+
+        gvm->onAdvanceRequested();  // Prepare → Judge
+        gvm->onAdvanceRequested();  // Judge → Draw
+        gvm->onAdvanceRequested();  // Draw → Play
+        gvm->onEndPlayRequested();  // Play → Discard（手牌超限，不会自动跳过）
+        QCOMPARE(gvm->gameState()->currentPhase(), PhaseType::Discard);
+        QVERIFY(avm->getDiscardCount(0) > 0);
+
+        const int handSizeBefore =
+            int(gvm->gameState()->player(0)->handCards().size());
+        c0.frames.clear();
+        c1.frames.clear();
+
+        // 玩家 1 冒充 playerId=0 弃玩家 0 的牌 —— 应当无效
+        DiscardCardMsg spoofed;
+        spoofed.cardId = extra.id();
+        spoofed.playerId = 0;
+        c1.send(MessageType::DiscardCardRequested, spoofed);
+        QTest::qWait(200);
+        QCOMPARE(int(gvm->gameState()->player(0)->handCards().size()), handSizeBefore);
+        // 直接断言这条修复实际保护的不变量（阶段未被提前推进），而不仅是
+        // 手牌数量——避免"该失败的地方没失败，靠几行后无关断言间接兜底"。
+        QCOMPARE(gvm->gameState()->currentPhase(), PhaseType::Discard);
+
+        // 玩家 0 的连接弃置自己的牌 —— 应当成功
+        DiscardCardMsg legit;
+        legit.cardId = extra.id();
+        legit.playerId = 0;
+        c0.send(MessageType::DiscardCardRequested, legit);
+        QVERIFY(QTest::qWaitFor([&] {
+            return int(gvm->gameState()->player(0)->handCards().size())
+                   == handSizeBefore - 1;
+        }, 3000));
+    }
+
+    void advanceAndEndPlayCommandsRouteOverNetwork()
+    {
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        RawClient c0, c1;
+        QCOMPARE(c0.handshake(port), 0);
+        QCOMPARE(c1.handshake(port), 1);
+        c0.selectCharacter(0);
+        c1.selectCharacter(1);
+        QVERIFY(c0.waitFrames(7));
+
+        auto* gvm = app.gameViewModel();
+
+        // 每步都只在"这一步命令发出之后新到达的帧"里找 PhaseChanged
+        // （用 frames.size() 作为搜索起点），避免误把上一步残留在
+        // socket 缓冲区里、还没被本测试读取的旧帧当成这一步的结果。
+        auto advanceAndExpectPhase = [&](PhaseType expected) {
+            const int before = c0.frames.size();
+            c0.send(MessageType::AdvanceRequested);
+            QVERIFY(QTest::qWaitFor([&] {
+                c0.recvBuffer.append(c0.socket.readAll());
+                MessageSerializer::decodeFrames(c0.recvBuffer, c0.frames);
+                return c0.indexOfFrame(MessageType::PhaseChanged, before) >= 0;
+            }, 3000));
+            const int idx = c0.indexOfFrame(MessageType::PhaseChanged, before);
+            const auto pc = MessageSerializer::decodePayload<PhaseChangedMsg>(
+                c0.frames[idx].payload);
+            QCOMPARE(pc.phase, expected);
+        };
+
+        advanceAndExpectPhase(PhaseType::Judge);  // Prepare → Judge
+        advanceAndExpectPhase(PhaseType::Draw);   // Judge → Draw
+        advanceAndExpectPhase(PhaseType::Play);   // Draw → Play
+        QCOMPARE(gvm->gameState()->currentPhase(), PhaseType::Play);
+
+        // EndPlayRequested：Play → Discard/End（取决于手牌是否超限）
+        const int before = c0.frames.size();
+        c0.send(MessageType::EndPlayRequested);
+        QVERIFY(QTest::qWaitFor([&] {
+            c0.recvBuffer.append(c0.socket.readAll());
+            MessageSerializer::decodeFrames(c0.recvBuffer, c0.frames);
+            return c0.indexOfFrame(MessageType::PhaseChanged, before) >= 0;
+        }, 3000));
+        QVERIFY(gvm->gameState()->currentPhase() == PhaseType::Discard
+                || gvm->gameState()->currentPhase() == PhaseType::End);
+    }
+
+    void respondCardRequestedRoutesOverNetwork()
+    {
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        RawClient c0, c1;
+        QCOMPARE(c0.handshake(port), 0);
+        QCOMPARE(c1.handshake(port), 1);
+        c0.selectCharacter(0);
+        c1.selectCharacter(1);
+        QVERIFY(c0.waitFrames(7));
+
+        auto* gvm = app.gameViewModel();
+
+        // 手动注入确定性的杀/闪，绕开随机发牌（沿用 viewmodel_test.cpp 的既有手法）
+        KillCard kill(CardSuit::Spade, 7);
+        DodgeCard dodge(CardSuit::Heart, 6);
+        gvm->gameState()->player(0)->addHandCard(&kill);
+        gvm->gameState()->player(1)->addHandCard(&dodge);
+
+        gvm->onAdvanceRequested();  // Prepare → Judge
+        gvm->onAdvanceRequested();  // Judge → Draw
+        gvm->onAdvanceRequested();  // Draw → Play
+        c0.frames.clear();
+        c1.frames.clear();
+
+        // 玩家 0 出杀（2 人局唯一合法目标是玩家 1，直接结算并产生待定响应）
+        PlayCardMsg playMsg;
+        playMsg.cardId = kill.id();
+        playMsg.playerId = 0;
+        c0.send(MessageType::PlayCardRequested, playMsg);
+
+        QVERIFY(QTest::qWaitFor([&] {
+            c1.recvBuffer.append(c1.socket.readAll());
+            MessageSerializer::decodeFrames(c1.recvBuffer, c1.frames);
+            return c1.indexOfFrame(MessageType::PendingActionCreated) >= 0;
+        }, 3000));
+        const auto pending = MessageSerializer::decodePayload<PendingActionMsg>(
+            c1.frames[c1.indexOfFrame(MessageType::PendingActionCreated)].payload);
+        QCOMPARE(pending.info.requiredCardType, CardType::Dodge);
+        QCOMPARE(pending.info.targetId, 1);
+
+        // 玩家 1（真实响应者）打出闪响应
+        RespondCardMsg respondMsg;
+        respondMsg.cardId = dodge.id();
+        respondMsg.responderId = 1;
+        c1.send(MessageType::RespondCardRequested, respondMsg);
+
+        QVERIFY(QTest::qWaitFor([&] {
+            c0.recvBuffer.append(c0.socket.readAll());
+            MessageSerializer::decodeFrames(c0.recvBuffer, c0.frames);
+            return c0.indexOfFrame(MessageType::PendingActionCleared) >= 0;
+        }, 3000));
+
+        // 闪已被消耗，玩家 1 手上不再有这张闪可用于响应
+        QVERIFY(!app.actionViewModel()->isValidResponseCard(dodge.id(), 1, CardType::Dodge));
+    }
+
+    void skipRequestedRoutesOverNetwork()
+    {
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        RawClient c0, c1;
+        QCOMPARE(c0.handshake(port), 0);
+        QCOMPARE(c1.handshake(port), 1);
+        c0.selectCharacter(0);
+        c1.selectCharacter(1);
+        QVERIFY(c0.waitFrames(7));
+
+        auto* gvm = app.gameViewModel();
+
+        // 玩家 1 持有闪（避免无响应牌被自动跳过），但主动选择不用，改发 SkipRequested
+        KillCard kill(CardSuit::Spade, 7);
+        DodgeCard dodge(CardSuit::Heart, 6);
+        gvm->gameState()->player(0)->addHandCard(&kill);
+        gvm->gameState()->player(1)->addHandCard(&dodge);
+
+        gvm->onAdvanceRequested();  // Prepare → Judge
+        gvm->onAdvanceRequested();  // Judge → Draw
+        gvm->onAdvanceRequested();  // Draw → Play
+
+        const int p1HpBefore = gvm->gameState()->player(1)->hp();
+
+        PlayCardMsg playMsg;
+        playMsg.cardId = kill.id();
+        playMsg.playerId = 0;
+        c0.send(MessageType::PlayCardRequested, playMsg);
+        QVERIFY(QTest::qWaitFor(
+            [&] { return gvm->gameState()->hasPendingAction(); }, 3000));
+
+        c1.frames.clear();
+        c1.send(MessageType::SkipRequested);  // 玩家 1 放弃响应，视为未出闪受到伤害
+
+        QVERIFY(QTest::qWaitFor([&] {
+            c1.recvBuffer.append(c1.socket.readAll());
+            MessageSerializer::decodeFrames(c1.recvBuffer, c1.frames);
+            return c1.indexOfFrame(MessageType::PendingActionCleared) >= 0;
+        }, 3000));
+        QCOMPARE(gvm->gameState()->player(1)->hp(), p1HpBefore - 1);
+    }
+
+    // ==================== Step 4 加固：审查发现问题的回归测试 ====================
+
+    void skipRequestedFromWrongPlayerIsRejected()
+    {
+        // 玩家 0 对玩家 1 出杀，等待玩家 1 出闪响应。玩家 0（不是响应者）
+        // 抢发 SkipRequested，不应生效——否则任意一方都能替对方强制放弃响应。
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        RawClient c0, c1;
+        QCOMPARE(c0.handshake(port), 0);
+        QCOMPARE(c1.handshake(port), 1);
+        c0.selectCharacter(0);
+        c1.selectCharacter(1);
+        QVERIFY(c0.waitFrames(7));
+
+        auto* gvm = app.gameViewModel();
+        KillCard kill(CardSuit::Spade, 7);
+        DodgeCard dodge(CardSuit::Heart, 6);
+        gvm->gameState()->player(0)->addHandCard(&kill);
+        gvm->gameState()->player(1)->addHandCard(&dodge);
+
+        gvm->onAdvanceRequested();  // Prepare → Judge
+        gvm->onAdvanceRequested();  // Judge → Draw
+        gvm->onAdvanceRequested();  // Draw → Play
+
+        const int p1HpBefore = gvm->gameState()->player(1)->hp();
+
+        PlayCardMsg playMsg;
+        playMsg.cardId = kill.id();
+        playMsg.playerId = 0;
+        c0.send(MessageType::PlayCardRequested, playMsg);
+        QVERIFY(QTest::qWaitFor(
+            [&] { return gvm->gameState()->hasPendingAction(); }, 3000));
+        QCOMPARE(gvm->pendingResponderId(), 1);  // 真正该响应的是玩家 1
+
+        // 玩家 0（并非响应者）抢发 SkipRequested
+        c0.send(MessageType::SkipRequested);
+        QTest::qWait(200);  // 给服务器处理时间；预期无效，待定动作应仍然存在
+
+        QVERIFY(gvm->gameState()->hasPendingAction());
+        QCOMPARE(gvm->gameState()->player(1)->hp(), p1HpBefore);  // 未受伤
+
+        // 玩家 1（真正的响应者）自己发 SkipRequested 才应生效
+        c1.send(MessageType::SkipRequested);
+        QVERIFY(QTest::qWaitFor(
+            [&] { return !gvm->gameState()->hasPendingAction(); }, 3000));
+        QCOMPARE(gvm->gameState()->player(1)->hp(), p1HpBefore - 1);
+    }
+
+    void endPlayAndAdvanceFromWrongPlayerAreRejected()
+    {
+        // 轮到玩家 0 的 Play 阶段时，玩家 1（非当前回合玩家）发送
+        // EndPlayRequested/AdvanceRequested 不应生效——否则任意一方都能
+        // 提前终止/越权推进对方的回合。
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        RawClient c0, c1;
+        QCOMPARE(c0.handshake(port), 0);
+        QCOMPARE(c1.handshake(port), 1);
+        c0.selectCharacter(0);
+        c1.selectCharacter(1);
+        QVERIFY(c0.waitFrames(7));
+
+        auto* gvm = app.gameViewModel();
+        gvm->onAdvanceRequested();  // Prepare → Judge
+        gvm->onAdvanceRequested();  // Judge → Draw
+        gvm->onAdvanceRequested();  // Draw → Play
+        QCOMPARE(gvm->currentPlayerId(), 0);
+        QCOMPARE(gvm->gameState()->currentPhase(), PhaseType::Play);
+
+        // 玩家 1 越权尝试推进/结束玩家 0 的回合
+        c1.send(MessageType::AdvanceRequested);
+        QTest::qWait(150);
+        QCOMPARE(gvm->gameState()->currentPhase(), PhaseType::Play);
+
+        c1.send(MessageType::EndPlayRequested);
+        QTest::qWait(150);
+        QCOMPARE(gvm->gameState()->currentPhase(), PhaseType::Play);
+
+        // 玩家 0（真正的当前回合玩家）自己发送才应生效
+        c0.send(MessageType::EndPlayRequested);
+        QVERIFY(QTest::qWaitFor([&] {
+            return gvm->gameState()->currentPhase() == PhaseType::Discard
+                || gvm->gameState()->currentPhase() == PhaseType::End;
+        }, 3000));
+    }
+
+    void repeatedSelectCharacterAfterGameStartedIsIgnored()
+    {
+        // 双方选将完成、对局已经开始后，任一客户端重发 SelectCharacter
+        // 不应销毁重开当前对局（GameServer::ClientSlot::selectedCharacterId
+        // 在游戏开始后从未清空，重发会让 bothPlayersReady 再次触发）。
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        RawClient c0, c1;
+        QCOMPARE(c0.handshake(port), 0);
+        QCOMPARE(c1.handshake(port), 1);
+        c0.selectCharacter(0);
+        c1.selectCharacter(1);
+        QVERIFY(c0.waitFrames(7));
+
+        auto* firstGvm = app.gameViewModel();
+        QVERIFY(firstGvm != nullptr);
+
+        // 推进几步，制造"正在进行的对局"状态
+        firstGvm->onAdvanceRequested();
+        firstGvm->onAdvanceRequested();
+        firstGvm->onAdvanceRequested();
+        QCOMPARE(firstGvm->gameState()->currentPhase(), PhaseType::Play);
+
+        const int before = c0.frames.size();
+        c0.selectCharacter(0);  // 重发同一条 SelectCharacter
+        QTest::qWait(200);      // 给服务器处理时间；预期不广播新的 GameStarted
+
+        QCOMPARE(app.gameViewModel(), firstGvm);  // 仍是同一局，未被重建
+        QCOMPARE(firstGvm->gameState()->currentPhase(), PhaseType::Play);  // 进度未丢失
+
+        c0.recvBuffer.append(c0.socket.readAll());
+        MessageSerializer::decodeFrames(c0.recvBuffer, c0.frames);
+        QCOMPARE(c0.indexOfFrame(MessageType::GameStarted, before), -1);  // 未重复广播
+    }
+
+    void invalidCharacterIdDoesNotCorruptServerState()
+    {
+        // SelectCharacterMsg::characterId 是客户端可任意填的字段；非法 id
+        // 不应让 ServerApp 陷入"m_gvm 非空但从未真正初始化"的僵尸状态。
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        RawClient c0, c1;
+        QCOMPARE(c0.handshake(port), 0);
+        QCOMPARE(c1.handshake(port), 1);
+
+        SelectCharacterMsg badSel;
+        badSel.characterId = 99;  // 超出 createCharacterById 支持的 0-3 范围
+        c0.send(MessageType::SelectCharacter, badSel);
+        c1.selectCharacter(1);
+        QTest::qWait(200);
+
+        QVERIFY(!app.isGameRunning());  // 未真正开局，且状态未被破坏
+        // 非法 id 校验在广播 GameStarted 之前完成，客户端不应收到一条
+        // "游戏已开始"却后续什么状态更新都不来的误导性消息。
+        c0.recvBuffer.append(c0.socket.readAll());
+        MessageSerializer::decodeFrames(c0.recvBuffer, c0.frames);
+        QCOMPARE(c0.indexOfFrame(MessageType::GameStarted), -1);
+
+        // 之后重新选一个合法武将，应能正常开局
+        c0.selectCharacter(0);
+        QVERIFY(QTest::qWaitFor([&] { return app.isGameRunning(); }, 3000));
+        QVERIFY(app.gameViewModel()->gameState()->player(0) != nullptr);
+    }
+
+    void advancePhaseDoesNotAbandonPendingActionInPlayPhase()
+    {
+        // advancePhase() 的 Play 分支须与 endPlayPhase() 一致：待定响应
+        // （如杀等待闪）尚未结算时不能离开 Play 阶段，否则 pendingAction
+        // 会悬空、后续无关的响应/跳过可能对着一个"过期"的待定动作生效。
+        // 本地模式下 AutoAdvanceTimer 从不在 Play 阶段启动，这条分支从未被
+        // 触达；网络模式下当前回合玩家可以在出牌后立刻发 AdvanceRequested。
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        RawClient c0, c1;
+        QCOMPARE(c0.handshake(port), 0);
+        QCOMPARE(c1.handshake(port), 1);
+        c0.selectCharacter(0);
+        c1.selectCharacter(1);
+        QVERIFY(c0.waitFrames(7));
+
+        auto* gvm = app.gameViewModel();
+        KillCard kill(CardSuit::Spade, 7);
+        DodgeCard dodge(CardSuit::Heart, 6);
+        gvm->gameState()->player(0)->addHandCard(&kill);
+        gvm->gameState()->player(1)->addHandCard(&dodge);
+
+        gvm->onAdvanceRequested();  // Prepare → Judge
+        gvm->onAdvanceRequested();  // Judge → Draw
+        gvm->onAdvanceRequested();  // Draw → Play
+
+        PlayCardMsg playMsg;
+        playMsg.cardId = kill.id();
+        playMsg.playerId = 0;
+        c0.send(MessageType::PlayCardRequested, playMsg);
+        QVERIFY(QTest::qWaitFor(
+            [&] { return gvm->gameState()->hasPendingAction(); }, 3000));
+        QCOMPARE(gvm->gameState()->currentPhase(), PhaseType::Play);
+
+        // 玩家 0（当前回合玩家，通过身份校验）紧接着发 AdvanceRequested，
+        // 试图在闪响应结算前跳出 Play 阶段——不应生效。
+        c0.send(MessageType::AdvanceRequested);
+        QTest::qWait(200);
+        QCOMPARE(gvm->gameState()->currentPhase(), PhaseType::Play);
+        QVERIFY(gvm->gameState()->hasPendingAction());  // 待定动作仍然存在
+
+        // 玩家 1 正常出闪响应后，才能真正离开 Play 阶段
+        RespondCardMsg respondMsg;
+        respondMsg.cardId = dodge.id();
+        respondMsg.responderId = 1;
+        c1.send(MessageType::RespondCardRequested, respondMsg);
+        QVERIFY(QTest::qWaitFor(
+            [&] { return !gvm->gameState()->hasPendingAction(); }, 3000));
+
+        c0.send(MessageType::AdvanceRequested);
+        QVERIFY(QTest::qWaitFor([&] {
+            return gvm->gameState()->currentPhase() == PhaseType::Discard
+                || gvm->gameState()->currentPhase() == PhaseType::End;
+        }, 3000));
+    }
+
+    void respondCardCommandUsesConnectionIdentityNotClaimedResponderId()
+    {
+        // 与 PlayCard/DiscardCard 的伪造身份测试对称：RespondCardMsg::responderId
+        // 也必须被服务器忽略，改用连接层可信身份，否则一方可以冒充另一方
+        // 消耗对方的响应牌。
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        RawClient c0, c1;
+        QCOMPARE(c0.handshake(port), 0);
+        QCOMPARE(c1.handshake(port), 1);
+        c0.selectCharacter(0);
+        c1.selectCharacter(1);
+        QVERIFY(c0.waitFrames(7));
+
+        auto* gvm = app.gameViewModel();
+        auto* avm = app.actionViewModel();
+        KillCard kill(CardSuit::Spade, 7);
+        DodgeCard dodge(CardSuit::Heart, 6);
+        gvm->gameState()->player(0)->addHandCard(&kill);
+        gvm->gameState()->player(1)->addHandCard(&dodge);
+
+        gvm->onAdvanceRequested();  // Prepare → Judge
+        gvm->onAdvanceRequested();  // Judge → Draw
+        gvm->onAdvanceRequested();  // Draw → Play
+
+        PlayCardMsg playMsg;
+        playMsg.cardId = kill.id();
+        playMsg.playerId = 0;
+        c0.send(MessageType::PlayCardRequested, playMsg);
+        QVERIFY(QTest::qWaitFor(
+            [&] { return gvm->gameState()->hasPendingAction(); }, 3000));
+
+        // 玩家 0 的连接冒充 responderId=1，试图替玩家 1 打出闪响应。
+        // 服务器应以连接身份 0（而非消息体声称的 responderId=1）处理，
+        // respondCard 因 expectedResponder(=1) != responder(=0) 而拒绝。
+        RespondCardMsg spoofed;
+        spoofed.cardId = dodge.id();
+        spoofed.responderId = 1;
+        c0.send(MessageType::RespondCardRequested, spoofed);
+        QTest::qWait(200);  // 给服务器处理时间；预期无效，待定动作应仍然存在
+        QVERIFY(gvm->gameState()->hasPendingAction());  // 伪造请求未生效
+        QVERIFY(avm->isValidResponseCard(dodge.id(), 1, CardType::Dodge));  // 闪未被消耗
+
+        // 玩家 1 用自己真实的连接身份响应才应生效
+        RespondCardMsg legit;
+        legit.cardId = dodge.id();
+        legit.responderId = 1;
+        c1.send(MessageType::RespondCardRequested, legit);
+        QVERIFY(QTest::qWaitFor(
+            [&] { return !gvm->gameState()->hasPendingAction(); }, 3000));
     }
 
     void corruptedLengthPrefixRejected()

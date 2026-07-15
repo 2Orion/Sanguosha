@@ -2,6 +2,49 @@
 
 ## Features
 
+### [2026-07-15] 网络层 Step 4 加固第二轮：advancePhase 悬空待定动作 + GameStarted 时序
+
+对第一轮加固后的代码做了第二轮独立对抗性审查（复用第一轮的 5 个视角 + 2 个之前因 API 中断未完成的维度），确认了以下额外问题并修复：
+
+- **`advancePhase()` 离开 Play 阶段不检查 `hasPendingAction()`（critical，两轮独立审查都发现）**：与 `endPlayPhase()`（已有此检查）不对称。当前回合玩家出杀后，若紧接着发送 `AdvanceRequested`，阶段会被强制推进到 Discard，而闪的待定响应永久悬空——本地模式下 `AutoAdvanceTimer` 从不在 Play 阶段启动所以从未暴露，网络模式下当前回合玩家可以随时发送此命令。修复：`advancePhase()` 的 `Play` 分支补上与 `endPlayPhase()` 一致的 `hasPendingAction()` 检查。
+- **`GameStarted` 在校验 characterId 之前就广播（major）**：非法 characterId 会让客户端先收到"游戏已开始"，之后却永远等不到任何后续状态。修复：新增 `GameViewModel::isValidCharacterId()` 静态校验，`ServerApp::onBothPlayersReady` 在广播前先校验，非法 id 直接不广播（协议暂无专门的拒绝消息类型，留待后续协议版本）。
+
+**测试补充**（响应同一轮审查指出的覆盖缺口）：`RespondCardRequested` 的身份伪造防护此前无专门测试（与 PlayCard/Discard 不对称）；`discardCommandUsesConnectionIdentityNotClaimedPlayerId` 只断言手牌数量、未直接断言 `currentPhase` 这个真正被保护的不变量；`playCardCommandUsesConnectionIdentityNotClaimedPlayerId` 依赖随机发牌恰好有可出的牌（理论有极低概率抖动）。均已修复/补充。
+
+**涉及文件**：`src/ViewModel/GameViewModel.h/cpp`（`advancePhase` 加固 + `isValidCharacterId`）、`src/App/ServerApp.cpp`、`tests/network_test.cpp`（+3 新用例，2 处存量用例加固）
+
+**验证**：NetworkTest 47 个用例，10 次连续直接运行 + 1 次全套件运行全部 47/47、5/5 通过，无抖动复现。
+
+**审查再次确认、仍未修的深层规则缺口（与第一轮相同结论：属甲的卡牌/规则域）**：① `ActionViewModel::canPlayCard`/`playCard`/`discardCard` 全链路不校验 `playerId == currentPlayer()`——非当前回合玩家能用自己真实身份出/弃自己的牌（两轮审查独立确认，critical/major）。② `GameState::setPendingAction` 无重入保护，`canPlayCard`/`onPlayCardRequested` 不检查 `!hasPendingAction()`——即使不借助 ①，仅靠同一当前回合玩家连续出两张牌（如张飞无限杀）也能让第二个待定动作静默覆盖第一个（两轮审查独立确认为 critical）。这两处都需要改 `Card.cpp`/`GameRule.cpp`/`ActionViewModel.cpp` 的核心规则判断逻辑，边界超出"网络接线"范畴，待用户决定由谁在哪一步修复。
+
+### [2026-07-15] 网络层 Step 4 加固：对抗性代码审查后修复越权/状态破坏问题
+
+对 Step 4 的接线代码做了一轮多视角对抗性审查（每条发现都经独立二次核实），修复了其中网络层可安全处理、不触及本地 View/SGSApp 的几处真实问题：
+
+- **越权命令（critical）**：`EndPlayRequested`/`AdvanceRequested`/`SkipRequested` 三个无参命令原先在 `ServerApp::onClientCommandReceived` 里被直接转发、完全不校验发起方身份，导致任意已连接客户端都能提前结束/越权推进对方的回合，或替对方强制放弃响应（即使对方有闪可用）。修复：`EndPlay`/`Advance` 校验 `playerId == currentPlayerId()`，`Skip` 校验 `playerId == pendingResponderId()`（新增 `GameViewModel::pendingResponderId()` 只读辅助，返回 int 不暴露 Model 指针）后才转发。
+- **重复 SelectCharacter 销毁对局（critical）**：`GameServer::ClientSlot::selectedCharacterId` 在开局后不清空，已连接客户端在对局进行中重发一条 `SelectCharacter` 会让 `bothPlayersReady` 二次触发、`startHeadlessGame` 无条件丢弃当前整局重开。修复：`ServerApp::onBothPlayersReady` 开头加 `if (isGameRunning()) return;` 防重放。
+- **非法 characterId 破坏服务器状态（critical）**：`SelectCharacterMsg::characterId` 是客户端可任意填的字段，非法 id 会让 `GameViewModel::startGame` 在 `initGame` 之前 return，留下"`m_gvm` 非空但从未初始化"的僵尸状态而 `isGameRunning()` 仍返回 true。修复：`startGame` 改为返回 `bool`（非法 id 返回 false 并 delete 已建的 Character），`ServerApp::startHeadlessGame` 据此回滚 `m_gvm` 为 nullptr。
+
+**涉及文件**：`src/App/ServerApp.cpp`、`src/ViewModel/GameViewModel.h/cpp`（`startGame` 返回值 + `pendingResponderId()`）、`tests/network_test.cpp`（4 个加固回归用例）
+
+**验证**：NetworkTest 45 个用例；新增 `skipRequestedFromWrongPlayerIsRejected`、`endPlayAndAdvanceFromWrongPlayerAreRejected`、`repeatedSelectCharacterAfterGameStartedIsIgnored`、`invalidCharacterIdDoesNotCorruptServerState`。10+ 次连跑仅复现既有的 `thirdConnectionRejected` 环境抖动（loopback 第三连接偶发超时，与本次改动无关）。
+
+**审查另外确认了两处更深层的规则层缺陷（暂未修，属甲的卡牌/规则域，待用户定夺归属）**：① `ActionViewModel::canPlayCard`/`playCard`/`discardCard` 和 `Card::canUse` 全链路只查全局 `currentPhase()`，从不校验 `playerId == currentPlayer()`——非当前回合玩家能在对方回合出自己的牌/弃自己的牌（本地模式靠 View 只让当前玩家手牌可交互而侥幸掩盖，网络模式直接暴露）。② `GameState::setPendingAction` 无条件覆盖，加上出牌路径不查 `!hasPendingAction()`，能让第二个待定动作静默冲掉第一个、原响应卡死。这两处需改核心 GameRule/Card/ViewModel（甲的域），且与"网络接线"边界不同，留待协调。
+
+### [2026-07-15] 网络层 Step 4：ServerApp 接线 GameServer（plan2.0.md §2.3-2.4）
+
+`ServerApp` 现在持有 `GameServer` 并双向接线：`wireViewModelBroadcasts()` 把 `GameViewModel`/`ActionViewModel` 对外的全部 9 条信号（对照 connection.md 第 1 节逐条映射）连到序列化广播；`onClientCommandReceived` 把客户端的 7 类命令消息反序列化后分发到 VM 的 public slots。`onBothPlayersReady` 先广播 `GameStarted` 再调用 `startHeadlessGame`，保证客户端收到顺序是 `GameStarted → PhaseChanged → ...`（`startHeadlessGame` 内部改为先接线再 `startGame()`，避免开局的初始状态推送在无人监听时被丢弃）。
+
+**安全加固**：`PlayCardMsg`/`RespondCardMsg`/`DiscardCardMsg` 里客户端消息体自称的 `playerId`/`responderId` 字段一律被忽略，改用 `GameServer` 基于 TCP 连接分配的可信 `playerId`——否则一个连接可以在消息里冒充另一个玩家操作对方手牌。`TargetSelectedMsg` 因 `ActionViewModel::onTargetSelected` 签名不带 `playerId` 暂无法在网络层补这层校验，已记录为已知限制留给 Step 9。
+
+`MessageSerializer` 新增 `encodePayload<Msg>`/`wrapFrame`（裸 payload 序列化 + 补帧头分离），`encode<Msg>` 重构为二者组合；`GameServer::sendTo` 改用 `wrapFrame` 消除重复的帧头拼装代码。
+
+**顺带修复**：`GameViewModel::onDiscardCardRequested` 存在一处预先潜伏的 bug——原逻辑按"请求方自己的 `playerId`"查 `getDiscardCount()` 判断是否 `advancePhase()`，本地模式下这个方法只会被"当前弃牌阶段的玩家"调用所以从未暴露；网络模式下任意已连接客户端发一条名义上合法（`playerId` 是自己真实的，只是不该在这个时机弃牌）的 `DiscardCardRequested`，会导致提前结束**另一个玩家**的弃牌阶段。修复为只有 `playerId == currentPlayerId()` 时才允许推进阶段，本地模式行为不受影响。
+
+**涉及文件**：`src/App/ServerApp.h/cpp`、`src/Network/MessageSerializer.h/cpp`、`src/Network/GameServer.cpp`、`src/ViewModel/GameViewModel.cpp`、`tests/network_test.cpp`、`connection.md`（新增 §7 网络模式连接表）
+
+**验证**：7 个新用例（GameStarted 广播顺序、PlayCardRequested/DiscardCardRequested 身份伪造防护 + 合法路径、AdvanceRequested/EndPlayRequested 网络分发、RespondCardRequested/SkipRequested 完整响应流程），用 `viewmodel_test.cpp` 已有的"手动注入确定性杀/闪卡牌"手法绕开随机发牌以保证测试确定性。NetworkTest 41 个用例，全套件 5/5 通过（含多次重复运行确认无抖动；`thirdConnectionRejected` 出现过一次孤立超时，重跑 8 次未复现，判定为环境抖动而非回归）。
+
 ### [2026-07-15] 网络层 Step 3：GameServer 连接管理与握手（plan2.0.md §2.3）
 
 新建 `src/Network/GameServer.h/cpp`：QTcpServer 监听（`listen(port, localOnly)`，`localOnly=true` 绑 127.0.0.1 供测试用、不触发 Windows 防火墙弹窗；生产默认绑 Any）、最多 2 连接、playerId 0/1 按空槽分配、逐客户端 recvBuffer 帧解码（流损坏即断开）、`Handshake`（含协议版本校验）→ `HandshakeAck` → `SelectCharacter` → `bothPlayersReady` 流程、超员连接回 `Ack(playerId=-1, "房间已满")` 后断开、断线释放槽位可重连。未握手的命令/选将一律忽略。命令消息经 `clientCommandReceived` 信号转出（Step 4 由 ServerApp 分发到 VM public slots）。

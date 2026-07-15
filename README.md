@@ -44,7 +44,7 @@ Sanguosha/
 │   ├── Network/              # 网络层（局域网对战，开发中）
 │   │   ├── Protocol.h        # 协议版本号 + MessageType + 消息结构体
 │   │   ├── MessageSerializer.h/cpp # QDataStream 序列化 + 帧封装/解码
-│   │   └── GameServer.h/cpp  # QTcpServer：连接管理/握手/选将（零 Model 依赖）
+│   │   └── GameServer.h/cpp  # QTcpServer：连接管理/握手/选将/广播转发（零 Model 依赖）
 │   ├── ViewModel/            # QObject + 信号/槽
 │   │   ├── ActionViewModel.h/cpp
 │   │   └── GameViewModel.h/cpp
@@ -57,13 +57,14 @@ Sanguosha/
 │   │   └── ActionPanelWidget.h/cpp
 │   └── App/                  # 组合根
 │       ├── SGSApp.h/cpp      # 本地模式（View + ViewModel 直连）
-│       └── ServerApp.h/cpp   # 网络服务器模式（headless，零 View 依赖）
+│       └── ServerApp.h/cpp   # 网络服务器模式（headless；持有 GameServer，
+│                             #   VM 信号 ↔ 客户端命令的双向接线见 connection.md §7）
 └── tests/
     ├── smoke_test.cpp          # 无框架 Model 冒烟测试
     ├── model_test.cpp          # Model Qt Test
     ├── viewmodel_test.cpp      # ViewModel Qt Test
     ├── view_test.cpp           # View/App Qt Widgets Test
-    └── network_test.cpp        # Network Qt Test（序列化/帧解码/ServerApp headless/GameServer 握手）
+    └── network_test.cpp        # Network Qt Test（序列化/帧解码/ServerApp headless/GameServer 握手/命令分发）
 ```
 
 ---
@@ -150,4 +151,4 @@ $env:QT_QPA_PLATFORM = "offscreen"; .\build\ViewTest.exe
 .\build\NetworkTest.exe
 ```
 
-当前完整套件通过，5 个测试目标均为正常断言通过；覆盖卡牌规则、响应权限、濒死救援、目标选择、主要 QWidget、App 生命周期、网络协议序列化/帧解码（半包/粘包）和 ServerApp headless 启动路径（无 QApplication 环境下完整回合循环）。
+当前完整套件通过，5 个测试目标均为正常断言通过；覆盖卡牌规则、响应权限、濒死救援、目标选择、主要 QWidget、App 生命周期、网络协议序列化/帧解码（半包/粘包）、ServerApp headless 启动路径（无 QApplication 环境下完整回合循环）以及 ServerApp↔GameServer 的双向接线与两轮对抗性审查加固（VM 广播顺序、7 条命令分发、跨连接身份伪造防护、越权推进阶段防护）。NetworkTest 共 47 个用例。

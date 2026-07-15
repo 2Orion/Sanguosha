@@ -293,3 +293,101 @@ ViewModel ──信号──► View 槽（SGSApp 建立直连）
 | 出牌校验/路由逻辑 | `ActionViewModel`（onPlayCardRequested 等 public slots） |
 | 自动跳过弃牌/响应逻辑 | `GameViewModel`（setNextPhase / onModelPendingActionCreated） |
 | SGSApp 职责 | 纯组合根：创建对象 + connect + 生命周期，零业务逻辑 |
+
+---
+
+## 7. 网络模式：ServerApp 连接表（plan2.0.md §2，开发中）
+
+> 服务器侧组合根 `ServerApp`（`src/App/ServerApp.h/cpp`）复用与本地模式完全相同的
+> `GameViewModel`/`ActionViewModel`，只是把 SGSApp 连接给 `GameBoardWidget` 的两端
+> 换成连接给 `GameServer`（`src/Network/GameServer.h/cpp`，QTcpServer）。
+> 客户端侧 `ClientApp`/`GameClient` 尚未实现（见 CLAUDE.md「乙成员任务分步计划」）。
+
+### 7.1 VM → GameServer（广播，`ServerApp::wireViewModelBroadcasts()`）
+
+与第 1 节"全部 ViewModel → View 信号"表完全一一对应，只是接收端从 `GameBoardWidget` 的槽
+换成序列化后调用 `GameServer::broadcast(MessageType, payload)`：
+
+| ViewModel 信号 | MessageType | 消息结构体 |
+|---------------|-------------|-----------|
+| `phaseChanged(PhaseType)` | `PhaseChanged` | `PhaseChangedMsg` |
+| `playerDataUpdated(int, PlayerData)` | `PlayerDataUpdated` | `PlayerDataMsg` |
+| `handCardsUpdated(int, CardList)` | `HandCardsUpdated` | `HandCardsMsg`（**暂未脱敏，见 Step 5**） |
+| `pendingActionCreated(PendingActionData)` | `PendingActionCreated` | `PendingActionMsg` |
+| `pendingActionCleared()` | `PendingActionCleared` | 无 payload |
+| `gameOver(int)` | `GameOver` | `GameOverMsg` |
+| `logMessage(QString)` | `LogMessage` | `LogMessageMsg` |
+| `ActionViewModel::targetSelectionStarted(QVector<int>)` | `TargetSelectionStarted` | `TargetSelectionStartedMsg` |
+| `ActionViewModel::targetSelectionFinished()` | `TargetSelectionFinished` | 无 payload |
+
+额外的 `GameStarted`（`GameStartedMsg`）由 `ServerApp::onBothPlayersReady` 在调用
+`startHeadlessGame()` **之前**广播，本地模式没有对应物——保证客户端收到的顺序是
+`GameStarted → PhaseChanged → PlayerDataUpdated/HandCardsUpdated → ...`
+（`startHeadlessGame` 内部 `startGame()` 会同步 emit 这些初始状态信号，若接线/广播 GameStarted
+晚于这一步，客户端会先收到状态更新、后收到 GameStarted，顺序就反了）。
+
+### 7.2 GameServer → VM（命令分发，`ServerApp::onClientCommandReceived`）
+
+与第 2 节"全部 View → ViewModel 命令"表完全一一对应，只是发出端从 `GameBoardWidget` 的信号
+换成客户端 TCP 消息反序列化：
+
+| MessageType | 消息结构体 | ViewModel public slot |
+|-------------|-----------|----------------------|
+| `PlayCardRequested` | `PlayCardMsg` | `ActionViewModel::onPlayCardRequested` |
+| `RespondCardRequested` | `RespondCardMsg` | `ActionViewModel::onRespondCardRequested` |
+| `TargetSelected` | `TargetSelectedMsg` | `ActionViewModel::onTargetSelected` |
+| `DiscardCardRequested` | `DiscardCardMsg` | `GameViewModel::onDiscardCardRequested` |
+| `EndPlayRequested` | 无 payload | `GameViewModel::onEndPlayRequested` |
+| `AdvanceRequested` | 无 payload | `GameViewModel::onAdvanceRequested` |
+| `SkipRequested` | 无 payload | `GameViewModel::onSkipRequested` |
+
+**关键差异（本地模式没有这个问题）**：`PlayCardMsg::playerId`、`RespondCardMsg::responderId`、
+`DiscardCardMsg::playerId` 都是客户端消息体里自己填的字段，**服务器分发时一律忽略它们，
+改用 `GameServer::clientCommandReceived(int playerId, ...)` 信号里连接层分配的可信
+`playerId`**。原因：本地模式下 `GameBoardWidget` 只有一份，发出命令的 `playerId` 天然就是
+UI 当前操作者；网络模式下两个客户端是独立连接，如果信任消息体自称的 `playerId`，玩家 1 的
+连接可以在消息里填 `playerId=0` 来操作玩家 0 的手牌（`ActionViewModel::isOwnCard` 只按传入的
+`playerId` 查归属，不知道请求实际来自哪个连接）。
+
+三个无参命令（`EndPlayRequested`/`AdvanceRequested`/`SkipRequested`）的对应 VM 槽本身不接收
+`playerId`（本地模式下只会被当前回合玩家/响应者的 View 触发），网络模式下 `ServerApp` 在转发
+前用连接层可信 `playerId` 校验发起方身份：`EndPlay`/`Advance` 要求 `playerId == currentPlayerId()`，
+`Skip` 要求 `playerId == GameViewModel::pendingResponderId()`（否则任意一方都能提前结束对方回合、
+越权推进阶段、或替对方强制放弃响应）。
+
+**已知限制**：
+- `TargetSelectedMsg` 没有可信身份可覆盖——`ActionViewModel::onTargetSelected(int playerIndex)`
+  签名本身不接收 `playerId`，而是依赖内部 `m_pendingCardId`/`m_pendingUserId` 单例状态。网络模式下
+  如果一个客户端在"不是自己发起多目标选择"期间发送 `TargetSelected`，会被当成当前暂存的那次选择
+  处理。修复需要改这个槽的签名，会同时影响本地 `SGSApp`，留待后续（Step 9 / M4）。
+- **出牌/弃牌本身缺回合归属校验（更深层，属甲的规则域，未修）**：`ActionViewModel::canPlayCard`/
+  `playCard`/`discardCard` 与 `Card::canUse` 全链路只查全局 `currentPhase()`、`isOwnCard`，从不校验
+  `playerId == currentPlayer()`。本地模式靠 View 只让当前玩家手牌可交互而侥幸不触发；网络模式下
+  非当前回合玩家能用自己真实身份在对方回合出/弃自己的牌。另 `GameState::setPendingAction` 无条件
+  覆盖 + 出牌路径不查 `!hasPendingAction()`，能让第二个待定动作静默冲掉第一个。这两处需改核心
+  GameRule/Card/ViewModel，边界与"网络接线"不同，待协调归属后修复。
+
+### 7.3 与本地模式共享的一处修复
+
+`GameViewModel::onDiscardCardRequested` 原实现只按"请求方自己的 `playerId`"查
+`getDiscardCount()` 来判断是否 `advancePhase()`——本地模式下这个方法只会被"当前弃牌阶段的
+那位玩家"调用（View 只让该玩家的手牌区可交互），所以从未暴露问题；但网络模式下任意已连接客户端
+都可能发一条名义上"合法"（`playerId` 是自己真实的、只是不该在这个时机弃牌）的
+`DiscardCardRequested`，导致 `getDiscardCount(自己的playerId)` 恒 `<=0`、从而提前结束了
+**另一个玩家**的弃牌阶段。已修复为只有 `playerId == currentPlayerId()` 时才允许**推进阶段**，
+本地模式行为不受影响（因为本地模式下这个等式恒成立）。
+
+> 注意：这处修复只挡住了"提前推进阶段"这一副作用，`ActionViewModel::discardCard` 本体仍不校验
+> `playerId == currentPlayerId()`，所以非当前回合玩家仍能弃掉自己手里的牌（只损己方牌、不影响对方、
+> 不再错误推进阶段）。这条与上面"出牌/弃牌缺回合归属校验"是同一根因，一并待规则层统一修复。
+
+### 7.4 第二轮加固：advancePhase 悬空待定动作 + GameStarted 时序
+
+`GameViewModel::advancePhase()` 的 `Play` 分支原本没有 `hasPendingAction()` 检查，与
+`endPlayPhase()`（已有此检查）不对称——当前回合玩家出杀后立即发送 `AdvanceRequested`，会把阶段
+强制推进到 Discard，闪的待定响应永久悬空（本地模式下 `AutoAdvanceTimer` 从不在 Play 阶段启动，
+这条路径从未被触达）。已修复为与 `endPlayPhase()` 一致。
+
+`ServerApp::onBothPlayersReady` 原本先广播 `GameStarted` 再校验 characterId，非法 id 会让客户端
+先收到"游戏已开始"、之后却永远等不到任何状态更新。新增 `GameViewModel::isValidCharacterId()`，
+广播前先校验，非法 id 直接不广播（协议暂无专门的拒绝消息类型）。

@@ -57,22 +57,29 @@ namespace MessageSerializer {
 /// QDataStream 版本固定，保证两端一致（Qt5/Qt6 混连也不会因默认版本不同出错）
 constexpr QDataStream::Version kStreamVersion = QDataStream::Qt_5_15;
 
-/// 打包一条带 payload 的消息为完整帧
+/// 将消息结构体序列化为裸 payload 字节（不含帧头）。
+/// GameServer::sendTo/broadcast 需要的正是这种"只序列化消息体"的字节，
+/// 因为帧头（长度前缀 + 类型）由 sendTo 内部统一通过 wrapFrame 补上——
+/// 调用方不能直接把 encode() 的完整帧当 payload 传入，否则会被二次包帧头。
+template <typename Msg>
+QByteArray encodePayload(const Msg& msg)
+{
+    QByteArray payload;
+    QDataStream out(&payload, QDataStream::WriteOnly);
+    out.setVersion(kStreamVersion);
+    out << msg;
+    return payload;
+}
+
+/// 给裸 payload 补上帧头（长度前缀 + 类型），得到可直接写入 socket 的完整帧。
+/// payload 为空时即为无参数消息的完整帧。
+QByteArray wrapFrame(Protocol::MessageType type, const QByteArray& payload = {});
+
+/// 打包一条带 payload 的消息为完整帧（= encodePayload + wrapFrame）
 template <typename Msg>
 QByteArray encode(Protocol::MessageType type, const Msg& msg)
 {
-    QByteArray payload;
-    {
-        QDataStream out(&payload, QDataStream::WriteOnly);
-        out.setVersion(kStreamVersion);
-        out << msg;
-    }
-    QByteArray frame;
-    QDataStream out(&frame, QDataStream::WriteOnly);
-    out.setVersion(kStreamVersion);
-    out << quint32(1 + payload.size()) << quint8(type);
-    frame.append(payload);
-    return frame;
+    return wrapFrame(type, encodePayload(msg));
 }
 
 /// 打包一条无 payload 的消息为完整帧

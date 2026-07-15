@@ -57,17 +57,9 @@ void GameServer::sendTo(int playerId, MessageType type, const QByteArray& payloa
 {
     if (!isPlayerConnected(playerId))
         return;
-    QByteArray frame;
-    if (payload.isEmpty()) {
-        frame = MessageSerializer::encode(type);
-    } else {
-        // payload 已由调用方序列化；这里只补帧头
-        QDataStream out(&frame, QDataStream::WriteOnly);
-        out.setVersion(MessageSerializer::kStreamVersion);
-        out << quint32(1 + payload.size()) << quint8(type);
-        frame.append(payload);
-    }
-    m_clients[playerId].socket->write(frame);
+    // payload 已由调用方通过 MessageSerializer::encodePayload 序列化；
+    // 这里只补帧头（长度前缀 + 类型）
+    m_clients[playerId].socket->write(MessageSerializer::wrapFrame(type, payload));
 }
 
 void GameServer::broadcast(MessageType type, const QByteArray& payload)
