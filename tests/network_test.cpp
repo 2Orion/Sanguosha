@@ -15,6 +15,11 @@
 //           （custom 值类型不经 QSignalSpy 的 QVariant 提取，用 connect
 //           到本地 lambda 直接捕获，避免 PhaseType/PlayerData/CardList 等
 //           未注册 Qt 元类型导致的提取失败——项目里一直是这个约定）
+//   Step 7：ClientApp 组合根——GameBoardWidget + GameClient 双向接线，
+//           验收标准是 GameBoardWidget 零改动；测试直接驱动真实 QWidget
+//           点击/信号，对接真实 ServerApp，全程无 Model 指针跨网络传递。
+//           本文件因此从 QTEST_GUILESS_MAIN 切到 QTEST_MAIN + offscreen
+//           （ClientApp 内部创建真实 GameBoardWidget，需要 QApplication）。
 #include <QtTest/QtTest>
 #include <QTcpSocket>
 #include <algorithm>
@@ -23,11 +28,16 @@
 #include "GameServer.h"
 #include "GameClient.h"
 #include "ServerApp.h"
+#include "ClientApp.h"
 #include "GameViewModel.h"
 #include "ActionViewModel.h"
 #include "GameState.h"
 #include "Player.h"
 #include "Card.h"
+#include "GameBoardWidget.h"
+#include "HandCardAreaWidget.h"
+#include "CardWidget.h"
+#include "PlayerInfoWidget.h"
 
 using namespace Protocol;
 using MessageSerializer::Frame;
@@ -1900,7 +1910,79 @@ private slots:
         QVERIFY(QTest::qWaitFor([&] { return disconnectedSpy.count() >= 1; }, 8000));
         QCOMPARE(client.localPlayerId(), -1);
     }
+
+    // ==================== Step 7：ClientApp 组合根 ====================
+
+    void clientAppWiresBoardToGameClientWithZeroBoardChanges()
+    {
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        ClientApp clientApp;
+        GameBoardWidget* board = clientApp.boardWidget();
+        QVERIFY(board != nullptr);
+        board->resize(900, 700);
+        board->show();
+        QCoreApplication::processEvents();
+
+        QSignalSpy connectedSpy(clientApp.gameClient(), &GameClient::connected);
+        clientApp.connectToServer(QStringLiteral("127.0.0.1"), port);
+        QVERIFY(QTest::qWaitFor([&] { return connectedSpy.count() >= 1; }, 8000));
+        QCOMPARE(clientApp.gameClient()->localPlayerId(), 0);
+
+        // 第二个真实玩家用裸 GameClient 接入，只是为了让 bothPlayersReady 成立
+        GameClient opponent;
+        QSignalSpy opponentConnected(&opponent, &GameClient::connected);
+        opponent.connectToServer(QStringLiteral("127.0.0.1"), port);
+        QVERIFY(QTest::qWaitFor([&] { return opponentConnected.count() >= 1; }, 8000));
+
+        QVector<PhaseType> phases;
+        connect(clientApp.gameClient(), &GameClient::phaseChanged, &clientApp,
+                [&phases](PhaseType p) { phases.push_back(p); });
+
+        clientApp.selectCharacter(0);
+        opponent.selectCharacter(1);
+        QVERIFY(QTest::qWaitFor([&] { return !phases.isEmpty(); }, 8000));
+        QCOMPARE(phases.first(), PhaseType::Prepare);
+
+        // GameClient → GameBoardWidget：手牌到达后真实 QWidget 应渲染出手牌区
+        const auto areas = board->findChildren<HandCardAreaWidget*>();
+        QCOMPARE(areas.size(), 2);
+        QVERIFY(QTest::qWaitFor([&] {
+            return areas.at(0)->cardCount() > 0 && areas.at(1)->cardCount() > 0;
+        }, 8000));
+
+        // 手动注入确定性的杀，绕开随机发牌；驱动到 Play 阶段后真实点击卡牌
+        auto* gvm = app.gameViewModel();
+        KillCard extra(CardSuit::Diamond, 4);
+        gvm->gameState()->player(0)->addHandCard(&extra);
+        gvm->onAdvanceRequested();  // Prepare → Judge
+        gvm->onAdvanceRequested();  // Judge → Draw
+        gvm->onAdvanceRequested();  // Draw → Play
+        QVERIFY(QTest::qWaitFor([&] { return phases.last() == PhaseType::Play; }, 8000));
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+
+        // GameBoardWidget → GameClient → ServerApp：真实点击本方手牌里刚注入的杀
+        // findChildren 顺序与 ViewTest::gameBoardRouting 一致：areas.at(0) 是
+        // m_topHandArea（先构造），areas.at(1) 是 m_bottomHandArea；玩家 0 是
+        // 开局时的当前玩家，其手牌走 onHandCardsUpdated 的 bottom 分支。
+        HandCardAreaWidget* bottomArea = areas.at(1);
+        CardWidget* killWidget = nullptr;
+        for (CardWidget* w : bottomArea->findChildren<CardWidget*>()) {
+            if (w->cardId() == extra.id()) { killWidget = w; break; }
+        }
+        QVERIFY(killWidget != nullptr);
+        QTest::mouseClick(killWidget, Qt::LeftButton, Qt::NoModifier, QPoint(15, 15));
+
+        // 2 人局唯一目标自动结算：服务器应把这张杀从玩家 0 的手牌里移除
+        QVERIFY(QTest::qWaitFor([&] {
+            const auto& cards = gvm->gameState()->player(0)->handCards();
+            return std::none_of(cards.begin(), cards.end(),
+                                 [&](Card* c) { return c && c->id() == extra.id(); });
+        }, 3000));
+    }
 };
 
-QTEST_GUILESS_MAIN(NetworkTest)
+QTEST_MAIN(NetworkTest)
 #include "network_test.moc"

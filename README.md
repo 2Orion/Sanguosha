@@ -58,14 +58,17 @@ Sanguosha/
 │   │   └── ActionPanelWidget.h/cpp
 │   └── App/                  # 组合根
 │       ├── SGSApp.h/cpp      # 本地模式（View + ViewModel 直连）
-│       └── ServerApp.h/cpp   # 网络服务器模式（headless；持有 GameServer，
-│                             #   VM 信号 ↔ 客户端命令的双向接线见 connection.md §7）
+│       ├── ServerApp.h/cpp   # 网络服务器模式（headless；持有 GameServer，
+│       │                     #   VM 信号 ↔ 客户端命令的双向接线见 connection.md §7）
+│       └── ClientApp.h/cpp   # 网络客户端组合根（View + GameClient 直连，
+│                             #   连接形状与 SGSApp 对称，见 connection.md §7.6）
 └── tests/
     ├── smoke_test.cpp          # 无框架 Model 冒烟测试
     ├── model_test.cpp          # Model Qt Test
     ├── viewmodel_test.cpp      # ViewModel Qt Test
     ├── view_test.cpp           # View/App Qt Widgets Test
-    └── network_test.cpp        # Network Qt Test（序列化/帧解码/ServerApp headless/GameServer 握手/命令分发）
+    └── network_test.cpp        # Network Qt Test（序列化/帧解码/ServerApp headless/GameServer 握手/命令分发/
+                                 #   GameClient 网络化 ViewModel/ClientApp 组合根，真实 QWidget 点击驱动全链路）
 ```
 
 ---
@@ -141,7 +144,7 @@ cmake --build build --parallel 4
 ctest --test-dir build --output-on-failure
 ```
 
-当前注册 5 个测试：`ModelSmokeTest`、`ModelTest`、`ViewModelTest`、`ViewTest` 和 `NetworkTest`。`ViewTest` 通过 CTest 自动使用 `QT_QPA_PLATFORM=offscreen`，不需要桌面显示服务器。
+当前注册 5 个测试：`ModelSmokeTest`、`ModelTest`、`ViewModelTest`、`ViewTest` 和 `NetworkTest`。`ViewTest` 和 `NetworkTest` 通过 CTest 自动使用 `QT_QPA_PLATFORM=offscreen`，不需要桌面显示服务器（`NetworkTest` 自 Step 7 起会创建真实 `GameBoardWidget`，因此也需要 offscreen 平台插件）。
 
 直接运行单个 Qt Test 时，可以使用对应的构建产物：
 
@@ -149,7 +152,7 @@ ctest --test-dir build --output-on-failure
 .\build\ModelTest.exe
 .\build\ViewModelTest.exe
 $env:QT_QPA_PLATFORM = "offscreen"; .\build\ViewTest.exe
-.\build\NetworkTest.exe
+$env:QT_QPA_PLATFORM = "offscreen"; .\build\NetworkTest.exe
 ```
 
-当前完整套件通过，5 个测试目标均为正常断言通过；覆盖卡牌规则、响应权限、濒死救援、目标选择、主要 QWidget、App 生命周期、网络协议序列化/帧解码（半包/粘包）、ServerApp headless 启动路径（无 QApplication 环境下完整回合循环）、ServerApp↔GameServer 的双向接线与三轮对抗性审查加固（VM 广播顺序、7 条命令分发、跨连接身份伪造防护、越权推进阶段防护、出牌/弃牌回合归属校验、待定动作重入保护）、Step 5 手牌脱敏（对手侧牌面字段占位、cardId 结构信息仍保留、己方视角不受影响），以及 Step 6 GameClient（对接真实 GameServer/ServerApp：playerId 分配与超员拒绝、7 个发送方法 payload 正确性、gameStarted/phaseChanged/playerDataUpdated/logMessage/脱敏后 handCardsUpdated 转发、双客户端出杀→待定响应往返、断线信号）。NetworkTest 共 57 个用例。
+当前完整套件通过，5 个测试目标均为正常断言通过；覆盖卡牌规则、响应权限、濒死救援、目标选择、主要 QWidget、App 生命周期、网络协议序列化/帧解码（半包/粘包）、ServerApp headless 启动路径（无 QApplication 环境下完整回合循环）、ServerApp↔GameServer 的双向接线与三轮对抗性审查加固（VM 广播顺序、7 条命令分发、跨连接身份伪造防护、越权推进阶段防护、出牌/弃牌回合归属校验、待定动作重入保护）、Step 5 手牌脱敏（对手侧牌面字段占位、cardId 结构信息仍保留、己方视角不受影响）、Step 6 GameClient（对接真实 GameServer/ServerApp：playerId 分配与超员拒绝、7 个发送方法 payload 正确性、gameStarted/phaseChanged/playerDataUpdated/logMessage/脱敏后 handCardsUpdated 转发、双客户端出杀→待定响应往返、断线信号），以及 Step 7 ClientApp（真实 `GameBoardWidget` + `GameClient` 组合根，从真实 `QTest::mouseClick` 点击手牌到网络命令再到服务器结算的完整链路，验证 `GameBoardWidget` 零改动）。NetworkTest 共 58 个用例。

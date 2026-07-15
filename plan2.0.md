@@ -233,6 +233,10 @@ public:
 > handCardsUpdated(playerId, cards)` 的 `playerId` 就是所有者），所以裁剪后的分发直接在
 > `ServerApp` 里完成更自然。`GameServer::sendTo`/`broadcast` 接口本身未变。详见
 > [`connection.md`](connection.md) §7.1.1。
+>
+> **`ClientApp`（Step 7）落地与本节设计零出入**：`src/App/ClientApp.h/cpp` 按 2.1/2.4/2.5 描述的
+> 方式创建 `GameBoardWidget` + `GameClient`，逐条对照 `SGSApp::startLocalGame()` 的连接形状建立
+> 双向信号连接；`GameBoardWidget` 验收测试确认零改动。详见 [`connection.md`](connection.md) §7.6。
 
 ### 2.1 架构设计
 

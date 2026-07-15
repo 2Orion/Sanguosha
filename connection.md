@@ -483,3 +483,47 @@ emit，且 `handCardsUpdated` 脱敏结果通过 `GameClient` 转发后仍然正
 `gameClientPlayCardRoundTripReflectedInBothClients`（两个 `GameClient` 对接同一个 `ServerApp`，
 出杀 → 双方收到 `pendingActionCreated(Dodge)`）、`gameClientDisconnectedSignalFiresWhenServerCloses`
 （服务器主动关闭时 `disconnected()` 正确 emit，`localPlayerId()` 复位为 -1）。
+
+### 7.6 ClientApp：客户端组合根（Step 7）
+
+`ClientApp`（`src/App/ClientApp.h/cpp`）是网络模式的组合根，与 `SGSApp::startLocalGame()`
+完全对称：创建 `GameBoardWidget` + `GameClient`，在构造函数里把两者的信号/槽按**与本地模式
+逐条相同的形状**直连。零业务逻辑，只做两件事之外的事：`connectToServer(host, port)` 和
+`selectCharacter(int)` 转发给 `m_client`。
+
+**验收标准已满足：`GameBoardWidget` 零改动。** 之所以能零改动——`GameBoardWidget` 从设计
+上就不知道对面接的是本地 `GameViewModel`/`ActionViewModel` 还是网络 `GameClient`，因为
+`GameClient` 对外信号/槽形状与本地 VM 完全一致（见 7.5）。`ClientApp` 的连接表逐条对照
+`SGSApp.cpp`：
+
+| 方向 | 信号/槽 | 对端 |
+|------|---------|------|
+| View → Client | `playCardRequested` | `GameClient::playCard` |
+| View → Client | `respondCardRequested` | `GameClient::respondCard` |
+| View → Client | `targetPlayerSelected` | `GameClient::selectTarget` |
+| View → Client | `discardCardRequested` | `GameClient::discardCard` |
+| View → Client | `endPlayRequested` | `GameClient::endPlayPhase` |
+| View → Client | `advanceRequested` | `GameClient::advancePhase` |
+| View → Client | `skipRequested` | `GameClient::skipResponse` |
+| Client → View | `phaseChanged` | `GameBoardWidget::onPhaseChanged` |
+| Client → View | `playerDataUpdated` | `GameBoardWidget::onPlayerDataUpdated` |
+| Client → View | `handCardsUpdated` | `GameBoardWidget::onHandCardsUpdated` |
+| Client → View | `targetSelectionStarted` | `GameBoardWidget::onTargetSelectionStarted` |
+| Client → View | `targetSelectionFinished` | `GameBoardWidget::onTargetSelectionFinished` |
+| Client → View | `pendingActionCreated` | `GameBoardWidget::onPendingActionCreated` |
+| Client → View | `pendingActionCleared` | `GameBoardWidget::onPendingActionCleared` |
+| Client → View | `gameOver` | `GameBoardWidget::onGameOver` |
+| Client → View | `logMessage` | `GameBoardWidget::onLogMessage` |
+
+`ClientApp` 不创建 `MainWindow`——`boardWidget()` 把 `GameBoardWidget*` 暴露给调用方自行嵌入
+窗口容器；`gameClient()` 暴露 `GameClient*` 供调用方接入登录/等待界面（联网入口和
+`NetworkConfigDialog` 属丙，不在本计划内）。
+
+回归测试见 `tests/network_test.cpp` 的 `clientAppWiresBoardToGameClientWithZeroBoardChanges`：
+对接真实 `ServerApp`，起两个客户端（一个用 `ClientApp`，一个用裸 `GameClient` 扮演对手）完成
+握手→选将→驱动到 Play 阶段，然后**真实 `QTest::mouseClick` 点击 `GameBoardWidget` 里注入的杀
+对应的 `CardWidget`**，断言服务器侧 `Player::handCards()` 确实移除了这张牌——验证从真实 QWidget
+点击到网络命令再到服务器结算的完整链路。测试因此把 `network_test.cpp` 从
+`QTEST_GUILESS_MAIN` 切到 `QTEST_MAIN`（`ClientApp` 内部创建真实 `GameBoardWidget` 需要
+`QApplication`），CMake 侧给 `NetworkTest` 加了 `Qt::Widgets` 链接和 `QT_QPA_PLATFORM=offscreen`
+环境变量（CTest 层面，与 `ViewTest` 做法一致）。

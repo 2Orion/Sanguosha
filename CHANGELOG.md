@@ -2,6 +2,36 @@
 
 ## Features
 
+### [2026-07-15] 网络层 Step 7：ClientApp 组合根
+
+新建 `src/App/ClientApp.h/cpp`：网络模式的客户端组合根，与本地模式的 `SGSApp::startLocalGame()`
+完全对称——创建 `GameBoardWidget` + `GameClient`，在构造函数里按逐条相同的形状建立双向信号连接
+（7 条 View→Client 命令信号 + 9 条 Client→View 状态信号）。零业务逻辑，只额外暴露
+`connectToServer(host, port)`/`selectCharacter(int)` 两个转发方法，以及 `boardWidget()`/
+`gameClient()` 两个访问器供调用方嵌入自己的窗口容器、接入登录/等待界面（`MainWindow` 联网入口和
+`NetworkConfigDialog` 属丙，不在本计划内）。
+
+**验收标准达成：`GameBoardWidget` 零改动。** 能做到零改动的原因是设计层面的——`GameBoardWidget`
+从不知道、也不需要知道对面接的是本地 `GameViewModel`/`ActionViewModel` 还是网络 `GameClient`，
+因为 `GameClient` 对外信号/槽形状与本地 VM 完全一致（Step 6 的设计前提）。
+
+**涉及文件**：`src/App/ClientApp.h/cpp`（新建）、`CMakeLists.txt`（`CLIENT_APP_SOURCES`/
+`CLIENT_APP_HEADERS` 变量组，`NetworkTest` 加 `Qt::Widgets` 链接）、`tests/network_test.cpp`
+（+1 新用例，`QTEST_GUILESS_MAIN`→`QTEST_MAIN`）、`connection.md` §7.6（新建）、`CLAUDE.md`
+（Step 7 计划项打勾）、`README.md`（目录结构 + 测试运行方式 + 测试用例数）。
+
+**测试注意点**：`clientAppWiresBoardToGameClientWithZeroBoardChanges` 需要真实
+`GameBoardWidget`（`ClientApp` 内部创建），因此本用例的存在把整个 `NetworkTest` 目标从
+`QTEST_GUILESS_MAIN`（仅 `QCoreApplication`）切到 `QTEST_MAIN`（`QApplication`），CTest 侧沿用
+`ViewTest` 的做法设置 `QT_QPA_PLATFORM=offscreen` 环境变量，避免依赖桌面显示服务器。
+
+**验证**：`clientAppWiresBoardToGameClientWithZeroBoardChanges`——对接真实 `ServerApp`，起一个
+`ClientApp`（真实 `GameBoardWidget`）和一个裸 `GameClient`（扮演对手，无 View）完成握手→选将→
+驱动到 Play 阶段，用 `QTest::mouseClick` 真实点击 `ClientApp::boardWidget()` 里注入的杀对应的
+`CardWidget`，断言服务器侧 `Player::handCards()` 确实移除了这张牌——覆盖从真实 QWidget 点击到
+网络命令到服务器结算的完整链路，而不只是信号连接的存在性。NetworkTest 增至 58 用例，全套件
+5/5（`ModelSmokeTest`/`ModelTest`/`ViewModelTest`/`ViewTest`/`NetworkTest`）通过。
+
 ### [2026-07-15] 网络层 Step 6：GameClient（"网络化 ViewModel"）
 
 新建 `src/Network/GameClient.h/cpp`：客户端网络层，与服务器侧 `GameServer`（"网络化的 View"）对称，

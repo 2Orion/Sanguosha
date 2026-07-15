@@ -147,6 +147,15 @@ set(SERVER_APP_HEADERS
     src/App/ServerApp.h
 )
 
+# 客户端组合根（依赖 View + GameClient，不依赖 Model/ViewModel）
+set(CLIENT_APP_SOURCES
+    src/App/ClientApp.cpp
+)
+
+set(CLIENT_APP_HEADERS
+    src/App/ClientApp.h
+)
+
 # ==================== Qt 版可执行程序 ====================
 
 add_executable(SanguoshaQt
@@ -273,6 +282,10 @@ add_executable(NetworkTest
     ${VIEWMODEL_HEADERS}
     ${SERVER_APP_SOURCES}
     ${SERVER_APP_HEADERS}
+    ${CLIENT_APP_SOURCES}
+    ${CLIENT_APP_HEADERS}
+    ${VIEW_SOURCES}
+    ${VIEW_HEADERS}
 )
 
 target_include_directories(NetworkTest PRIVATE
@@ -280,6 +293,7 @@ target_include_directories(NetworkTest PRIVATE
     ${CMAKE_SOURCE_DIR}/src/Common
     ${CMAKE_SOURCE_DIR}/src/Model
     ${CMAKE_SOURCE_DIR}/src/ViewModel
+    ${CMAKE_SOURCE_DIR}/src/View
     ${CMAKE_SOURCE_DIR}/src/Network
     ${CMAKE_SOURCE_DIR}/src/App
 )
@@ -287,8 +301,12 @@ target_include_directories(NetworkTest PRIVATE
 target_link_libraries(NetworkTest PRIVATE
     SanguoshaNetwork
     SanguoshaModel
+    Qt${QT_VERSION_MAJOR}::Widgets
     Qt${QT_VERSION_MAJOR}::Core
     Qt${QT_VERSION_MAJOR}::Test
 )
 
 add_test(NAME NetworkTest COMMAND NetworkTest)
+set_tests_properties(NetworkTest PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
