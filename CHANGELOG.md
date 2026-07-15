@@ -2,6 +2,36 @@
 
 ## Features
 
+### [2026-07-15] 网络层 Step 9：进程内端到端对局（联调 M1-M3 预演）+ 文档收尾
+
+新增 `NetworkTest::endToEndTwoClientGameHandshakeToGameOver`：单进程内起 `ServerApp`（内含真实
+`GameServer`）+ 2 个真实 `GameClient`，完整跑握手 → 选将 → `GameStarted` → 出杀（2 人局唯一目标
+自动结算）→ 玩家 1 持真实闪但主动放弃响应（`skipResponse`）→ 伤害致其死亡 → 濒死救援阶段玩家 0
+无桃/酒自动跳过 → `checkGameOver` 在同一次 `skipResponse` 调用内同步完成 → 双端一致收到
+`gameOver(0)`（M1-M3）。游戏结束后再验证两条 M4 异常路径：非当前回合玩家出牌被
+`ActionViewModel::canPlayCard` 挡住、合法发起方但游戏已结束的 `AdvanceRequested` 被
+`GameViewModel::advancePhase()` 的 `isGameOver()` 早退挡住——服务器不崩溃、阶段不变。
+
+**调试记录（真实 bug，非环境噪音）**：初版实现里，清空玩家 0 桃/酒的时机放在 Draw 阶段摸牌**之前**
+——Draw 阶段会给当前玩家摸 2 张新牌，偶尔重新引入桃/酒，导致濒死响应不再自动跳过；同时未显式给
+玩家 1 一张真实的闪，若随机发牌恰好没有闪，`GameViewModel::onModelPendingActionCreated` 的自动
+跳过分支会让 Dodge 待定动作根本不广播到网络。这两处叠加在全套件连续运行（60+ 用例）时约有
+40-50% 概率复现为断言失败或超时，一度用 `git stash` 对比 Step 8 基线（连续 6 次全绿）与加入
+Step 9 后（间歇失败，且牵连到无关既有用例 `thirdConnectionRejected`）误判为"用例数增长导致 TCP
+资源紧张"的环境级 flakiness。定位真实根因（手牌构造的非确定性）后修正：清理桃/酒挪到摸牌之后、
+显式给玩家 1 `addHandCard` 一张确定的闪，连续 12 次全量运行本用例 12/12 通过。
+
+另在 `NetworkTest` 新增 `cleanup()` 私有槽，每个用例结束后冲刷一次事件循环（处理
+`GameServer::dropClient()` 里 `deleteLater()` 的连接对象），作为全套件资源卫生的通用改进保留
+（非本次具体失败的根因）。
+
+**涉及文件**：`tests/network_test.cpp`（+1 新用例 + `cleanup()` 私有槽）、`connection.md` §7.8
+（新建）、`CLAUDE.md`（Step 9 打勾）、`README.md`（用例数 60→61）、`plan2.0.md`（补充落地细节）。
+
+**验证**：`endToEndTwoClientGameHandshakeToGameOver` 单独运行与连续多次全量运行均稳定通过；
+全套件 5/5（`ModelSmokeTest`/`ModelTest`/`ViewModelTest`/`ViewTest`/`NetworkTest`）通过。
+网络层 Step 1-9 全部完成，真机双开手动联调留给三人联调周（plan2.0.md §7.5 M1-M4）。
+
 ### [2026-07-15] 网络层 Step 8：心跳保活
 
 `GameServer` 新增 `m_heartbeatTimer`（`QTimer`，默认周期 3000ms）：每次触发给所有已握手客户端

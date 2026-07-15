@@ -24,6 +24,13 @@
 //           （含 Pong）续期；连续超时未收到任何帧则判定失联并 dropClient +
 //           emit clientDisconnected。GameClient 收到 Ping 自动回 Pong（生产
 //           路径）。测试用短周期/短超时参数模拟，不跑生产的 3s/10s 参数。
+//   Step 9：进程内端到端对局——单进程起 ServerApp（内含真实 GameServer）+
+//           2 个真实 GameClient，完整跑握手→选将→出杀→主动放弃响应→伤害→
+//           濒死救援自动跳过→游戏结束（M1-M3），以及游戏结束后非法命令被
+//           VM 校验拒绝、服务器不崩溃、状态不变（M4 部分覆盖）。手牌构造
+//           必须保证响应阶段的关键判定（谁有牌可用）不受随机发牌影响，
+//           否则会命中 GameViewModel 的自动跳过分支，导致预期的网络广播
+//           时有时无——踩过这个坑，细节见用例内注释。
 #include <QtTest/QtTest>
 #include <QTcpSocket>
 #include <algorithm>
@@ -222,6 +229,19 @@ class NetworkTest : public QObject {
     Q_OBJECT
 
 private slots:
+    // 每个用例结束后立即冲刷事件循环：本文件里大量用例创建真实
+    // QTcpSocket/QTcpServer，GameServer::dropClient() 用 deleteLater()
+    // 销毁连接（避免在其自身信号回调栈上 delete this），若不主动冲刷，
+    // 这些延迟销毁会一直堆到某个用例恰好调用 qWait 才被处理，在六十多个
+    // 用例的全套件运行里累积成一批迟迟未释放的 socket 句柄。这不是任何一次
+    // 具体失败的根因（Step 9 用例的真正根因是手牌构造的非确定性，见该用例
+    // 内注释），但作为通用卫生措施保留，减少全套件运行时的资源堆积。
+    void cleanup()
+    {
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCoreApplication::processEvents();
+    }
+
     // ==================== 值类型 round-trip ====================
 
     void cardDataRoundTrip()
@@ -2032,6 +2052,109 @@ private slots:
         QCOMPARE(disconnectedSpy.count(), 0);
         QCOMPARE(server.connectedClientCount(), 1);
         QVERIFY(client.isConnected());
+    }
+
+    // ==================== Step 9：进程内端到端对局 ====================
+
+    void endToEndTwoClientGameHandshakeToGameOver()
+    {
+        // M1-M3 预演：单进程内起 GameServer（经 ServerApp）+ 2 个真实 GameClient，
+        // 跑完整流程：握手 → 选将 → 出杀 → 响应失败 → 伤害 → 濒死救援自动跳过
+        // （玩家 0 手上没有桃/酒）→ 游戏结束，双端都应收到一致的 gameOver(winnerId)。
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        GameClient c0, c1;
+        QSignalSpy connected0(&c0, &GameClient::connected);
+        QSignalSpy connected1(&c1, &GameClient::connected);
+        c0.connectToServer(QStringLiteral("127.0.0.1"), port);
+        c1.connectToServer(QStringLiteral("127.0.0.1"), port);
+        QVERIFY(QTest::qWaitFor(
+            [&] { return connected0.count() >= 1 && connected1.count() >= 1; }, 8000));
+        QCOMPARE(c0.localPlayerId(), 0);
+        QCOMPARE(c1.localPlayerId(), 1);
+
+        QSignalSpy gameStarted0(&c0, &GameClient::gameStarted);
+        QSignalSpy gameStarted1(&c1, &GameClient::gameStarted);
+        c0.selectCharacter(0);  // 曹操
+        c1.selectCharacter(1);  // 关羽
+        QVERIFY(QTest::qWaitFor(
+            [&] { return gameStarted0.count() >= 1 && gameStarted1.count() >= 1; }, 8000));
+
+        QVector<int> gameOverIds0, gameOverIds1;
+        connect(&c0, &GameClient::gameOver, &c0,
+                [&gameOverIds0](int winnerId) { gameOverIds0.push_back(winnerId); });
+        connect(&c1, &GameClient::gameOver, &c1,
+                [&gameOverIds1](int winnerId) { gameOverIds1.push_back(winnerId); });
+
+        QVector<PendingActionData> pending1;
+        connect(&c1, &GameClient::pendingActionCreated, &c1,
+                [&pending1](const PendingActionData& info) { pending1.push_back(info); });
+
+        auto* gvm = app.gameViewModel();
+        QVERIFY(gvm != nullptr);
+
+        gvm->gameState()->player(1)->setHp(1);  // 一次不响应的杀足以致死
+
+        gvm->onAdvanceRequested();  // Prepare → Judge
+        gvm->onAdvanceRequested();  // Judge → Draw（会给玩家 0 摸 2 张牌）
+        gvm->onAdvanceRequested();  // Draw → Play
+
+        Player* p0 = gvm->gameState()->player(0);
+        Player* p1 = gvm->gameState()->player(1);
+
+        // 清空玩家 0（濒死救援阶段的 source/responder）手上的桃/酒，确保濒死响应
+        // 一定命中 GameViewModel::onModelPendingActionCreated 的自动跳过分支，
+        // 不依赖随机发牌结果。必须放在 Draw 阶段摸牌之后——之前误放在摸牌之前，
+        // 摸到的 2 张新牌里偶尔会重新引入桃/酒，导致濒死响应不再自动跳过，
+        // 之后 pending1 捕获到的是这条本不该广播的 Peach 待定动作而非 Dodge，
+        // 全套件跑到这个用例时曾复现为 QCOMPARE(pending1.last()...) 断言失败。
+        for (Card* card : std::vector<Card*>(p0->handCards())) {
+            if (card && (card->cardType() == CardType::Peach || card->cardType() == CardType::Wine))
+                p0->removeHandCard(card);
+        }
+        // 给玩家 1 一张确定的闪，确保 Dodge 待定动作不会被自动跳过分支吞掉
+        // （否则若随机发牌里玩家 1 恰好没有闪，pendingActionCreated 永远不会
+        // 广播到网络，pending1 会一直是空的，等价于把响应阶段整个跳过）。
+        DodgeCard dodge(CardSuit::Heart, 6);
+        p1->addHandCard(&dodge);
+
+        KillCard kill(CardSuit::Spade, 7);
+        p0->addHandCard(&kill);
+
+        // 2 人局唯一合法目标是玩家 1，直接结算，产生待响应闪的待定动作。
+        c0.playCard(kill.id(), 0);
+        QVERIFY(QTest::qWaitFor([&] { return !pending1.isEmpty(); }, 8000));
+        QCOMPARE(pending1.last().requiredCardType, CardType::Dodge);
+        QCOMPARE(pending1.last().targetId, 1);
+
+        // 玩家 1 手上有闪但主动放弃响应（测试"响应阶段主动跳过"这条网络命令
+        // 路径，与 skipRequestedRoutesOverNetwork 的既有覆盖一致）：
+        // dealDamage → hp 归零 → 濒死流程 → 唯一存活的玩家 0 作为救援者被
+        // 自动判定无桃/酒可用 → 直接死亡判定 → checkGameOver 全部在这一次
+        // skipResponse 调用内同步完成。
+        c1.skipResponse();
+        QVERIFY(QTest::qWaitFor([&] {
+            return !gameOverIds0.isEmpty() && !gameOverIds1.isEmpty();
+        }, 8000));
+        QCOMPARE(gameOverIds0.last(), 0);
+        QCOMPARE(gameOverIds1.last(), 0);
+
+        // M4 异常：游戏结束后收到的命令必须被拒绝、服务器不崩溃、不产生任何
+        // 状态变化。c1（非当前回合玩家）发 PlayCardRequested 会被
+        // ActionViewModel::canPlayCard 的 player != currentPlayer() 校验挡住；
+        // c0（当前回合玩家，游戏结束前的回合归属仍然是玩家 0）发
+        // AdvanceRequested 能通过 ServerApp 的发起方校验，但会命中
+        // GameViewModel::advancePhase() 内的 isGameOver() 早退——两条路径都
+        // 验证一遍，确保游戏结束后不会残留任何可利用的命令窗口。
+        QSignalSpy phaseAfterOver(&c0, &GameClient::phaseChanged);
+        c1.playCard(kill.id(), 1);   // 非法：kill 从未属于玩家 1，且当前回合是玩家 0
+        c0.advancePhase();           // 合法发起方，但游戏已结束，应被 isGameOver() 挡住
+        QTest::qWait(200);
+        QCOMPARE(phaseAfterOver.count(), 0);
+        QVERIFY(gvm->gameState()->isGameOver());
+        QCOMPARE(app.gameServer()->connectedClientCount(), 2);
     }
 };
 

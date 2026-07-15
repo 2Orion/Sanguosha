@@ -557,3 +557,34 @@ emit，且 `handCardsUpdated` 脱敏结果通过 `GameClient` 转发后仍然正
 `respondingClientSurvivesHeartbeatViaGameClientAutoPong`——真实 `GameClient` 跨越多个心跳周期
 （600ms，覆盖至少 2 轮超时窗口）后仍保持连接，验证生产路径的自动 `Pong` 应答生效、正常客户端
 不会被误踢。NetworkTest 增至 60 用例。
+
+### 7.8 进程内端到端对局（Step 9）
+
+`endToEndTwoClientGameHandshakeToGameOver` 是全部网络层步骤（Step 1-8）落地后的联调 M1-M3 预演：
+单进程内起 `ServerApp`（内含真实 `GameServer`）+ 2 个真实 `GameClient`，走完整的
+握手 → 选将 → `GameStarted` → 出杀 → 主动放弃响应 → 伤害 → 濒死救援自动跳过 → 游戏结束链路，
+双端 `GameClient::gameOver` 都应收到一致的 `winnerId`；游戏结束后再验证两条 M4 异常路径
+（非当前回合玩家出牌、游戏结束后的 `AdvanceRequested`）均被拒绝且服务器不崩溃。
+
+**手牌构造必须保证响应阶段的确定性，否则会触达 `GameViewModel::onModelPendingActionCreated` 的
+自动跳过分支**（`getResponseCardIds` 为空时直接 `skipResponse`，不 `emit pendingActionCreated`，
+测试也就永远收不到网络广播）。本用例踩过两处坑：
+
+1. 清空玩家 0（濒死救援的责任人）手上桃/酒的时机必须放在 **Draw 阶段摸牌之后**——Draw 阶段
+   会给当前玩家摸 2 张新牌，如果清理放在摸牌之前，摸到的新牌偶尔会重新引入桃/酒，导致濒死响应
+   不再自动跳过。
+2. 必须显式给玩家 1 `addHandCard` 一张确定的闪（`DodgeCard`），不能依赖随机发牌——否则玩家 1
+   若恰好没有闪，Dodge 待定动作会被自动跳过分支直接吞掉，测试期望收到的
+   `pendingActionCreated(Dodge)` 永远不会广播。
+
+这两处非确定性在全套件连续运行（60+ 用例）时曾复现为约 40-50% 概率的间歇失败，一度被误判为
+"用例数过多导致 TCP 连接资源紧张"的环境级 flakiness（曾用 `git stash` 对比 Step 8 基线连续 6 次
+全绿 vs 加入 Step 9 后间歇失败，且失败一度牵连到无关的既有用例 `thirdConnectionRejected`，看起来
+很像资源争用）。定位到真实根因（响应阶段手牌状态的非确定性）并修正后，连续 12 次全量运行本用例
+12/12 通过。
+
+另在 `NetworkTest` 类新增 `cleanup()` 私有槽（每个用例结束后 `sendPostedEvents(...,
+QEvent::DeferredDelete)` + `processEvents()`），把 `GameServer::dropClient()` 里 `deleteLater()`
+的连接对象及时冲刷掉。这不是本次具体失败的根因，但作为全套件在用例数持续增长时的资源卫生保留。
+
+NetworkTest 增至 61 用例。
