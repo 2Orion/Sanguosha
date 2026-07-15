@@ -2,6 +2,19 @@
 
 ## Features
 
+### [2026-07-15] 网络层 Step 4 加固第三轮：出牌/弃牌回合归属校验 + 待定动作重入保护
+
+修复前两轮审查确认、但当时判定"边界超出网络接线、属甲的规则域"而搁置的两处深层规则缺口，用户决定现在修复：
+
+- **出牌/弃牌全链路不校验 `player == currentPlayer()`（critical，两轮独立审查都发现）**：`ActionViewModel::canPlayCard`/`playCard`/`discardCard` 和各 `Card::canUse` 子类只查全局 `currentPhase()`，从不检查调用者是不是当前回合玩家。本地模式靠 View 只让当前玩家手牌可交互侥幸掩盖，网络模式下非当前回合玩家能用自己真实（非伪造）身份在对方回合出/弃自己的牌。
+- **`GameState::setPendingAction` 无重入保护（critical，两轮独立审查都发现）**：即使调用者确实是当前回合玩家，出牌路径原先也不检查 `!hasPendingAction()`——当前回合玩家出杀后，趁对方的闪响应尚未结算，可以紧接着再出一张主动牌（如南蛮入侵/万箭齐发），`GameRule::executeKill`/`executeBarbarianInvasion` 等会无条件调用 `setPendingAction` 覆盖掉第一个待定动作，原来的闪响应永久悬空。
+
+**修复方式（刻意避免触碰 `Card.cpp`/`GameRule.cpp`/`GameState.cpp`，与甲的装备牌开发保持文件隔离）**：在 `ActionViewModel::canPlayCard` 入口补两条早退校验——`player != m_state->currentPlayer()` 和 `m_state->hasPendingAction()`；`ActionViewModel::discardCard` 补 `player != m_state->currentPlayer()`。三个校验点位于 `canPlayCard`/`discardCard` 内部，同时保护 View 命令入口（`onPlayCardRequested`）和直接调用（`playCard`），本地模式行为不受影响（本地模式下这些条件恒成立）。
+
+**涉及文件**：`src/ViewModel/ActionViewModel.cpp`、`tests/network_test.cpp`（+3 新用例）、`connection.md` §7.2/§7.3、`CLAUDE.md`（Step 4 计划项更新）。
+
+**验证**：NetworkTest 50 个用例（47 + 3 新增），5 次连续直接运行 + 全套件运行全部通过，无抖动。
+
 ### [2026-07-15] 网络层 Step 4 加固第二轮：advancePhase 悬空待定动作 + GameStarted 时序
 
 对第一轮加固后的代码做了第二轮独立对抗性审查（复用第一轮的 5 个视角 + 2 个之前因 API 中断未完成的维度），确认了以下额外问题并修复：

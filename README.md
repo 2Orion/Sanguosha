@@ -151,4 +151,4 @@ $env:QT_QPA_PLATFORM = "offscreen"; .\build\ViewTest.exe
 .\build\NetworkTest.exe
 ```
 
-当前完整套件通过，5 个测试目标均为正常断言通过；覆盖卡牌规则、响应权限、濒死救援、目标选择、主要 QWidget、App 生命周期、网络协议序列化/帧解码（半包/粘包）、ServerApp headless 启动路径（无 QApplication 环境下完整回合循环）以及 ServerApp↔GameServer 的双向接线与两轮对抗性审查加固（VM 广播顺序、7 条命令分发、跨连接身份伪造防护、越权推进阶段防护）。NetworkTest 共 47 个用例。
+当前完整套件通过，5 个测试目标均为正常断言通过；覆盖卡牌规则、响应权限、濒死救援、目标选择、主要 QWidget、App 生命周期、网络协议序列化/帧解码（半包/粘包）、ServerApp headless 启动路径（无 QApplication 环境下完整回合循环）以及 ServerApp↔GameServer 的双向接线与三轮对抗性审查加固（VM 广播顺序、7 条命令分发、跨连接身份伪造防护、越权推进阶段防护、出牌/弃牌回合归属校验、待定动作重入保护）。NetworkTest 共 50 个用例。

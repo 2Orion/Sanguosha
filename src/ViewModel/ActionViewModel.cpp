@@ -113,6 +113,16 @@ bool ActionViewModel::canPlayCard(int cardId, int playerId) const
     Player* player = findPlayer(playerId);
     if (!m_state || !card || !player || !isOwnCard(cardId, playerId)) return false;
 
+    // 出牌只能是当前回合玩家：card->canUse() 各子类只查全局 currentPhase()，
+    // 不查 player 是不是 currentPlayer()，本地模式靠 View 只让当前玩家手牌
+    // 可交互侥幸掩盖，网络模式下非当前回合玩家会用自己真实身份出牌。
+    if (player != m_state->currentPlayer()) return false;
+
+    // 待定响应（如杀等待闪、南蛮/万箭链）尚未结算时不能再出牌：GameState::
+    // setPendingAction 无重入保护，第二张主动牌会通过 executeKill 等静默
+    // 覆盖第一个待定动作，原响应永久悬空。
+    if (m_state->hasPendingAction()) return false;
+
     bool playable = (card->canUse(m_state, player) &&
                      GameRule::canPlayCard(m_state, player, card)) ||
                     playsAsKill(card, player);
@@ -309,6 +319,7 @@ void ActionViewModel::discardCard(int cardId, int playerId)
     Player* player = findPlayer(playerId);
     if (!m_state || !card || !player ||
         m_state->currentPhase() != PhaseType::Discard ||
+        player != m_state->currentPlayer() ||
         !isOwnCard(cardId, playerId)) return;
 
     player->removeHandCard(card);

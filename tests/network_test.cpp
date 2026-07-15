@@ -1343,6 +1343,159 @@ private slots:
             [&] { return !gvm->gameState()->hasPendingAction(); }, 3000));
     }
 
+    // ==================== 出牌/弃牌回合归属 + 待定动作重入保护回归测试 ====================
+    // 对应 connection.md §7.2/§7.3 记录的两处深层规则缺口，现已在
+    // ActionViewModel::canPlayCard/discardCard 内修复（不改 Card.cpp/GameRule.cpp/GameState.cpp）。
+
+    void playCardFromNonCurrentPlayerWithOwnIdentityIsRejected()
+    {
+        // 与 playCardCommandUsesConnectionIdentityNotClaimedPlayerId 不同：
+        // 这里玩家 1 用自己真实的连接身份（不伪造 playerId）出自己手里的牌，
+        // 只是当前回合属于玩家 0。此前 ActionViewModel::canPlayCard 从不校验
+        // player == currentPlayer()，这条请求会被错误地接受。
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        RawClient c0, c1;
+        QCOMPARE(c0.handshake(port), 0);
+        QCOMPARE(c1.handshake(port), 1);
+        c0.selectCharacter(0);
+        c1.selectCharacter(1);
+        QVERIFY(c0.waitFrames(7));
+
+        auto* gvm = app.gameViewModel();
+        gvm->onAdvanceRequested();  // Prepare → Judge
+        gvm->onAdvanceRequested();  // Judge → Draw
+        gvm->onAdvanceRequested();  // Draw → Play
+        QCOMPARE(gvm->currentPlayerId(), 0);
+
+        KillCard ownCard(CardSuit::Diamond, 5);
+        gvm->gameState()->player(1)->addHandCard(&ownCard);
+        const int handSizeBefore =
+            int(gvm->gameState()->player(1)->handCards().size());
+
+        c0.frames.clear();
+        c1.frames.clear();
+
+        PlayCardMsg msg;
+        msg.cardId = ownCard.id();
+        msg.playerId = 1;  // 玩家 1 的连接，如实填自己的 playerId
+        c1.send(MessageType::PlayCardRequested, msg);
+        QTest::qWait(200);  // 给服务器处理时间；预期无效，不该是玩家 1 的回合
+
+        QCOMPARE(int(gvm->gameState()->player(1)->handCards().size()), handSizeBefore);
+        QVERIFY(!gvm->gameState()->hasPendingAction());
+        QVERIFY(gvm->gameState()->player(1)->hasCard(&ownCard));
+    }
+
+    void discardCardFromNonCurrentPlayerWithOwnIdentityIsRejected()
+    {
+        // 与上一条对称：玩家 1 用真实身份，在玩家 0 的弃牌阶段弃自己的牌。
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        RawClient c0, c1;
+        QCOMPARE(c0.handshake(port), 0);
+        QCOMPARE(c1.handshake(port), 1);
+        c0.selectCharacter(0);
+        c1.selectCharacter(1);
+        QVERIFY(c0.waitFrames(7));
+
+        auto* gvm = app.gameViewModel();
+        KillCard extra(CardSuit::Diamond, 3);
+        gvm->gameState()->player(0)->addHandCard(&extra);
+
+        gvm->onAdvanceRequested();  // Prepare → Judge
+        gvm->onAdvanceRequested();  // Judge → Draw
+        gvm->onAdvanceRequested();  // Draw → Play
+        gvm->onEndPlayRequested();  // Play → Discard（玩家 0 手牌超限）
+        QCOMPARE(gvm->gameState()->currentPhase(), PhaseType::Discard);
+        QCOMPARE(gvm->currentPlayerId(), 0);
+
+        KillCard ownCard(CardSuit::Heart, 9);
+        gvm->gameState()->player(1)->addHandCard(&ownCard);
+        const int handSizeBefore =
+            int(gvm->gameState()->player(1)->handCards().size());
+
+        DiscardCardMsg msg;
+        msg.cardId = ownCard.id();
+        msg.playerId = 1;  // 玩家 1 的连接，如实填自己的 playerId
+        c1.send(MessageType::DiscardCardRequested, msg);
+        QTest::qWait(200);  // 给服务器处理时间；预期无效，弃牌阶段不属于玩家 1
+
+        QCOMPARE(int(gvm->gameState()->player(1)->handCards().size()), handSizeBefore);
+        QVERIFY(gvm->gameState()->player(1)->hasCard(&ownCard));
+        QCOMPARE(gvm->gameState()->currentPhase(), PhaseType::Discard);  // 阶段未受影响
+    }
+
+    void secondActiveCardWhilePendingActionUnresolvedIsRejected()
+    {
+        // GameState::setPendingAction 本身无重入保护：若 ActionViewModel::canPlayCard
+        // 不主动挡住"待定响应尚未结算时再出一张主动牌"，第二张牌会通过
+        // GameRule::executeBarbarianInvasion 等静默覆盖第一个待定动作（第一张杀的
+        // 闪响应永久悬空）。
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        RawClient c0, c1;
+        QCOMPARE(c0.handshake(port), 0);
+        QCOMPARE(c1.handshake(port), 1);
+        c0.selectCharacter(0);
+        c1.selectCharacter(1);
+        QVERIFY(c0.waitFrames(7));
+
+        auto* gvm = app.gameViewModel();
+        auto* avm = app.actionViewModel();
+        KillCard kill(CardSuit::Spade, 7);
+        DodgeCard dodge(CardSuit::Heart, 6);
+        BarbarianCard barbarian(CardSuit::Club, 1);
+        gvm->gameState()->player(0)->addHandCard(&kill);
+        gvm->gameState()->player(0)->addHandCard(&barbarian);
+        gvm->gameState()->player(1)->addHandCard(&dodge);
+
+        gvm->onAdvanceRequested();  // Prepare → Judge
+        gvm->onAdvanceRequested();  // Judge → Draw
+        gvm->onAdvanceRequested();  // Draw → Play
+
+        PlayCardMsg killMsg;
+        killMsg.cardId = kill.id();
+        killMsg.playerId = 0;
+        c0.send(MessageType::PlayCardRequested, killMsg);
+        QVERIFY(QTest::qWaitFor(
+            [&] { return gvm->gameState()->hasPendingAction(); }, 3000));
+        QCOMPARE(gvm->gameState()->pendingActionInfo().requiredCardType, CardType::Dodge);
+
+        // 玩家 0（当前回合玩家，身份合法）在闪响应结算前紧接着打出南蛮入侵——不应生效
+        PlayCardMsg barbarianMsg;
+        barbarianMsg.cardId = barbarian.id();
+        barbarianMsg.playerId = 0;
+        c0.send(MessageType::PlayCardRequested, barbarianMsg);
+        QTest::qWait(200);
+
+        QVERIFY(gvm->gameState()->player(0)->hasCard(&barbarian));  // 南蛮入侵未被打出
+        QCOMPARE(gvm->gameState()->pendingActionInfo().requiredCardType,
+                 CardType::Dodge);  // 原待定动作（闪）未被覆盖
+        QVERIFY(avm->isValidResponseCard(dodge.id(), 1, CardType::Dodge));  // 闪仍可响应
+
+        // 玩家 1 正常出闪响应，清空待定动作后，玩家 0 才能真正打出南蛮入侵
+        RespondCardMsg respondMsg;
+        respondMsg.cardId = dodge.id();
+        respondMsg.responderId = 1;
+        c1.send(MessageType::RespondCardRequested, respondMsg);
+        QVERIFY(QTest::qWaitFor(
+            [&] { return !gvm->gameState()->hasPendingAction(); }, 3000));
+
+        c0.send(MessageType::PlayCardRequested, barbarianMsg);
+        QVERIFY(QTest::qWaitFor([&] {
+            return gvm->gameState()->hasPendingAction() &&
+                   gvm->gameState()->pendingActionInfo().requiredCardType == CardType::Kill;
+        }, 3000));
+        QVERIFY(!gvm->gameState()->player(0)->hasCard(&barbarian));
+    }
+
     void corruptedLengthPrefixRejected()
     {
         // 长度前缀超过 kMaxFrameSize → 流损坏
