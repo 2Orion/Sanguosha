@@ -223,6 +223,16 @@ public:
 > 当前信号/槽的权威映射见 [`connection.md`](connection.md)。
 >
 > 本节不再沿用原稿的 `EventListener<T>` 观察者模式和 `GameController` 虚接口设计。当前代码采用 Qt 信号/槽，View 不持有 ViewModel/Model 指针；网络层复用现有信号槽形状，通过 `ServerApp`/`ClientApp` 做组装，不给 View 层新增 Controller 抽象。
+>
+> **手牌脱敏落地位置与原稿（§2.2 表格、`GameServer::broadcastHandCards`）不同**：脱敏的裁剪逻辑
+> `Protocol::redactCardList` 实际落在 `src/Network/Protocol.h/cpp`（纯函数，只做 `CardList` →
+> `CardList` 的字段裁剪，不碰 socket），按接收方分别发送的逻辑落在 `ServerApp::
+> wireViewModelBroadcasts()`（两次 `GameServer::sendTo`），而不是 `GameServer.cpp` 内部一个
+> `broadcastHandCards` 方法。原因：`GameServer` 定位是纯传输层（连接管理/帧编解码/收发），不感知
+> "谁是所有者、谁是对手"这层游戏语义；`ServerApp` 已经持有这层上下文（`GameViewModel::
+> handCardsUpdated(playerId, cards)` 的 `playerId` 就是所有者），所以裁剪后的分发直接在
+> `ServerApp` 里完成更自然。`GameServer::sendTo`/`broadcast` 接口本身未变。详见
+> [`connection.md`](connection.md) §7.1.1。
 
 ### 2.1 架构设计
 

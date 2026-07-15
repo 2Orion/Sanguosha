@@ -312,7 +312,7 @@ ViewModel ──信号──► View 槽（SGSApp 建立直连）
 |---------------|-------------|-----------|
 | `phaseChanged(PhaseType)` | `PhaseChanged` | `PhaseChangedMsg` |
 | `playerDataUpdated(int, PlayerData)` | `PlayerDataUpdated` | `PlayerDataMsg` |
-| `handCardsUpdated(int, CardList)` | `HandCardsUpdated` | `HandCardsMsg`（**暂未脱敏，见 Step 5**） |
+| `handCardsUpdated(int, CardList)` | `HandCardsUpdated` | `HandCardsMsg`（**已脱敏，见下方 7.1.1**） |
 | `pendingActionCreated(PendingActionData)` | `PendingActionCreated` | `PendingActionMsg` |
 | `pendingActionCleared()` | `PendingActionCleared` | 无 payload |
 | `gameOver(int)` | `GameOver` | `GameOverMsg` |
@@ -325,6 +325,38 @@ ViewModel ──信号──► View 槽（SGSApp 建立直连）
 `GameStarted → PhaseChanged → PlayerDataUpdated/HandCardsUpdated → ...`
 （`startHeadlessGame` 内部 `startGame()` 会同步 emit 这些初始状态信号，若接线/广播 GameStarted
 晚于这一步，客户端会先收到状态更新、后收到 GameStarted，顺序就反了）。
+
+#### 7.1.1 手牌脱敏（Step 5）
+
+`handCardsUpdated(int playerId, CardList)` 不能像其余信号一样用 `GameServer::broadcast`
+统一广播同一份 payload——手牌所有者本人需要完整牌面，对手不能看到。`ServerApp::
+wireViewModelBroadcasts()` 里这一条槽改为两次 `GameServer::sendTo`：
+
+```cpp
+connect(m_gvm, &GameViewModel::handCardsUpdated, this,
+        [this](int playerId, const CardList& cards) {
+    HandCardsMsg fullMsg; fullMsg.playerId = playerId; fullMsg.cards = cards;
+    m_server->sendTo(playerId, MessageType::HandCardsUpdated,
+                     MessageSerializer::encodePayload(fullMsg));
+
+    HandCardsMsg redactedMsg;
+    redactedMsg.playerId = playerId;
+    redactedMsg.cards = redactCardList(cards);   // Protocol::redactCardList
+    m_server->sendTo(1 - playerId, MessageType::HandCardsUpdated,
+                     MessageSerializer::encodePayload(redactedMsg));
+});
+```
+
+`Protocol::redactCardList`（`src/Network/Protocol.h/cpp`）对每张 `CardData` 只保留
+`cardId`/`ownerId`，其余牌面字段（`cardType`/`suit`/`number`/`cardName`/`description`/
+`color`/`isBasic`/`isStrategy`/`suitSymbol`/`numberString`/`isEquipment`/`equipSlot`/
+`attackRange`/`isSelected`/`isPlayable`/`isHighlighted`）重置为默认构造的占位值；
+列表长度（张数）不变。`HandCardsMsg::playerId` 字段语义保持"这是谁的手牌"，与"收件人是谁"
+无关——同一次 Model 更新会产生两条不同 payload 的消息，分别 `sendTo` 给所有者和对手。
+
+回归测试见 `tests/network_test.cpp`：`redactCardListKeepsIdentityDropsFace`（纯函数单测）、
+`handCardsBroadcastRedactedForOpponentFullForOwner`（两个真实连接互看：己方完整、对方占位、
+cardId 集合仍一致）。
 
 ### 7.2 GameServer → VM（命令分发，`ServerApp::onClientCommandReceived`）
 

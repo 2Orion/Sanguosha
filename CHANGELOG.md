@@ -2,6 +2,21 @@
 
 ## Features
 
+### [2026-07-15] 网络层 Step 5：手牌脱敏
+
+`GameServer` 广播 `HandCardsUpdated` 此前对两端一视同仁：`ServerApp::wireViewModelBroadcasts()`
+里这条槽直接用 `GameServer::broadcast` 把同一份完整 `CardList` payload 发给两个客户端，对手能看到
+己方的完整手牌牌面——网络对战最基本的信息安全前提被破坏（P0，不可砍）。
+
+**修复方式**：
+
+- 新增 `Protocol::redactCardList(const CardList&)`（`src/Network/Protocol.h/cpp`，纯函数、无 Model 依赖）：对每张 `CardData` 只保留 `cardId`/`ownerId`（结构信息），其余牌面字段（`cardType`/`suit`/`number`/`cardName`/`description`/`color`/`isBasic`/`isStrategy`/`suitSymbol`/`numberString`/`isEquipment`/`equipSlot`/`attackRange`/`isSelected`/`isPlayable`/`isHighlighted`）重置为默认构造的占位值，列表长度不变。
+- `ServerApp::wireViewModelBroadcasts()` 的 `handCardsUpdated` 槽不再用 `broadcast`，改为两次 `GameServer::sendTo`：所有者本人收未经处理的完整 `CardList`，对手收 `redactCardList` 处理后的结果。`HandCardsMsg::playerId` 字段语义仍是"这是谁的手牌"，与"收件人是谁"无关。
+
+**涉及文件**：`src/Network/Protocol.h`（+声明）、`src/Network/Protocol.cpp`（新建）、`CMakeLists.txt`（`NETWORK_SOURCES` 加入 `Protocol.cpp`）、`src/App/ServerApp.h/cpp`、`tests/network_test.cpp`（+2 新用例）、`connection.md` §7.1/7.1.1、`CLAUDE.md`（Step 5 计划项打勾）、`README.md`（测试用例数 + 目录结构说明）。
+
+**验证**：`redactCardListKeepsIdentityDropsFace`（纯函数单测：cardId/ownerId 保留，牌面字段全部占位）+ `handCardsBroadcastRedactedForOpponentFullForOwner`（两个真实 TCP 连接跑完整对局：己方视角至少一张牌有真实牌名，对手视角牌名/描述/装备标记全部占位，双方 cardId 集合排序后一致）。NetworkTest 增至 50 个用例，10 次连续直接运行 + 3 次全套件运行全部通过，无抖动（其中一次单跑遇到过一次超时式失败，重跑及后续 10 次均通过，判定为 loopback 下的偶发调度抖动，非新增代码引入的问题）。
+
 ### [2026-07-15] 网络层 Step 4 加固第三轮：出牌/弃牌回合归属校验 + 待定动作重入保护
 
 修复前两轮审查确认、但当时判定"边界超出网络接线、属甲的规则域"而搁置的两处深层规则缺口，用户决定现在修复：

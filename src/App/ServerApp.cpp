@@ -110,12 +110,22 @@ void ServerApp::wireViewModelBroadcasts()
     });
     connect(m_gvm, &GameViewModel::handCardsUpdated, this,
             [this](int playerId, const CardList& cards) {
-        // Step 4 暂不脱敏：两端都收到完整牌面，Step 5 补按接收方裁剪
-        HandCardsMsg msg;
-        msg.playerId = playerId;
-        msg.cards = cards;
-        m_server->broadcast(MessageType::HandCardsUpdated,
-                            MessageSerializer::encodePayload(msg));
+        // 按接收方裁剪：所有者本人收完整牌面，对手只收 cardId/ownerId，
+        // 牌面字段（cardType/cardName/description 等）已被 redactCardList 置为占位值。
+        // 两条广播的消息体都保留 msg.playerId = 所有者 id（谁的手牌，而非收件人），
+        // 不能用 GameServer::broadcast 统一广播同一份 payload。
+        HandCardsMsg fullMsg;
+        fullMsg.playerId = playerId;
+        fullMsg.cards = cards;
+        m_server->sendTo(playerId, MessageType::HandCardsUpdated,
+                         MessageSerializer::encodePayload(fullMsg));
+
+        HandCardsMsg redactedMsg;
+        redactedMsg.playerId = playerId;
+        redactedMsg.cards = redactCardList(cards);
+        const int opponentId = 1 - playerId;
+        m_server->sendTo(opponentId, MessageType::HandCardsUpdated,
+                         MessageSerializer::encodePayload(redactedMsg));
     });
     connect(m_gvm, &GameViewModel::pendingActionCreated, this,
             [this](const PendingActionData& info) {

@@ -392,6 +392,43 @@ private slots:
         compareCardData(dst.cards[1], src.cards[1]);
     }
 
+    // ==================== 手牌脱敏（Step 5） ====================
+
+    void redactCardListKeepsIdentityDropsFace()
+    {
+        CardData full = makeCardData();
+        full.cardId = 42;
+        full.ownerId = 1;
+        const CardList src = {full, CardData{}};
+        const CardList redacted = redactCardList(src);
+
+        QCOMPARE(redacted.size(), src.size());
+        for (int i = 0; i < redacted.size(); ++i) {
+            QCOMPARE(redacted[i].cardId, src[i].cardId);
+            QCOMPARE(redacted[i].ownerId, src[i].ownerId);
+        }
+
+        // 牌面字段必须被重置为占位值，不能是原样透传
+        const CardData& r = redacted[0];
+        const CardData placeholder{};
+        QCOMPARE(r.cardType, placeholder.cardType);
+        QCOMPARE(r.suit, placeholder.suit);
+        QCOMPARE(r.number, placeholder.number);
+        QCOMPARE(r.cardName, placeholder.cardName);
+        QCOMPARE(r.description, placeholder.description);
+        QCOMPARE(r.color, placeholder.color);
+        QCOMPARE(r.isBasic, placeholder.isBasic);
+        QCOMPARE(r.isStrategy, placeholder.isStrategy);
+        QCOMPARE(r.suitSymbol, placeholder.suitSymbol);
+        QCOMPARE(r.numberString, placeholder.numberString);
+        QCOMPARE(r.isSelected, placeholder.isSelected);
+        QCOMPARE(r.isPlayable, placeholder.isPlayable);
+        QCOMPARE(r.isHighlighted, placeholder.isHighlighted);
+        QCOMPARE(r.isEquipment, placeholder.isEquipment);
+        QCOMPARE(r.equipSlot, placeholder.equipSlot);
+        QCOMPARE(r.attackRange, placeholder.attackRange);
+    }
+
     void pendingActionMsgRoundTrip()
     {
         PendingActionMsg src;
@@ -795,6 +832,79 @@ private slots:
         const auto phase = MessageSerializer::decodePayload<PhaseChangedMsg>(
             c0.frames[phaseIdx].payload);
         QCOMPARE(phase.phase, PhaseType::Prepare);
+    }
+
+    void handCardsBroadcastRedactedForOpponentFullForOwner()
+    {
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        RawClient c0, c1;
+        QCOMPARE(c0.handshake(port), 0);
+        QCOMPARE(c1.handshake(port), 1);
+        c0.selectCharacter(0);
+        c1.selectCharacter(1);
+        QVERIFY(c0.waitFrames(7));
+        QVERIFY(c1.waitFrames(7));
+
+        auto collectHandFrames = [](RawClient& c) {
+            QVector<HandCardsMsg> hands;
+            for (const auto& f : c.frames) {
+                if (f.type == MessageType::HandCardsUpdated)
+                    hands.push_back(MessageSerializer::decodePayload<HandCardsMsg>(f.payload));
+            }
+            return hands;
+        };
+        auto findByOwner = [](const QVector<HandCardsMsg>& hands, int ownerId) -> const HandCardsMsg* {
+            for (const auto& h : hands)
+                if (h.playerId == ownerId) return &h;
+            return nullptr;
+        };
+
+        const auto c0Hands = collectHandFrames(c0);
+        const auto c1Hands = collectHandFrames(c1);
+        QCOMPARE(c0Hands.size(), 2);
+        QCOMPARE(c1Hands.size(), 2);
+
+        const HandCardsMsg* c0Own = findByOwner(c0Hands, 0);  // c0 看自己（玩家0）的手牌
+        const HandCardsMsg* c0Opp = findByOwner(c0Hands, 1);  // c0 看对手（玩家1）的手牌
+        const HandCardsMsg* c1Own = findByOwner(c1Hands, 1);
+        const HandCardsMsg* c1Opp = findByOwner(c1Hands, 0);
+        QVERIFY(c0Own && c0Opp && c1Own && c1Opp);
+
+        // 脱敏不改变张数
+        QCOMPARE(c0Opp->cards.size(), c1Own->cards.size());
+        QCOMPARE(c1Opp->cards.size(), c0Own->cards.size());
+
+        // 己方视角：完整牌面（起始手牌非空，至少一张有真实牌名）
+        QVERIFY(!c0Own->cards.isEmpty());
+        QVERIFY(std::any_of(c0Own->cards.begin(), c0Own->cards.end(),
+                            [](const CardData& d) { return !d.cardName.isEmpty(); }));
+        QVERIFY(!c1Own->cards.isEmpty());
+        QVERIFY(std::any_of(c1Own->cards.begin(), c1Own->cards.end(),
+                            [](const CardData& d) { return !d.cardName.isEmpty(); }));
+
+        // 对手视角：牌面字段全部占位
+        for (const CardData& d : c0Opp->cards) {
+            QVERIFY(d.cardName.isEmpty());
+            QVERIFY(d.description.isEmpty());
+            QCOMPARE(d.isEquipment, false);
+            QCOMPARE(d.isSelected, false);
+            QCOMPARE(d.isPlayable, false);
+        }
+        for (const CardData& d : c1Opp->cards) {
+            QVERIFY(d.cardName.isEmpty());
+            QCOMPARE(d.isEquipment, false);
+        }
+
+        // cardId 集合仍保留（脱敏只隐藏牌面，不隐藏结构信息）
+        QVector<int> c0OwnIds, c1OppIds;
+        for (const auto& d : c0Own->cards) c0OwnIds.push_back(d.cardId);
+        for (const auto& d : c1Opp->cards) c1OppIds.push_back(d.cardId);
+        std::sort(c0OwnIds.begin(), c0OwnIds.end());
+        std::sort(c1OppIds.begin(), c1OppIds.end());
+        QCOMPARE(c1OppIds, c0OwnIds);
     }
 
     void playCardCommandUsesConnectionIdentityNotClaimedPlayerId()

@@ -13,7 +13,8 @@ class GameServer;
 /// 不创建任何 QWidget。持有 GameServer：
 ///   · VM 对外信号（同 View 收到的形状，见 connection.md）→ 序列化 → GameServer::broadcast
 ///   · GameServer 收到的客户端命令 → 反序列化 → 调 VM 的 public slots
-/// 手牌广播暂未按接收方脱敏（P0 项，见 Step 5），当前两端都能收到完整 CardList。
+/// 手牌广播已按接收方脱敏（Step 5）：所有者本人收完整 CardList，对手收
+/// `Protocol::redactCardList` 处理后的占位牌面（保留 cardId/ownerId）。
 class ServerApp : public QObject {
     Q_OBJECT
 public:

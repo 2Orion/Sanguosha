@@ -131,6 +131,16 @@ struct TargetSelectionStartedMsg {    // S→C ~ targetSelectionStarted(QVector<
     QVector<int> targetIds;
 };
 
+// ==================== 手牌脱敏（Step 5） ====================
+
+/// 手牌脱敏：仅保留 cardId/ownerId（结构信息，用于己方界面按 id 定位/操作自己的牌，
+/// 对手侧不构成信息泄漏），其余牌面字段（cardType/suit/number/cardName/description/
+/// color/isBasic/isStrategy/suitSymbol/numberString/isEquipment/equipSlot/attackRange/
+/// isSelected/isPlayable/isHighlighted）重置为默认占位值。列表长度（张数）不变。
+/// `GameServer` 广播 `HandCardsUpdated` 给非手牌所有者的客户端时使用；所有者本人
+/// 收到未经处理的完整 `CardList`。
+CardList redactCardList(const CardList& cards);
+
 } // namespace Protocol
 
 #endif // NETWORK_PROTOCOL_H

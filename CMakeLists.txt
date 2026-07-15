@@ -65,6 +65,7 @@ target_link_libraries(SanguoshaModel
 # ==================== Network 层 ====================
 
 set(NETWORK_SOURCES
+    src/Network/Protocol.cpp
     src/Network/MessageSerializer.cpp
     src/Network/GameServer.cpp
 )
