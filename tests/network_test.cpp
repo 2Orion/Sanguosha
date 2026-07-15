@@ -3,9 +3,14 @@
 //   Step 2：ServerApp headless 启动路径（QTEST_GUILESS_MAIN 下运行，
 //           进程无 QApplication，任何 QWidget 创建都会直接失败——
 //           这本身就是"零 View 依赖"的验证）
+//   Step 3：GameServer 连接管理与握手（同进程 loopback；注意不能用
+//           waitForConnected 之类的阻塞等待，必须用 QTest::qWaitFor
+//           驱动主事件循环，否则 QTcpServer 收不到连接）
 #include <QtTest/QtTest>
+#include <QTcpSocket>
 #include "Protocol.h"
 #include "MessageSerializer.h"
+#include "GameServer.h"
 #include "ServerApp.h"
 #include "GameViewModel.h"
 #include "ActionViewModel.h"
@@ -110,6 +115,65 @@ Msg frameRoundTrip(MessageType type, const Msg& msg)
     Q_ASSERT(buffer.isEmpty());
     return MessageSerializer::decodePayload<Msg>(frames[0].payload);
 }
+
+/// 测试端的裸 TCP 客户端辅助：连接 / 收帧（全部经 QTest::qWaitFor 驱动事件循环）
+struct RawClient {
+    QTcpSocket socket;
+    QByteArray recvBuffer;
+    QVector<Frame> frames;
+
+    bool connectTo(quint16 port, int timeoutMs = 8000)
+    {
+        socket.connectToHost(QHostAddress::LocalHost, port);
+        return QTest::qWaitFor(
+            [this] { return socket.state() == QAbstractSocket::ConnectedState; },
+            timeoutMs);
+    }
+
+    template <typename Msg>
+    void send(MessageType type, const Msg& msg)
+    {
+        socket.write(MessageSerializer::encode(type, msg));
+    }
+
+    void send(MessageType type)
+    {
+        socket.write(MessageSerializer::encode(type));
+    }
+
+    /// 等待累计收到至少 count 帧（新帧追加到 frames）
+    bool waitFrames(int count, int timeoutMs = 8000)
+    {
+        return QTest::qWaitFor([this, count] {
+            recvBuffer.append(socket.readAll());
+            MessageSerializer::decodeFrames(recvBuffer, frames);
+            return frames.size() >= count;
+        }, timeoutMs);
+    }
+
+    bool waitDisconnected(int timeoutMs = 8000)
+    {
+        return QTest::qWaitFor(
+            [this] { return socket.state() == QAbstractSocket::UnconnectedState; },
+            timeoutMs);
+    }
+
+    /// 完成连接 + 握手，返回分配的 playerId（失败返回 -2）
+    int handshake(quint16 port)
+    {
+        if (!connectTo(port))
+            return -2;
+        send(MessageType::Handshake, HandshakeMsg{});
+        if (!waitFrames(1))
+            return -2;
+        if (frames[0].type != MessageType::HandshakeAck)
+            return -2;
+        const auto ack =
+            MessageSerializer::decodePayload<HandshakeAckMsg>(frames[0].payload);
+        frames.clear();
+        return ack.playerId;
+    }
+};
 
 } // namespace
 
@@ -517,6 +581,164 @@ private slots:
         QSignalSpy phaseSpy(secondGvm, &GameViewModel::phaseChanged);
         secondGvm->onAdvanceRequested();  // Prepare → Judge
         QVERIFY(phaseSpy.count() > 0);
+    }
+
+    // ==================== Step 3：GameServer 握手 ====================
+
+    void handshakeAssignsPlayerIds()
+    {
+        GameServer server;
+        QVERIFY(server.listen(0, true));  // 随机端口，避免测试环境端口冲突
+        const quint16 port = server.serverPort();
+        QSignalSpy connectedSpy(&server, &GameServer::clientConnected);
+
+        RawClient c0, c1;
+        QCOMPARE(c0.handshake(port), 0);
+        QCOMPARE(c1.handshake(port), 1);
+        QCOMPARE(server.connectedClientCount(), 2);
+        QVERIFY(server.isPlayerConnected(0));
+        QVERIFY(server.isPlayerConnected(1));
+        QCOMPARE(connectedSpy.count(), 2);
+        QCOMPARE(connectedSpy.at(0).at(0).toInt(), 0);
+        QCOMPARE(connectedSpy.at(1).at(0).toInt(), 1);
+    }
+
+    void thirdConnectionRejected()
+    {
+        GameServer server;
+        QVERIFY(server.listen(0, true));
+        const quint16 port = server.serverPort();
+
+        RawClient c0, c1;
+        QCOMPARE(c0.handshake(port), 0);
+        QCOMPARE(c1.handshake(port), 1);
+
+        // 第三个连接：连上即收到拒绝 Ack（playerId=-1），随后被断开
+        RawClient c2;
+        QVERIFY(c2.connectTo(port));
+        QVERIFY(c2.waitFrames(1));
+        QCOMPARE(c2.frames[0].type, MessageType::HandshakeAck);
+        const auto ack = MessageSerializer::decodePayload<HandshakeAckMsg>(
+            c2.frames[0].payload);
+        QCOMPARE(ack.playerId, -1);
+        QCOMPARE(ack.reason, QStringLiteral("房间已满"));
+        QVERIFY(c2.waitDisconnected());
+
+        // 原有两个连接不受影响
+        QCOMPARE(server.connectedClientCount(), 2);
+    }
+
+    void versionMismatchRejected()
+    {
+        GameServer server;
+        QVERIFY(server.listen(0, true));
+
+        RawClient c;
+        QVERIFY(c.connectTo(server.serverPort()));
+        HandshakeMsg msg;
+        msg.protocolVersion = 999;
+        c.send(MessageType::Handshake, msg);
+        QVERIFY(c.waitFrames(1));
+        const auto ack = MessageSerializer::decodePayload<HandshakeAckMsg>(
+            c.frames[0].payload);
+        QCOMPARE(ack.playerId, -1);
+        QVERIFY(ack.reason.contains(QStringLiteral("协议版本")));
+        QVERIFY(c.waitDisconnected());
+        QCOMPARE(server.connectedClientCount(), 0);
+    }
+
+    void selectCharacterTriggersReady()
+    {
+        GameServer server;
+        QVERIFY(server.listen(0, true));
+        const quint16 port = server.serverPort();
+        QSignalSpy readySpy(&server, &GameServer::bothPlayersReady);
+
+        RawClient c0, c1;
+        QCOMPARE(c0.handshake(port), 0);
+        QCOMPARE(c1.handshake(port), 1);
+
+        SelectCharacterMsg sel0;
+        sel0.characterId = 0;  // 曹操
+        c0.send(MessageType::SelectCharacter, sel0);
+        QTest::qWait(50);
+        QCOMPARE(readySpy.count(), 0);  // 只有一方选将，不触发
+        QCOMPARE(server.selectedCharacter(0), 0);
+
+        SelectCharacterMsg sel1;
+        sel1.characterId = 1;  // 关羽
+        c1.send(MessageType::SelectCharacter, sel1);
+        QVERIFY(QTest::qWaitFor([&] { return readySpy.count() > 0; }, 8000));
+        QCOMPARE(readySpy.count(), 1);
+        QCOMPARE(readySpy.at(0).at(0).toInt(), 0);
+        QCOMPARE(readySpy.at(0).at(1).toInt(), 1);
+    }
+
+    void disconnectFreesSlotForReconnect()
+    {
+        GameServer server;
+        QVERIFY(server.listen(0, true));
+        const quint16 port = server.serverPort();
+        QSignalSpy disconnectedSpy(&server, &GameServer::clientDisconnected);
+
+        RawClient c0;
+        auto* c1 = new RawClient;
+        QCOMPARE(c0.handshake(port), 0);
+        QCOMPARE(c1->handshake(port), 1);
+
+        c1->socket.disconnectFromHost();
+        QVERIFY(QTest::qWaitFor(
+            [&] { return disconnectedSpy.count() > 0; }, 8000));
+        QCOMPARE(disconnectedSpy.at(0).at(0).toInt(), 1);
+        QCOMPARE(server.connectedClientCount(), 1);
+        delete c1;
+
+        // 新客户端拿到被释放的 playerId 1
+        RawClient c2;
+        QCOMPARE(c2.handshake(port), 1);
+        QCOMPARE(server.connectedClientCount(), 2);
+    }
+
+    void preHandshakeCommandsIgnored()
+    {
+        GameServer server;
+        QVERIFY(server.listen(0, true));
+        QSignalSpy commandSpy(&server, &GameServer::clientCommandReceived);
+        QSignalSpy readySpy(&server, &GameServer::bothPlayersReady);
+
+        RawClient c;
+        QVERIFY(c.connectTo(server.serverPort()));
+        // 未握手直接发命令/选将：全部忽略，不崩溃、不转发
+        PlayCardMsg play;
+        play.cardId = 1;
+        play.playerId = 0;
+        c.send(MessageType::PlayCardRequested, play);
+        SelectCharacterMsg sel;
+        sel.characterId = 0;
+        c.send(MessageType::SelectCharacter, sel);
+        QTest::qWait(100);
+        QCOMPARE(commandSpy.count(), 0);
+        QCOMPARE(readySpy.count(), 0);
+        QCOMPARE(server.selectedCharacter(0), -1);
+    }
+
+    void corruptedStreamDropsClient()
+    {
+        GameServer server;
+        QVERIFY(server.listen(0, true));
+        RawClient c;
+        QCOMPARE(c.handshake(server.serverPort()), 0);
+
+        // 直接写超限长度前缀 → 服务器判定流损坏并断开
+        QByteArray garbage;
+        {
+            QDataStream out(&garbage, QDataStream::WriteOnly);
+            out.setVersion(MessageSerializer::kStreamVersion);
+            out << quint32(Protocol::kMaxFrameSize + 1);
+        }
+        c.socket.write(garbage);
+        QVERIFY(c.waitDisconnected());
+        QCOMPARE(server.connectedClientCount(), 0);
     }
 
     void corruptedLengthPrefixRejected()

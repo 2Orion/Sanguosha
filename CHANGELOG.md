@@ -2,6 +2,14 @@
 
 ## Features
 
+### [2026-07-15] 网络层 Step 3：GameServer 连接管理与握手（plan2.0.md §2.3）
+
+新建 `src/Network/GameServer.h/cpp`：QTcpServer 监听（`listen(port, localOnly)`，`localOnly=true` 绑 127.0.0.1 供测试用、不触发 Windows 防火墙弹窗；生产默认绑 Any）、最多 2 连接、playerId 0/1 按空槽分配、逐客户端 recvBuffer 帧解码（流损坏即断开）、`Handshake`（含协议版本校验）→ `HandshakeAck` → `SelectCharacter` → `bothPlayersReady` 流程、超员连接回 `Ack(playerId=-1, "房间已满")` 后断开、断线释放槽位可重连。未握手的命令/选将一律忽略。命令消息经 `clientCommandReceived` 信号转出（Step 4 由 ServerApp 分发到 VM public slots）。
+
+**涉及文件**：`src/Network/GameServer.h/cpp`、`tests/network_test.cpp`、`CMakeLists.txt`
+
+**验证**：7 个新用例（playerId 分配、第三连接拒绝、版本不符拒绝、双方选将触发 ready、断线重连复用槽位、未握手命令忽略、损坏流断开），裸 QTcpSocket 连 loopback、`QTest::qWaitFor` 驱动事件循环（不能用 `waitForConnected`——同进程测试会阻塞主循环导致 QTcpServer 收不到连接）。全套件 5/5 通过；曾观察到重链接后首跑一次超时（疑似 Defender 扫描新 exe 延迟），已把测试超时提高到 8s，此后 10+ 次连跑稳定。
+
 ### [2026-07-15] 网络层 Step 2：ServerApp headless 启动路径（plan2.0.md §2.3）
 
 新建 `src/App/ServerApp.h/cpp`：`startHeadlessGame(charId1, charId2)` 创建完整 `GameViewModel`（含 ActionViewModel/Model），不创建任何 QWidget；重复开局用 `deleteLater()` 释放上一局对象图（与 `SGSApp` 一致）；`gameOver` 透传为 `gameFinished(winnerId)` 信号，VM 保留到下局开始（末批状态推送需经事件循环送达）。暴露 `gameViewModel()`/`actionViewModel()` 供 Step 4 的 GameServer 命令分发使用。

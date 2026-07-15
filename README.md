@@ -43,7 +43,8 @@ Sanguosha/
 │   ├── Model/                # QObject + 信号
 │   ├── Network/              # 网络层（局域网对战，开发中）
 │   │   ├── Protocol.h        # 协议版本号 + MessageType + 消息结构体
-│   │   └── MessageSerializer.h/cpp # QDataStream 序列化 + 帧封装/解码
+│   │   ├── MessageSerializer.h/cpp # QDataStream 序列化 + 帧封装/解码
+│   │   └── GameServer.h/cpp  # QTcpServer：连接管理/握手/选将（零 Model 依赖）
 │   ├── ViewModel/            # QObject + 信号/槽
 │   │   ├── ActionViewModel.h/cpp
 │   │   └── GameViewModel.h/cpp
@@ -62,7 +63,7 @@ Sanguosha/
     ├── model_test.cpp          # Model Qt Test
     ├── viewmodel_test.cpp      # ViewModel Qt Test
     ├── view_test.cpp           # View/App Qt Widgets Test
-    └── network_test.cpp        # Network Qt Test（序列化/帧解码/ServerApp headless）
+    └── network_test.cpp        # Network Qt Test（序列化/帧解码/ServerApp headless/GameServer 握手）
 ```
 
 ---

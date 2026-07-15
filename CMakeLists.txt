@@ -66,11 +66,13 @@ target_link_libraries(SanguoshaModel
 
 set(NETWORK_SOURCES
     src/Network/MessageSerializer.cpp
+    src/Network/GameServer.cpp
 )
 
 set(NETWORK_HEADERS
     src/Network/Protocol.h
     src/Network/MessageSerializer.h
+    src/Network/GameServer.h
 )
 
 add_library(SanguoshaNetwork STATIC
