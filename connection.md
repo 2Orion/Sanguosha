@@ -527,3 +527,33 @@ emit，且 `handCardsUpdated` 脱敏结果通过 `GameClient` 转发后仍然正
 `QTEST_GUILESS_MAIN` 切到 `QTEST_MAIN`（`ClientApp` 内部创建真实 `GameBoardWidget` 需要
 `QApplication`），CMake 侧给 `NetworkTest` 加了 `Qt::Widgets` 链接和 `QT_QPA_PLATFORM=offscreen`
 环境变量（CTest 层面，与 `ViewTest` 做法一致）。
+
+### 7.7 心跳保活（Step 8）
+
+`GameServer` 持有一个 `QTimer`（`m_heartbeatTimer`，默认周期 `m_heartbeatIntervalMs = 3000ms`），
+每次 `timeout` 触发 `onHeartbeatTick()`：遍历所有已握手的 `ClientSlot`，给每个客户端发一条
+`Ping`（无 payload）。每个 `ClientSlot` 新增 `lastSeenTimer`（`QElapsedTimer`），在
+`onSocketReadyRead` 里只要收到任意一帧（不论是命令帧还是 `Pong`）就 `restart()`；
+`onHeartbeatTick()` 检查若某客户端的 `lastSeenTimer.elapsed()` 超过 `m_heartbeatTimeoutMs`
+（默认 10000ms），判定其失联，`dropClient` + `emit clientDisconnected`（与 Step 3 的正常断线
+走同一条信号，`ServerApp`/`ClientApp` 侧不需要区分"主动断开"和"心跳超时踢出"）。
+
+`GameClient::dispatchMessage` 新增 `MessageType::Ping` 分支：收到后立即回一条 `Pong`（不 emit
+任何对外信号——纯粹是网络层的存活应答，ViewModel/View 层感知不到）。
+
+未握手完成的连接不计入心跳（`handshaken == false` 时跳过），避免和 Step 3 已有的握手流程产生
+歧义——一个还没握手成功的连接本身就没有"上一次收到有效帧"的心跳基线。
+
+`setHeartbeatIntervalMs`/`setHeartbeatTimeoutMs` 暴露给测试注入短参数（默认参数下测试要等 10s
+才能看到踢出，会显著拖慢整个套件），生产代码路径不受影响——`ServerApp`/`ClientApp` 均不调用这两
+个方法，使用 `GameServer` 的默认值。
+
+断线重连不做（首版明确砍掉，见 plan2.0.md §2.7）：心跳超时或正常断线后，`GameServer` 释放的
+`playerId` 槽位只能被全新连接占用，不保留任何"恢复原对局"的状态。
+
+回归测试：`unresponsiveClientIsKickedAfterHeartbeatTimeout`——裸 `RawClient` 完成握手后不发送
+任何帧（不回 `Pong`，模拟卡死/无响应客户端），短参数（100ms 周期/300ms 超时）下断言其被判定
+失联、`clientDisconnected` 触发、`connectedClientCount()` 归零；
+`respondingClientSurvivesHeartbeatViaGameClientAutoPong`——真实 `GameClient` 跨越多个心跳周期
+（600ms，覆盖至少 2 轮超时窗口）后仍保持连接，验证生产路径的自动 `Pong` 应答生效、正常客户端
+不会被误踢。NetworkTest 增至 60 用例。

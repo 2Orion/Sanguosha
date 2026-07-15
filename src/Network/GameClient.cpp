@@ -164,7 +164,10 @@ void GameClient::dispatchMessage(MessageType type, const QByteArray& payload)
     case MessageType::TargetSelectionFinished:
         emit targetSelectionFinished();
         return;
+    case MessageType::Ping:
+        send(MessageType::Pong);
+        return;
     default:
-        return;  // Handshake/SelectCharacter（客户端不会收到）、Ping/Pong（Step 8）等忽略
+        return;  // Handshake/SelectCharacter（客户端不会收到）等忽略
     }
 }

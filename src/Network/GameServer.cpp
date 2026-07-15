@@ -2,6 +2,7 @@
 
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QTimer>
 
 using namespace Protocol;
 using MessageSerializer::Frame;
@@ -9,22 +10,36 @@ using MessageSerializer::Frame;
 GameServer::GameServer(QObject* parent)
     : QObject(parent)
     , m_server(new QTcpServer(this))
+    , m_heartbeatTimer(new QTimer(this))
 {
     connect(m_server, &QTcpServer::newConnection,
             this, &GameServer::onNewConnection);
+    connect(m_heartbeatTimer, &QTimer::timeout,
+            this, &GameServer::onHeartbeatTick);
 }
 
 bool GameServer::listen(quint16 port, bool localOnly)
 {
-    return m_server->listen(
+    const bool ok = m_server->listen(
         localOnly ? QHostAddress::LocalHost : QHostAddress::Any, port);
+    if (ok)
+        m_heartbeatTimer->start(m_heartbeatIntervalMs);
+    return ok;
 }
 
 void GameServer::close()
 {
+    m_heartbeatTimer->stop();
     m_server->close();
     for (int i = 0; i < int(m_clients.size()); ++i)
         dropClient(i);
+}
+
+void GameServer::setHeartbeatIntervalMs(int ms)
+{
+    m_heartbeatIntervalMs = ms;
+    if (m_heartbeatTimer->isActive())
+        m_heartbeatTimer->start(m_heartbeatIntervalMs);
 }
 
 quint16 GameServer::serverPort() const
@@ -85,6 +100,7 @@ void GameServer::onNewConnection()
         m_clients[slot].recvBuffer.clear();
         m_clients[slot].handshaken = false;
         m_clients[slot].selectedCharacterId = -1;
+        m_clients[slot].lastSeenTimer.start();
         connect(socket, &QTcpSocket::readyRead,
                 this, &GameServer::onSocketReadyRead);
         connect(socket, &QTcpSocket::disconnected,
@@ -101,6 +117,7 @@ void GameServer::onSocketReadyRead()
 
     ClientSlot& client = m_clients[playerId];
     client.recvBuffer.append(socket->readAll());
+    client.lastSeenTimer.restart();  // 任意帧（含 Pong）都视为存活证据
 
     QVector<Frame> frames;
     if (!MessageSerializer::decodeFrames(client.recvBuffer, frames)) {
@@ -172,6 +189,8 @@ void GameServer::handleFrame(int playerId, const Frame& frame)
         }
         return;
     }
+    case MessageType::Pong:
+        return;  // 纯存活证据，onSocketReadyRead 已 restart lastSeenTimer，无需转发
     default:
         if (!client.handshaken)
             return;  // 未握手的命令一律忽略
@@ -203,4 +222,26 @@ void GameServer::dropClient(int playerId)
     client.recvBuffer.clear();
     client.handshaken = false;
     client.selectedCharacterId = -1;
+}
+
+void GameServer::onHeartbeatTick()
+{
+    // 先收集本轮超时的 playerId 再统一 drop——dropClient 会清空 socket，
+    // 若在同一次遍历里边判断边 drop，后续槽位的 isPlayerConnected 判断不受影响
+    // （std::array 按下标访问，各槽独立），但为可读性仍分两步。
+    QVector<int> timedOut;
+    for (int i = 0; i < int(m_clients.size()); ++i) {
+        ClientSlot& client = m_clients[i];
+        if (!client.socket || !client.handshaken)
+            continue;  // 未握手的连接不计入心跳（握手本身有独立的超时预期之外流程）
+        if (client.lastSeenTimer.elapsed() >= m_heartbeatTimeoutMs) {
+            timedOut.append(i);
+            continue;
+        }
+        client.socket->write(MessageSerializer::encode(MessageType::Ping));
+    }
+    for (int playerId : timedOut) {
+        dropClient(playerId);
+        emit clientDisconnected(playerId);
+    }
 }

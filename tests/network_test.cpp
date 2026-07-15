@@ -20,6 +20,10 @@
 //           点击/信号，对接真实 ServerApp，全程无 Model 指针跨网络传递。
 //           本文件因此从 QTEST_GUILESS_MAIN 切到 QTEST_MAIN + offscreen
 //           （ClientApp 内部创建真实 GameBoardWidget，需要 QApplication）。
+//   Step 8：心跳保活——GameServer 周期性 Ping 已握手客户端，任意收到的帧
+//           （含 Pong）续期；连续超时未收到任何帧则判定失联并 dropClient +
+//           emit clientDisconnected。GameClient 收到 Ping 自动回 Pong（生产
+//           路径）。测试用短周期/短超时参数模拟，不跑生产的 3s/10s 参数。
 #include <QtTest/QtTest>
 #include <QTcpSocket>
 #include <algorithm>
@@ -1981,6 +1985,53 @@ private slots:
             return std::none_of(cards.begin(), cards.end(),
                                  [&](Card* c) { return c && c->id() == extra.id(); });
         }, 3000));
+    }
+
+    // ==================== Step 8：心跳保活 ====================
+
+    void unresponsiveClientIsKickedAfterHeartbeatTimeout()
+    {
+        GameServer server;
+        // 短超时参数（100ms 周期 / 300ms 超时）模拟"无响应客户端"，避免测试
+        // 跑真实的 3s/10s 生产参数拖慢整个套件。
+        server.setHeartbeatIntervalMs(100);
+        server.setHeartbeatTimeoutMs(300);
+        QVERIFY(server.listen(0, true));
+        const quint16 port = server.serverPort();
+        QSignalSpy disconnectedSpy(&server, &GameServer::clientDisconnected);
+
+        // 裸 RawClient 完成握手后不发任何帧（不回 Pong），模拟卡死/无响应客户端
+        RawClient c;
+        QCOMPARE(c.handshake(port), 0);
+
+        QVERIFY(QTest::qWaitFor(
+            [&] { return disconnectedSpy.count() > 0; }, 8000));
+        QCOMPARE(disconnectedSpy.at(0).at(0).toInt(), 0);
+        QCOMPARE(server.connectedClientCount(), 0);
+    }
+
+    void respondingClientSurvivesHeartbeatViaGameClientAutoPong()
+    {
+        GameServer server;
+        server.setHeartbeatIntervalMs(100);
+        server.setHeartbeatTimeoutMs(300);
+        QVERIFY(server.listen(0, true));
+        const quint16 port = server.serverPort();
+        QSignalSpy disconnectedSpy(&server, &GameServer::clientDisconnected);
+
+        // GameClient::dispatchMessage 收到 Ping 会自动回 Pong（生产路径，非测试
+        // 专用代码），只要事件循环持续转动，心跳就应该一直续期、永不超时。
+        GameClient client;
+        QSignalSpy connectedSpy(&client, &GameClient::connected);
+        client.connectToServer(QStringLiteral("127.0.0.1"), port);
+        QVERIFY(QTest::qWaitFor([&] { return connectedSpy.count() >= 1; }, 8000));
+
+        // 跨越至少 5 个心跳周期（500ms > 单次 300ms 超时窗口的均值几倍），
+        // 验证正常客户端不会被误踢。
+        QTest::qWait(600);
+        QCOMPARE(disconnectedSpy.count(), 0);
+        QCOMPARE(server.connectedClientCount(), 1);
+        QVERIFY(client.isConnected());
     }
 };
 

@@ -645,6 +645,13 @@ void GameClient::startReconnectTimer()
 
 重连要真正生效，服务器需要保留断线玩家的 `playerId` 一段时间并支持"重新绑定"，客户端重连成功后需要请求一次全量状态同步（例如新增 `MessageType::RequestFullSync`，服务器把当前 `GameState` 通过现有的 `pushAllData()`（`GameViewModel` 已有此方法，见 `src/ViewModel/GameViewModel.h:81`）重新推送一遍）——这部分原方案没有细化，留到阶段二实现时再落地。
 
+> **心跳保活（Step 8）落地与本节设计基本一致，两处实现细节不同**：① 判定存活的依据不是单独的
+> "上次收到 Ping/Pong 的时间"，而是 `ClientSlot::lastSeenTimer`——任意收到的帧（命令帧或
+> `Pong`）都会 `restart()`，即客户端只要仍在正常出牌/操作就不需要额外靠 `Pong` 续命；②
+> 心跳周期/超时改为可配置字段（`setHeartbeatIntervalMs`/`setHeartbeatTimeoutMs`），而不是硬编码
+> 的 `3000`/`10000`，测试用短参数（100ms/300ms）避免拖慢套件运行时间，生产路径仍用默认值。
+> 重连按本节设计明确不做（首版砍掉）。详见 [`connection.md`](connection.md) §7.7。
+
 ---
 
 ## 3. View 模块显示效果优化

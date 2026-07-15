@@ -3,17 +3,23 @@
 
 #include <QObject>
 #include <QByteArray>
+#include <QElapsedTimer>
 #include <array>
 #include "Protocol.h"
 #include "MessageSerializer.h"
 
 class QTcpServer;
 class QTcpSocket;
+class QTimer;
 
 /// 服务器网络层 — "网络化的 View"。
 /// Step 3 范围：QTcpServer 监听、最多 2 连接、playerId 0/1 分配、
 /// 帧解码、Handshake/HandshakeAck/SelectCharacter 流程、超员拒绝。
 /// VM 信号广播槽与客户端命令分发在 Step 4 接入。
+/// Step 8 范围：心跳保活——按 `m_heartbeatIntervalMs` 周期给每个已握手客户端发
+/// `Ping`；若某客户端连续 `m_heartbeatTimeoutMs` 未收到任何帧（含 `Pong` 及其他
+/// 命令帧，均视为存活证据），判定其失联并踢出（同 `onSocketDisconnected` 一样
+/// `dropClient` + `emit clientDisconnected`）。断线重连不做（首版明确砍掉）。
 /// 约束：不持有/传递任何 Model 指针，只经手 Common 值类型与协议消息。
 class GameServer : public QObject {
     Q_OBJECT
@@ -32,6 +38,12 @@ public:
     bool isPlayerConnected(int playerId) const;
     /// 玩家已选的武将 id（未选返回 -1）
     int selectedCharacter(int playerId) const;
+
+    /// 心跳参数（默认 3000ms/10000ms，对齐 plan2.0.md §2 Step 8）。
+    /// 必须在 listen() 之前调用才能影响首次心跳周期；listen() 之后调用会立即
+    /// 生效于运行中的定时器（供测试用短超时参数快速复现无响应客户端被踢场景）。
+    void setHeartbeatIntervalMs(int ms);
+    void setHeartbeatTimeoutMs(int ms) { m_heartbeatTimeoutMs = ms; }
 
 signals:
     void clientConnected(int playerId);
@@ -53,6 +65,7 @@ private slots:
     void onNewConnection();
     void onSocketReadyRead();
     void onSocketDisconnected();
+    void onHeartbeatTick();
 
 private:
     struct ClientSlot {
@@ -60,6 +73,7 @@ private:
         QByteArray recvBuffer;
         bool handshaken = false;       // 已完成 Handshake/Ack
         int selectedCharacterId = -1;  // SelectCharacter 结果
+        QElapsedTimer lastSeenTimer;   // 最近一次收到该客户端任意帧的时间（心跳依据）
     };
 
     int slotIndexOf(const QTcpSocket* socket) const;
@@ -68,6 +82,9 @@ private:
     void dropClient(int playerId);
 
     QTcpServer* m_server = nullptr;
+    QTimer* m_heartbeatTimer = nullptr;
+    int m_heartbeatIntervalMs = 3000;
+    int m_heartbeatTimeoutMs = 10000;
     std::array<ClientSlot, 2> m_clients;
 };
 

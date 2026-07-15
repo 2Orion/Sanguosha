@@ -2,6 +2,30 @@
 
 ## Features
 
+### [2026-07-15] 网络层 Step 8：心跳保活
+
+`GameServer` 新增 `m_heartbeatTimer`（`QTimer`，默认周期 3000ms）：每次触发给所有已握手客户端
+发一条 `Ping`；每个 `ClientSlot` 新增 `lastSeenTimer`（`QElapsedTimer`），`onSocketReadyRead`
+每次收到任意帧（命令帧或 `Pong`）都 `restart()`，`onHeartbeatTick()` 检查若某客户端超过
+`m_heartbeatTimeoutMs`（默认 10000ms）未续期则判定失联，走与正常断线相同的
+`dropClient` + `emit clientDisconnected` 路径。`GameClient::dispatchMessage` 新增
+`MessageType::Ping` 分支，收到后立即回 `Pong`（纯网络层应答，不 emit 任何对外信号）。
+
+新增 `GameServer::setHeartbeatIntervalMs`/`setHeartbeatTimeoutMs` 两个方法，供测试注入短参数
+（生产代码路径不调用，`ServerApp`/`ClientApp` 均使用默认值）。未握手完成的连接不计入心跳。
+断线重连不做（首版明确砍掉，见 plan2.0.md §2.7）。
+
+**涉及文件**：`src/Network/GameServer.h/cpp`（心跳定时器、`ClientSlot::lastSeenTimer`、
+`onHeartbeatTick`）、`src/Network/GameClient.cpp`（`Ping` 分支自动回 `Pong`）、
+`tests/network_test.cpp`（+2 新用例）、`connection.md` §7.7（新建）、`CLAUDE.md`（Step 8 打勾）、
+`plan2.0.md` §2.7（补充落地细节说明）。
+
+**验证**：`unresponsiveClientIsKickedAfterHeartbeatTimeout`——裸 `RawClient` 握手后不发任何帧
+模拟卡死，短参数（100ms/300ms）下断言其被判定失联并踢出；
+`respondingClientSurvivesHeartbeatViaGameClientAutoPong`——真实 `GameClient` 跨越多个心跳周期
+后仍保持连接，验证自动 `Pong` 生效、正常客户端不被误踢。NetworkTest 增至 60 用例，全套件
+5/5（`ModelSmokeTest`/`ModelTest`/`ViewModelTest`/`ViewTest`/`NetworkTest`）通过。
+
 ### [2026-07-15] 网络层 Step 7：ClientApp 组合根
 
 新建 `src/App/ClientApp.h/cpp`：网络模式的客户端组合根，与本地模式的 `SGSApp::startLocalGame()`
