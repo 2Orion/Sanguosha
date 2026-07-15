@@ -2,6 +2,49 @@
 
 ## Features
 
+### [2026-07-15] 网络层 Step 6：GameClient（"网络化 ViewModel"）
+
+新建 `src/Network/GameClient.h/cpp`：客户端网络层，与服务器侧 `GameServer`（"网络化的 View"）对称，
+定位是"网络化的 ViewModel"——对外暴露与 `GameViewModel`/`ActionViewModel` 完全相同形状的信号（内容
+由收到的服务器广播反序列化后直接 `emit`，不经过任何本地 Model/规则计算），发送方法与
+`GameBoardWidget` 的命令信号一一对应（只把参数打包发给服务器，不做任何本地校验或判断）。本类零
+Model 依赖、零规则判断，符合 plan2.0.md §2 对网络层的约束（不持有/传递 `Model::Player*`/
+`Model::Card*`，跨网络只传 Common 值类型）。
+
+**方法**：`connectToServer(host, port)`/`disconnectFromServer()`/`isConnected()`/
+`localPlayerId()`/`selectCharacter(int)`/`playCard`/`respondCard`/`selectTarget`/`discardCard`/
+`endPlayPhase`/`advancePhase`/`skipResponse`。
+
+**信号**：与 VM 相同形状的 `phaseChanged`/`playerDataUpdated`/`handCardsUpdated`/
+`pendingActionCreated`/`pendingActionCleared`/`gameOver`/`logMessage`/`targetSelectionStarted`/
+`targetSelectionFinished`；另加本地模式无对应物的网络生命周期信号 `connected(playerId)`/
+`connectionRejected(reason)`/`connectionError(error)`/`disconnected()`/`gameStarted(char0, char1)`。
+
+按 plan2.0.md §2.4 的结论，未新建 `RemoteGameVM`/`PlayerVMAdapter` 只读查询适配层——
+`GameBoardWidget` 从不主动调用 VM 方法拉取状态，全部状态通过槽被动接收，`GameClient` 只需转发信号。
+
+**涉及文件**：`src/Network/GameClient.h/cpp`（新建）、`CMakeLists.txt`（`NETWORK_SOURCES`/
+`NETWORK_HEADERS` 加入 GameClient）、`tests/network_test.cpp`（+6 新用例）、`connection.md` §7.5（新建）、
+`CLAUDE.md`（Step 6 计划项打勾）、`README.md`（目录结构 + 测试用例数）。
+
+**测试注意点**：custom 值类型（`PhaseType`/`PlayerData`/`CardList`/`PendingActionData`）未注册 Qt
+元类型，`QSignalSpy` 对这些信号的 `QVariant` 提取会失败——测试里改用 `connect` 到本地 lambda 直接捕获
+参数，而不是走 `QSignalSpy::at(0).at(N)`（`connectionRejected`/`gameStarted` 等只含 `int`/`QString`
+基础类型的信号仍可用 `QSignalSpy`）。首版实现里 `handSizeBefore` 曾在 `Draw` 阶段推进之前采样，
+导致断言的"出牌后手牌数-1"目标值本身就不对（摸牌阶段会先摸 2 张），复现即改在 `Draw → Play` 之后
+采样，与既有测试（`playCardCommandUsesConnectionIdentityNotClaimedPlayerId` 等）的写法保持一致。
+
+**验证**：`gameClientHandshakeAssignsPlayerIdsAndRejectsThirdConnection`（对接真实 `GameServer`：
+playerId 0/1 分配、第三连接 `connectionRejected`）、`gameClientSendsAllCommandsWithCorrectPayload`
+（7 个发送方法逐一断言服务器收到的 `MessageType` 与 payload 字段）、
+`gameClientReceivesGameStartedAndBroadcastsWithRedaction`（对接真实 `ServerApp`：`gameStarted`/
+`phaseChanged`/`playerDataUpdated`/`logMessage` 正常 emit，`handCardsUpdated` 脱敏转发正确——己方
+完整、对方占位）、`gameClientPlayCardRoundTripReflectedInBothClients`（两个 `GameClient` 出杀 →
+双方收到 `pendingActionCreated(Dodge)`）、`gameClientDisconnectedSignalFiresWhenServerCloses`
+（服务器关闭 → `disconnected()` emit，`localPlayerId()` 复位为 -1）。NetworkTest 增至 57 个用例，
+12/13 次连续直接运行 + 全套件运行通过（1 次遇到 `thirdConnectionRejected`——Step 3 起就存在的
+loopback 连接建立偶发慢速——的既有已知抖动，与本次改动无关，重跑即通过）。
+
 ### [2026-07-15] 网络层 Step 5：手牌脱敏
 
 `GameServer` 广播 `HandCardsUpdated` 此前对两端一视同仁：`ServerApp::wireViewModelBroadcasts()`

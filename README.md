@@ -44,7 +44,8 @@ Sanguosha/
 │   ├── Network/              # 网络层（局域网对战，开发中）
 │   │   ├── Protocol.h/cpp    # 协议版本号 + MessageType + 消息结构体 + 手牌脱敏 redactCardList
 │   │   ├── MessageSerializer.h/cpp # QDataStream 序列化 + 帧封装/解码
-│   │   └── GameServer.h/cpp  # QTcpServer：连接管理/握手/选将/广播转发（零 Model 依赖）
+│   │   ├── GameServer.h/cpp  # QTcpServer：连接管理/握手/选将/广播转发（零 Model 依赖）
+│   │   └── GameClient.h/cpp  # QTcpSocket："网络化 ViewModel"，零 Model 依赖、零规则判断
 │   ├── ViewModel/            # QObject + 信号/槽
 │   │   ├── ActionViewModel.h/cpp
 │   │   └── GameViewModel.h/cpp
@@ -151,4 +152,4 @@ $env:QT_QPA_PLATFORM = "offscreen"; .\build\ViewTest.exe
 .\build\NetworkTest.exe
 ```
 
-当前完整套件通过，5 个测试目标均为正常断言通过；覆盖卡牌规则、响应权限、濒死救援、目标选择、主要 QWidget、App 生命周期、网络协议序列化/帧解码（半包/粘包）、ServerApp headless 启动路径（无 QApplication 环境下完整回合循环）、ServerApp↔GameServer 的双向接线与三轮对抗性审查加固（VM 广播顺序、7 条命令分发、跨连接身份伪造防护、越权推进阶段防护、出牌/弃牌回合归属校验、待定动作重入保护），以及 Step 5 手牌脱敏（对手侧牌面字段占位、cardId 结构信息仍保留、己方视角不受影响）。NetworkTest 共 50 个用例。
+当前完整套件通过，5 个测试目标均为正常断言通过；覆盖卡牌规则、响应权限、濒死救援、目标选择、主要 QWidget、App 生命周期、网络协议序列化/帧解码（半包/粘包）、ServerApp headless 启动路径（无 QApplication 环境下完整回合循环）、ServerApp↔GameServer 的双向接线与三轮对抗性审查加固（VM 广播顺序、7 条命令分发、跨连接身份伪造防护、越权推进阶段防护、出牌/弃牌回合归属校验、待定动作重入保护）、Step 5 手牌脱敏（对手侧牌面字段占位、cardId 结构信息仍保留、己方视角不受影响），以及 Step 6 GameClient（对接真实 GameServer/ServerApp：playerId 分配与超员拒绝、7 个发送方法 payload 正确性、gameStarted/phaseChanged/playerDataUpdated/logMessage/脱敏后 handCardsUpdated 转发、双客户端出杀→待定响应往返、断线信号）。NetworkTest 共 57 个用例。

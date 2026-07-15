@@ -9,12 +9,19 @@
 //   Step 4：ServerApp 接线 GameServer（VM 广播 + 客户端命令分发，
 //           含身份伪造防护——服务器必须用连接层 playerId 覆盖消息体
 //           里客户端自称的 playerId，不能盲目转发）
+//   Step 5：手牌脱敏（HandCardsUpdated 按接收方裁剪）
+//   Step 6：GameClient——"网络化 ViewModel"，对接真实 GameServer/ServerApp，
+//           断言发送方法产生的命令 payload 和收到广播后 emit 的信号参数
+//           （custom 值类型不经 QSignalSpy 的 QVariant 提取，用 connect
+//           到本地 lambda 直接捕获，避免 PhaseType/PlayerData/CardList 等
+//           未注册 Qt 元类型导致的提取失败——项目里一直是这个约定）
 #include <QtTest/QtTest>
 #include <QTcpSocket>
 #include <algorithm>
 #include "Protocol.h"
 #include "MessageSerializer.h"
 #include "GameServer.h"
+#include "GameClient.h"
 #include "ServerApp.h"
 #include "GameViewModel.h"
 #include "ActionViewModel.h"
@@ -1629,6 +1636,269 @@ private slots:
         }
         frames.clear();
         QVERIFY(!MessageSerializer::decodeFrames(zeroBuffer, frames));
+    }
+
+    // ==================== Step 6：GameClient ====================
+
+    void gameClientHandshakeAssignsPlayerIdsAndRejectsThirdConnection()
+    {
+        GameServer server;
+        QVERIFY(server.listen(0, true));
+        const quint16 port = server.serverPort();
+
+        GameClient c0, c1, c2;
+        QSignalSpy connected0(&c0, &GameClient::connected);
+        QSignalSpy connected1(&c1, &GameClient::connected);
+        QSignalSpy rejected2(&c2, &GameClient::connectionRejected);
+
+        c0.connectToServer(QStringLiteral("127.0.0.1"), port);
+        QVERIFY(QTest::qWaitFor([&] { return connected0.count() >= 1; }, 8000));
+        QCOMPARE(connected0.at(0).at(0).toInt(), 0);
+        QCOMPARE(c0.localPlayerId(), 0);
+
+        c1.connectToServer(QStringLiteral("127.0.0.1"), port);
+        QVERIFY(QTest::qWaitFor([&] { return connected1.count() >= 1; }, 8000));
+        QCOMPARE(connected1.at(0).at(0).toInt(), 1);
+        QCOMPARE(c1.localPlayerId(), 1);
+
+        // 房间已满：第三个连接应收到 connectionRejected，且 localPlayerId 仍是 -1
+        c2.connectToServer(QStringLiteral("127.0.0.1"), port);
+        QVERIFY(QTest::qWaitFor([&] { return rejected2.count() >= 1; }, 8000));
+        QVERIFY(!rejected2.at(0).at(0).toString().isEmpty());
+        QCOMPARE(c2.localPlayerId(), -1);
+    }
+
+    void gameClientSendsAllCommandsWithCorrectPayload()
+    {
+        GameServer server;
+        QVERIFY(server.listen(0, true));
+        const quint16 port = server.serverPort();
+
+        struct Cmd { int playerId; MessageType type; QByteArray payload; };
+        QVector<Cmd> received;
+        connect(&server, &GameServer::clientCommandReceived, &server,
+                [&received](int playerId, MessageType type, const QByteArray& payload) {
+            received.push_back({playerId, type, payload});
+        });
+
+        GameClient client;
+        QSignalSpy connectedSpy(&client, &GameClient::connected);
+        client.connectToServer(QStringLiteral("127.0.0.1"), port);
+        QVERIFY(QTest::qWaitFor([&] { return connectedSpy.count() >= 1; }, 8000));
+
+        // SelectCharacter 不经 clientCommandReceived（GameServer 内部单独处理），
+        // 用 selectedCharacter() 查询验证已经送达
+        client.selectCharacter(3);
+        QVERIFY(QTest::qWaitFor([&] { return server.selectedCharacter(0) == 3; }, 3000));
+
+        auto waitForCount = [&](int n) {
+            return QTest::qWaitFor([&] { return received.size() >= n; }, 3000);
+        };
+
+        client.playCard(7, 0);
+        QVERIFY(waitForCount(1));
+        QCOMPARE(received[0].playerId, 0);
+        QCOMPARE(received[0].type, MessageType::PlayCardRequested);
+        {
+            const auto msg = MessageSerializer::decodePayload<PlayCardMsg>(received[0].payload);
+            QCOMPARE(msg.cardId, 7);
+            QCOMPARE(msg.playerId, 0);
+        }
+
+        client.respondCard(3, 1);
+        QVERIFY(waitForCount(2));
+        QCOMPARE(received[1].type, MessageType::RespondCardRequested);
+        {
+            const auto msg = MessageSerializer::decodePayload<RespondCardMsg>(received[1].payload);
+            QCOMPARE(msg.cardId, 3);
+            QCOMPARE(msg.responderId, 1);
+        }
+
+        client.selectTarget(1);
+        QVERIFY(waitForCount(3));
+        QCOMPARE(received[2].type, MessageType::TargetSelected);
+        {
+            const auto msg = MessageSerializer::decodePayload<TargetSelectedMsg>(received[2].payload);
+            QCOMPARE(msg.playerIndex, 1);
+        }
+
+        client.discardCard(9, 0);
+        QVERIFY(waitForCount(4));
+        QCOMPARE(received[3].type, MessageType::DiscardCardRequested);
+        {
+            const auto msg = MessageSerializer::decodePayload<DiscardCardMsg>(received[3].payload);
+            QCOMPARE(msg.cardId, 9);
+            QCOMPARE(msg.playerId, 0);
+        }
+
+        client.endPlayPhase();
+        QVERIFY(waitForCount(5));
+        QCOMPARE(received[4].type, MessageType::EndPlayRequested);
+
+        client.advancePhase();
+        QVERIFY(waitForCount(6));
+        QCOMPARE(received[5].type, MessageType::AdvanceRequested);
+
+        client.skipResponse();
+        QVERIFY(waitForCount(7));
+        QCOMPARE(received[6].type, MessageType::SkipRequested);
+    }
+
+    void gameClientReceivesGameStartedAndBroadcastsWithRedaction()
+    {
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        GameClient c0, c1;
+        QSignalSpy connected0(&c0, &GameClient::connected);
+        QSignalSpy connected1(&c1, &GameClient::connected);
+        c0.connectToServer(QStringLiteral("127.0.0.1"), port);
+        c1.connectToServer(QStringLiteral("127.0.0.1"), port);
+        QVERIFY(QTest::qWaitFor(
+            [&] { return connected0.count() >= 1 && connected1.count() >= 1; }, 8000));
+
+        // custom 值类型（PhaseType/PlayerData/CardList）未注册 Qt 元类型，
+        // QSignalSpy 的 QVariant 提取拿不到内容——直接 connect 到本地 lambda 捕获
+        QSignalSpy gameStartedSpy(&c0, &GameClient::gameStarted);
+
+        QVector<PhaseType> phases0;
+        connect(&c0, &GameClient::phaseChanged, &c0,
+                [&phases0](PhaseType p) { phases0.push_back(p); });
+
+        int playerDataCount0 = 0;
+        connect(&c0, &GameClient::playerDataUpdated, &c0,
+                [&playerDataCount0](int, const PlayerData&) { ++playerDataCount0; });
+
+        int logCount0 = 0;
+        connect(&c0, &GameClient::logMessage, &c0,
+                [&logCount0](const QString&) { ++logCount0; });
+
+        struct HandUpdate { int playerId; CardList cards; };
+        QVector<HandUpdate> hands0, hands1;
+        connect(&c0, &GameClient::handCardsUpdated, &c0,
+                [&hands0](int pid, const CardList& cards) { hands0.push_back({pid, cards}); });
+        connect(&c1, &GameClient::handCardsUpdated, &c1,
+                [&hands1](int pid, const CardList& cards) { hands1.push_back({pid, cards}); });
+
+        c0.selectCharacter(0);
+        c1.selectCharacter(1);
+
+        QVERIFY(QTest::qWaitFor(
+            [&] { return hands0.size() >= 2 && hands1.size() >= 2; }, 8000));
+
+        QCOMPARE(gameStartedSpy.count(), 1);
+        QCOMPARE(gameStartedSpy.at(0).at(0).toInt(), 0);
+        QCOMPARE(gameStartedSpy.at(0).at(1).toInt(), 1);
+
+        QVERIFY(!phases0.isEmpty());
+        QCOMPARE(phases0.first(), PhaseType::Prepare);
+        QVERIFY(playerDataCount0 >= 2);
+        QVERIFY(logCount0 >= 1);
+
+        auto findByOwner = [](const QVector<HandUpdate>& hands, int owner) -> const CardList* {
+            for (const auto& h : hands)
+                if (h.playerId == owner) return &h.cards;
+            return nullptr;
+        };
+
+        const CardList* c0Own = findByOwner(hands0, 0);  // c0 看自己的手牌
+        const CardList* c0Opp = findByOwner(hands0, 1);  // c0 看对手的手牌
+        const CardList* c1Own = findByOwner(hands1, 1);
+        const CardList* c1Opp = findByOwner(hands1, 0);
+        QVERIFY(c0Own && c0Opp && c1Own && c1Opp);
+
+        QCOMPARE(c0Opp->size(), c1Own->size());
+        QVERIFY(!c0Own->isEmpty());
+        QVERIFY(std::any_of(c0Own->begin(), c0Own->end(),
+                            [](const CardData& d) { return !d.cardName.isEmpty(); }));
+        for (const CardData& d : *c0Opp) {
+            QVERIFY(d.cardName.isEmpty());
+            QCOMPARE(d.isEquipment, false);
+        }
+    }
+
+    void gameClientPlayCardRoundTripReflectedInBothClients()
+    {
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        GameClient c0, c1;
+        QSignalSpy connected0(&c0, &GameClient::connected);
+        QSignalSpy connected1(&c1, &GameClient::connected);
+        c0.connectToServer(QStringLiteral("127.0.0.1"), port);
+        c1.connectToServer(QStringLiteral("127.0.0.1"), port);
+        QVERIFY(QTest::qWaitFor(
+            [&] { return connected0.count() >= 1 && connected1.count() >= 1; }, 8000));
+
+        struct HandUpdate { int playerId; CardList cards; };
+        QVector<HandUpdate> hands0;
+        connect(&c0, &GameClient::handCardsUpdated, &c0,
+                [&hands0](int pid, const CardList& cards) { hands0.push_back({pid, cards}); });
+
+        QVector<PendingActionData> pending0, pending1;
+        connect(&c0, &GameClient::pendingActionCreated, &c0,
+                [&pending0](const PendingActionData& info) { pending0.push_back(info); });
+        connect(&c1, &GameClient::pendingActionCreated, &c1,
+                [&pending1](const PendingActionData& info) { pending1.push_back(info); });
+
+        c0.selectCharacter(0);
+        c1.selectCharacter(1);
+        QVERIFY(QTest::qWaitFor([&] { return hands0.size() >= 2; }, 8000));
+
+        auto* gvm = app.gameViewModel();
+
+        // 手动注入确定性的杀/闪，绕开随机发牌（沿用既有手法：不注入闪的话，
+        // 对手可能真的没有闪，会触发"无响应牌自动跳过"直接结算，
+        // pendingActionCreated 就不会广播出来）
+        KillCard extra(CardSuit::Diamond, 4);
+        DodgeCard dodge(CardSuit::Heart, 6);
+        gvm->gameState()->player(0)->addHandCard(&extra);
+        gvm->gameState()->player(1)->addHandCard(&dodge);
+
+        gvm->onAdvanceRequested();  // Prepare → Judge
+        gvm->onAdvanceRequested();  // Judge → Draw（摸牌阶段会摸牌，手牌数在此之后才稳定）
+        gvm->onAdvanceRequested();  // Draw → Play
+
+        const int handSizeBefore = int(gvm->gameState()->player(0)->handCards().size());
+
+        hands0.clear();
+        pending0.clear();
+        pending1.clear();
+
+        // 2 人局唯一合法目标是玩家 1，onPlayCardRequested 内部直接结算，
+        // 不经过 targetSelectionStarted/selectTarget 这条多目标分支
+        c0.playCard(extra.id(), 0);
+
+        QVERIFY(QTest::qWaitFor([&] {
+            return std::any_of(hands0.begin(), hands0.end(), [&](const HandUpdate& h) {
+                return h.playerId == 0 && h.cards.size() == handSizeBefore - 1;
+            });
+        }, 3000));
+
+        QVERIFY(QTest::qWaitFor(
+            [&] { return !pending0.isEmpty() && !pending1.isEmpty(); }, 3000));
+        QCOMPARE(pending0.last().requiredCardType, CardType::Dodge);
+        QCOMPARE(pending1.last().requiredCardType, CardType::Dodge);
+        QCOMPARE(pending1.last().targetId, 1);
+    }
+
+    void gameClientDisconnectedSignalFiresWhenServerCloses()
+    {
+        GameServer server;
+        QVERIFY(server.listen(0, true));
+        const quint16 port = server.serverPort();
+
+        GameClient client;
+        QSignalSpy connectedSpy(&client, &GameClient::connected);
+        client.connectToServer(QStringLiteral("127.0.0.1"), port);
+        QVERIFY(QTest::qWaitFor([&] { return connectedSpy.count() >= 1; }, 8000));
+
+        QSignalSpy disconnectedSpy(&client, &GameClient::disconnected);
+        server.close();
+        QVERIFY(QTest::qWaitFor([&] { return disconnectedSpy.count() >= 1; }, 8000));
+        QCOMPARE(client.localPlayerId(), -1);
     }
 };
 

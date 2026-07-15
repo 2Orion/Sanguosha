@@ -518,6 +518,24 @@ private:
 
 **不再需要** `RemoteGameVM`/`PlayerVMAdapter` 这两个类——原方案让它们去镜像 ViewModel 的完整只读查询接口，是因为原方案假设 View 会主动调用 VM 方法拉取状态。但当前 View（`GameBoardWidget`）从不主动查询 VM，全部状态都是通过槽被动接收（见 `connection.md` 的信号表），所以 `GameClient` 只需要转发信号即可，不需要维护一份完整的本地状态镜像和只读查询接口。
 
+> **实现与上面的方法/信号草图有两处出入**（`src/Network/GameClient.h/cpp`，Step 6 落地时按实际
+> `GameBoardWidget`/`ActionViewModel` 的信号槽形状调整）：
+> 1. `playCard` 拆成 `playCard(int cardId, int playerId)` + `selectTarget(int playerIndex)` 两个
+>    方法，而不是草图里合并成一个带 `targetIds` 向量的方法——因为 `GameBoardWidget` 本身发出的是
+>    两个独立信号 `playCardRequested(cardId, playerId)` / `targetPlayerSelected(playerIndex)`，
+>    `ActionViewModel` 对应的也是两个独立槽 `onPlayCardRequested`/`onTargetSelected`（多目标选择走
+>    `targetSelectionStarted`→`selectTarget`→`targetSelectionFinished` 这条独立的暂存流程，见
+>    connection.md §1/§2）。合并成一个方法反而需要在 `GameClient` 内部重新实现一套目标暂存状态机，
+>    与"只转发不判断"的定位矛盾。
+> 2. `connected()`/`playerIdAssigned(int)` 两个信号合并成一个 `connected(int playerId)`（握手成功
+>    这一件事只需要一个信号），并新增 `connectionRejected(QString reason)`
+>    区分"握手被服务器拒绝"（版本不符/房间已满，对应 `HandshakeAckMsg::playerId < 0`）和
+>    `connectionError(QString)`（socket 层错误，如目标不可达）——这两种失败对客户端 UI 的提示文案
+>    不同，合并成一个信号会丢失这个区分度。
+>
+> 权威接口定义以 `src/Network/GameClient.h` 为准，完整信号/方法 ↔ MessageType 映射见 connection.md
+> §7.5。
+
 ### 2.5 View 层适配
 
 `GameBoardWidget`、`CardWidget`、`PlayerInfoWidget`、`HandCardAreaWidget`、`ActionPanelWidget` **完全不需要修改**——这是复用信号槽形状这个设计的核心收益。原方案里的 `GameController`/`LocalController`/`RemoteController` 三个类全部不需要，`GameBoardWidget` 也不需要接受构造参数上的差异（它本来就不持有 VM/Controller 指针，见 `src/View/GameBoardWidget.h`）。

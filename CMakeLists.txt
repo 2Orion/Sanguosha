@@ -68,12 +68,14 @@ set(NETWORK_SOURCES
     src/Network/Protocol.cpp
     src/Network/MessageSerializer.cpp
     src/Network/GameServer.cpp
+    src/Network/GameClient.cpp
 )
 
 set(NETWORK_HEADERS
     src/Network/Protocol.h
     src/Network/MessageSerializer.h
     src/Network/GameServer.h
+    src/Network/GameClient.h
 )
 
 add_library(SanguoshaNetwork STATIC
