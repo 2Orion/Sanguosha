@@ -16,6 +16,7 @@ struct CardData {
     CardColor color = CardColor::Black;
     bool isBasic = false;
     bool isStrategy = false;
+    bool isEquipment = false;
     QString suitSymbol;
     QString numberString;
     bool isSelected = false;

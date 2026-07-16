@@ -21,7 +21,15 @@ enum class CardColor {
 enum class CardCategory {
     Basic,     // 基本牌
     Strategy,  // 锦囊牌
-    Equipment  // 装备牌（暂不实现）
+    Equipment  // 装备牌
+};
+
+/// 装备槽位
+enum class EquipSlot {
+    Weapon,    // 武器
+    Armor,     // 防具
+    Mount,     // 马（进攻/防御）
+    Treasure   // 宝物（预留）
 };
 
 /// 卡牌类型

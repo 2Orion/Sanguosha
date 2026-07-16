@@ -53,17 +53,18 @@ int main()
     // ==================== 1. CardManager：初始化、摸牌、回收重洗 ====================
     CardManager cardManager;
     cardManager.initialize();
-    check(cardManager.totalCardCount() == 48, "CardManager: 总牌数为48");
-    check(cardManager.remainingCount() == 48, "CardManager: 初始牌堆为48");
+    const int TOTAL_CARDS = 101;
+    check(cardManager.totalCardCount() == TOTAL_CARDS, "CardManager: 总牌数为101");
+    check(cardManager.remainingCount() == TOTAL_CARDS, "CardManager: 初始牌堆为101");
 
     std::vector<Card*> tempBatch = cardManager.drawCards(5);
     check(tempBatch.size() == 5, "CardManager: drawCards(5) 取到5张");
-    check(cardManager.remainingCount() == 43, "CardManager: 摸5张后剩43张");
+    check(cardManager.remainingCount() == TOTAL_CARDS - 5, "CardManager: 摸5张后剩96张");
     cardManager.discardMultiple(tempBatch);
     check(cardManager.discardPileCount() == 5, "CardManager: 弃牌堆有5张");
 
-    std::vector<Card*> restOfDeck = cardManager.drawCards(43);
-    check(restOfDeck.size() == 43, "CardManager: 摸空剩余43张");
+    std::vector<Card*> restOfDeck = cardManager.drawCards(TOTAL_CARDS - 5);
+    check(restOfDeck.size() == (size_t)(TOTAL_CARDS - 5), "CardManager: 摸空剩余96张");
     check(cardManager.remainingCount() == 0, "CardManager: 牌堆摸空后剩0张");
 
     Card* afterReshuffle = cardManager.drawCard();
@@ -73,7 +74,7 @@ int main()
     std::vector<Card*> pool;
     pool.insert(pool.end(), restOfDeck.begin(), restOfDeck.end());
     pool.insert(pool.end(), tempBatch.begin(), tempBatch.end());
-    check(pool.size() == 48, "测试准备: pool 汇总了全部48张牌（含重洗的一张已在tempBatch中）");
+    check(pool.size() == (size_t)TOTAL_CARDS, "测试准备: pool 汇总了全部101张牌（含重洗的一张已在tempBatch中）");
 
     // ==================== 2. GameState / Player / Character 基础状态 ====================
     GameState state;

@@ -118,6 +118,8 @@ void GameViewModel::initGame(Character* char1, Character* char2)
             connect(p, &Player::stateChanged, this, [this, p]() { pushPlayerData(p->playerId()); }));
         m_modelConnections.push_back(
             connect(p, &Player::died, this, &GameViewModel::onModelPlayerDied));
+        m_modelConnections.push_back(
+            connect(p, &Player::equipmentChanged, this, [this, p](EquipSlot) { pushPlayerData(p->playerId()); }));
     }
 
     m_state->setCurrentPhase(PhaseType::Prepare);
@@ -137,6 +139,11 @@ Character* GameViewModel::createCharacterById(int id)
     case 1: return new GuanYu(this);
     case 2: return new ZhangFei(this);
     case 3: return new ZhaoYun(this);
+    case 4: return new SunQuan(this);
+    case 5: return new ZhouYu(this);
+    case 6: return new LvBu(this);
+    case 7: return new DaQiao(this);
+    case 8: return new SiMaYi(this);
     default: return nullptr;
     }
 }
@@ -165,7 +172,14 @@ void GameViewModel::executePhaseDraw()
 {
     Player* player = currentPlayer();
     if (!player) return;
-    auto cards = m_cardManager->drawCards(GameRule::DRAW_PHASE_COUNT);
+
+    int drawCount = GameRule::DRAW_PHASE_COUNT;
+    // 周瑜英姿：多摸一张
+    if (player->character()) {
+        drawCount += player->character()->onDrawPhaseBonus();
+    }
+
+    auto cards = m_cardManager->drawCards(drawCount);
     for (Card* c : cards) if (c) player->addHandCard(c);
     if (player->character() &&
         player->character()->triggerCondition(GameEvent::OnDrawPhase, m_state.get(), player)) {
@@ -239,10 +253,38 @@ void GameViewModel::pushPlayerData(int playerId)
     d.handCardCount = p->handCardCount();
     d.handCardLimit = p->handCardLimit();
     d.isCurrentPlayer = (p->playerId() == currentPlayerId());
+    d.attackRange = p->attackRange();
     if (p->character()) {
         d.skillName = QString::fromStdString(p->character()->skillName());
         d.skillDescription = QString::fromStdString(p->character()->skillDescription());
     }
+
+    // 填充装备区数据
+    d.equipCards.clear();
+    for (int i = 0; i < 4; ++i) {
+        EquipSlot slot = static_cast<EquipSlot>(i);
+        EquipmentCard* eq = p->equippedAt(slot);
+        if (eq) {
+            CardData cd;
+            cd.cardId = eq->id();
+            cd.cardType = eq->cardType();
+            cd.suit = eq->suit();
+            cd.number = eq->number();
+            cd.cardName = QString::fromStdString(eq->cardName());
+            cd.description = QString::fromStdString(eq->description());
+            cd.color = eq->color();
+            cd.isBasic = eq->isBasic();
+            cd.isStrategy = eq->isStrategy();
+            cd.isEquipment = true;
+            cd.suitSymbol = QString::fromStdString(eq->suitSymbol());
+            cd.numberString = QString::fromStdString(eq->numberString());
+            cd.isPlayable = false;
+            cd.ownerId = playerId;
+            cd.equipSlot = i;
+            d.equipCards.append(cd);
+        }
+    }
+
     emit playerDataUpdated(playerId, d);
 }
 
@@ -269,10 +311,14 @@ void GameViewModel::pushHandCards(int playerId)
         d.color = card->color();
         d.isBasic = card->isBasic();
         d.isStrategy = card->isStrategy();
+        d.isEquipment = card->isEquipment();
         d.suitSymbol = QString::fromStdString(card->suitSymbol());
         d.numberString = QString::fromStdString(card->numberString());
         d.isPlayable = (std::find(playableIds.begin(), playableIds.end(), card->id()) != playableIds.end());
         d.ownerId = playerId;
+        // 装备牌填 equipSlot
+        EquipmentCard* eq = dynamic_cast<EquipmentCard*>(card);
+        d.equipSlot = eq ? static_cast<int>(eq->equipSlot()) : -1;
         cards.append(d);
     }
     emit handCardsUpdated(playerId, cards);

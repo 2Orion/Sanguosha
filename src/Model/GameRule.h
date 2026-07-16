@@ -39,6 +39,15 @@ namespace GameRule {
     void executePeach(GameState* state, Player* user, Player* target);
     void executeWine(GameState* state, Player* user);
 
+    // ==================== 装备与距离 ====================
+
+    /// 计算攻击距离（含武器加成）
+    int getAttackRange(const GameState* state, const Player* attacker);
+    /// 是否在攻击范围内
+    bool isInAttackRange(const GameState* state, const Player* attacker, const Player* target);
+    /// 防具效果判定
+    bool armorEffectCheck(const GameState* state, const Player* defender, Card* attackCard);
+
     // ==================== 锦囊执行 ====================
 
     void executeDismantle(GameState* state, Player* user, Player* target);
@@ -47,6 +56,16 @@ namespace GameRule {
     void executeBarbarianInvasion(GameState* state, Player* user);
     void executeVolley(GameState* state, Player* user);
     void executePeachGarden(GameState* state);
+
+    // 新锦囊
+    void executeDuel(GameState* state, Player* user, Player* target);
+    void executeLightning(GameState* state, Player* user, Player* target);
+    void executeNullify(GameState* state, Player* user);
+    void executeBorrow(GameState* state, Player* user, Player* target);
+    void executeHarvest(GameState* state, Player* user);
+    void executeHappy(GameState* state, Player* user, Player* target);
+    void executeFamine(GameState* state, Player* user, Player* target);
+    bool checkNullifyChain(GameState* state, Card* targetCard, Player* targetPlayer, Player* sourcePlayer);
 
     // ==================== AOE 响应处理 ====================
 
