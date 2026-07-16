@@ -21,7 +21,15 @@ enum class CardColor {
 enum class CardCategory {
     Basic,     // 基本牌
     Strategy,  // 锦囊牌
-    Equipment  // 装备牌（暂不实现）
+    Equipment  // 装备牌
+};
+
+/// 装备槽位
+enum class EquipSlot {
+    Weapon,    // 武器
+    Armor,     // 防具
+    Mount,     // 马（进攻/防御）
+    Treasure   // 宝物（预留）
 };
 
 /// 卡牌类型
@@ -39,6 +47,24 @@ enum class CardType {
     BarbarianInvasion,  // 南蛮入侵
     Volley,             // 万箭齐发
     PeachGarden,        // 桃园结义
+    Duel,               // 决斗
+    Lightning,          // 闪电
+    Nullify,            // 无懈可击
+    Borrow,             // 借刀杀人
+    Harvest,            // 五谷丰登
+    Happy,              // 乐不思蜀
+    Famine,             // 兵粮寸断
+
+    // 装备牌
+    Crossbow,           // 诸葛连弩
+    QinglongBlade,      // 青龙偃月刀
+    ZhangbaSnake,       // 丈八蛇矛
+    KylinBow,           // 麒麟弓
+    QinggangSword,      // 青釭剑
+    IceSword,           // 寒冰剑
+    DualSword,          // 雌雄双股剑
+    EightDiagrams,      // 八卦阵
+    BenevolentShield,   // 仁王盾
 };
 
 // ==================== 游戏流程枚举 ====================

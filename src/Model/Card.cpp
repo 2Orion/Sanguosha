@@ -68,10 +68,26 @@ CardCategory Card::category() const
     case CardType::BarbarianInvasion:
     case CardType::Volley:
     case CardType::PeachGarden:
+    case CardType::Duel:
+    case CardType::Lightning:
+    case CardType::Nullify:
+    case CardType::Borrow:
+    case CardType::Harvest:
+    case CardType::Happy:
+    case CardType::Famine:
         return CardCategory::Strategy;
-    default:
-        return CardCategory::Basic;
+    case CardType::Crossbow:
+    case CardType::QinglongBlade:
+    case CardType::ZhangbaSnake:
+    case CardType::KylinBow:
+    case CardType::QinggangSword:
+    case CardType::IceSword:
+    case CardType::DualSword:
+    case CardType::EightDiagrams:
+    case CardType::BenevolentShield:
+        return CardCategory::Equipment;
     }
+    return CardCategory::Basic;
 }
 
 bool Card::isBasic() const
@@ -147,8 +163,24 @@ std::string Card::cardTypeName(CardType type)
     case CardType::BarbarianInvasion: return "南蛮入侵";
     case CardType::Volley: return "万箭齐发";
     case CardType::PeachGarden: return "桃园结义";
-    default: return "未知";
+    case CardType::Duel: return "决斗";
+    case CardType::Lightning: return "闪电";
+    case CardType::Nullify: return "无懈可击";
+    case CardType::Borrow: return "借刀杀人";
+    case CardType::Harvest: return "五谷丰登";
+    case CardType::Happy: return "乐不思蜀";
+    case CardType::Famine: return "兵粮寸断";
+    case CardType::Crossbow: return "诸葛连弩";
+    case CardType::QinglongBlade: return "青龙偃月刀";
+    case CardType::ZhangbaSnake: return "丈八蛇矛";
+    case CardType::KylinBow: return "麒麟弓";
+    case CardType::QinggangSword: return "青釭剑";
+    case CardType::IceSword: return "寒冰剑";
+    case CardType::DualSword: return "雌雄双股剑";
+    case CardType::EightDiagrams: return "八卦阵";
+    case CardType::BenevolentShield: return "仁王盾";
     }
+    return "未知";
 }
 
 std::string Card::suitSymbol() const
@@ -619,4 +651,392 @@ ActionResult PeachGardenCard::execute(GameState* state,
     GameRule::executePeachGarden(state);
 
     return ActionResult::Completed;
+}
+
+// ==================== 新锦囊牌：决斗 ====================
+
+DuelCard::DuelCard(CardSuit suit, int number)
+    : StrategyCard(CardType::Duel, suit, number)
+{
+    setDescription("目标需打出一张【杀】，否则受到1点伤害");
+}
+
+bool DuelCard::canTarget(const GameState* state,
+                         const Player* user,
+                         const Player* target) const
+{
+    if (!state || !user || !target) return false;
+    if (user == target) return false;
+    return target->isAlive();
+}
+
+std::vector<Player*> DuelCard::getValidTargets(const GameState* state,
+                                                const Player* user) const
+{
+    std::vector<Player*> targets;
+    if (!state || !user) return targets;
+    for (Player* p : state->alivePlayers()) {
+        if (canTarget(state, user, p)) {
+            targets.push_back(p);
+        }
+    }
+    return targets;
+}
+
+ActionResult DuelCard::execute(GameState* state,
+                                Player* user,
+                                const std::vector<Player*>& targets)
+{
+    if (!state || !user || targets.empty()) {
+        return ActionResult::Completed;
+    }
+    Player* target = targets.front();
+    GameRule::executeDuel(state, user, target);
+    return ActionResult::RequiresKill;
+}
+
+// ==================== 新锦囊牌：闪电 ====================
+
+LightningCard::LightningCard(CardSuit suit, int number)
+    : StrategyCard(CardType::Lightning, suit, number)
+{
+    setDescription("判定：黑桃2-9则受到3点雷电伤害，否则移至下家");
+}
+
+std::vector<Player*> LightningCard::getValidTargets(const GameState* state,
+                                                      const Player* user) const
+{
+    std::vector<Player*> targets;
+    if (state && user) {
+        targets.push_back(const_cast<Player*>(user));
+    }
+    return targets;
+}
+
+ActionResult LightningCard::execute(GameState* state,
+                                     Player* user,
+                                     const std::vector<Player*>& targets)
+{
+    (void)targets;
+    if (!state || !user) {
+        return ActionResult::Completed;
+    }
+    GameRule::executeLightning(state, user, user);
+    return ActionResult::Completed;
+}
+
+// ==================== 新锦囊牌：无懈可击 ====================
+
+NullifyCard::NullifyCard(CardSuit suit, int number)
+    : StrategyCard(CardType::Nullify, suit, number)
+{
+    setDescription("抵消一张锦囊牌对一名角色的效果");
+}
+
+bool NullifyCard::canUse(const GameState* state, const Player* user) const
+{
+    if (!state || !user) return false;
+    if (!user->isAlive()) return false;
+    return true;
+}
+
+std::vector<Player*> NullifyCard::getValidTargets(const GameState* state,
+                                                    const Player* user) const
+{
+    (void)state;
+    (void)user;
+    return std::vector<Player*>();
+}
+
+ActionResult NullifyCard::execute(GameState* state,
+                                   Player* user,
+                                   const std::vector<Player*>& targets)
+{
+    (void)targets;
+    if (!state || !user) {
+        return ActionResult::Completed;
+    }
+    GameRule::executeNullify(state, user);
+    return ActionResult::Completed;
+}
+
+// ==================== 新锦囊牌：借刀杀人 ====================
+
+BorrowCard::BorrowCard(CardSuit suit, int number)
+    : StrategyCard(CardType::Borrow, suit, number)
+{
+    setDescription("令装备武器的角色使用【杀】");
+}
+
+bool BorrowCard::canTarget(const GameState* state,
+                           const Player* user,
+                           const Player* target) const
+{
+    if (!state || !user || !target) return false;
+    if (user == target) return false;
+    if (!target->isAlive()) return false;
+    return target->hasEquipCards();
+}
+
+std::vector<Player*> BorrowCard::getValidTargets(const GameState* state,
+                                                  const Player* user) const
+{
+    std::vector<Player*> targets;
+    if (!state || !user) return targets;
+    for (Player* p : state->alivePlayers()) {
+        if (canTarget(state, user, p)) {
+            targets.push_back(p);
+        }
+    }
+    return targets;
+}
+
+ActionResult BorrowCard::execute(GameState* state,
+                                  Player* user,
+                                  const std::vector<Player*>& targets)
+{
+    if (!state || !user || targets.empty()) {
+        return ActionResult::Completed;
+    }
+    Player* target = targets.front();
+    GameRule::executeBorrow(state, user, target);
+    return ActionResult::Completed;
+}
+
+// ==================== 新锦囊牌：五谷丰登 ====================
+
+HarvestCard::HarvestCard(CardSuit suit, int number)
+    : StrategyCard(CardType::Harvest, suit, number)
+{
+    setDescription("展示牌堆顶至存活人数张牌，依次选择一张");
+}
+
+std::vector<Player*> HarvestCard::getValidTargets(const GameState* state,
+                                                    const Player* user) const
+{
+    (void)user;
+    if (!state) return std::vector<Player*>();
+    return state->alivePlayers();
+}
+
+ActionResult HarvestCard::execute(GameState* state,
+                                   Player* user,
+                                   const std::vector<Player*>& targets)
+{
+    (void)targets;
+    if (!state || !user) {
+        return ActionResult::Completed;
+    }
+    GameRule::executeHarvest(state, user);
+    return ActionResult::Completed;
+}
+
+// ==================== 新锦囊牌：乐不思蜀 ====================
+
+HappyCard::HappyCard(CardSuit suit, int number)
+    : StrategyCard(CardType::Happy, suit, number)
+{
+    setDescription("判定：非红桃则跳过出牌阶段");
+}
+
+bool HappyCard::canTarget(const GameState* state,
+                          const Player* user,
+                          const Player* target) const
+{
+    if (!state || !user || !target) return false;
+    if (user == target) return false;
+    return target->isAlive();
+}
+
+std::vector<Player*> HappyCard::getValidTargets(const GameState* state,
+                                                 const Player* user) const
+{
+    std::vector<Player*> targets;
+    if (!state || !user) return targets;
+    for (Player* p : state->alivePlayers()) {
+        if (canTarget(state, user, p)) {
+            targets.push_back(p);
+        }
+    }
+    return targets;
+}
+
+ActionResult HappyCard::execute(GameState* state,
+                                 Player* user,
+                                 const std::vector<Player*>& targets)
+{
+    if (!state || !user || targets.empty()) {
+        return ActionResult::Completed;
+    }
+    Player* target = targets.front();
+    GameRule::executeHappy(state, user, target);
+    return ActionResult::Completed;
+}
+
+// ==================== 新锦囊牌：兵粮寸断 ====================
+
+FamineCard::FamineCard(CardSuit suit, int number)
+    : StrategyCard(CardType::Famine, suit, number)
+{
+    setDescription("判定：非梅花则跳过摸牌阶段");
+}
+
+bool FamineCard::canTarget(const GameState* state,
+                           const Player* user,
+                           const Player* target) const
+{
+    if (!state || !user || !target) return false;
+    if (user == target) return false;
+    return target->isAlive();
+}
+
+std::vector<Player*> FamineCard::getValidTargets(const GameState* state,
+                                                  const Player* user) const
+{
+    std::vector<Player*> targets;
+    if (!state || !user) return targets;
+    for (Player* p : state->alivePlayers()) {
+        if (canTarget(state, user, p)) {
+            targets.push_back(p);
+        }
+    }
+    return targets;
+}
+
+ActionResult FamineCard::execute(GameState* state,
+                                  Player* user,
+                                  const std::vector<Player*>& targets)
+{
+    if (!state || !user || targets.empty()) {
+        return ActionResult::Completed;
+    }
+    Player* target = targets.front();
+    GameRule::executeFamine(state, user, target);
+    return ActionResult::Completed;
+}
+
+// ==================== 装备牌基类 ====================
+
+EquipmentCard::EquipmentCard(CardType type, CardSuit suit, int number, EquipSlot slot)
+    : Card(type, suit, number)
+    , m_slot(slot)
+{
+}
+
+EquipSlot EquipmentCard::equipSlot() const { return m_slot; }
+
+bool EquipmentCard::canUse(const GameState* state, const Player* user) const
+{
+    if (!state || !user) return false;
+    if (state->currentPhase() != PhaseType::Play) return false;
+    if (!user->isAlive()) return false;
+    return true;
+}
+
+bool EquipmentCard::canTarget(const GameState* state,
+                               const Player* user,
+                               const Player* target) const
+{
+    (void)state;
+    if (!user || !target) return false;
+    return user == target;
+}
+
+std::vector<Player*> EquipmentCard::getValidTargets(const GameState* state,
+                                                      const Player* user) const
+{
+    std::vector<Player*> targets;
+    if (state && user) {
+        targets.push_back(const_cast<Player*>(user));
+    }
+    return targets;
+}
+
+ActionResult EquipmentCard::execute(GameState* state,
+                                     Player* user,
+                                     const std::vector<Player*>& targets)
+{
+    (void)targets;
+    if (!state || !user) return ActionResult::Completed;
+    user->equipCard(this);
+    return ActionResult::Completed;
+}
+
+int EquipmentCard::attackRangeBonus() const { return 0; }
+int EquipmentCard::defenseBonus() const { return 0; }
+bool EquipmentCard::canExtraKill() const { return false; }
+bool EquipmentCard::ignoreArmor() const { return false; }
+
+// ==================== 武器牌 ====================
+
+CrossbowCard::CrossbowCard(CardSuit suit, int number)
+    : EquipmentCard(CardType::Crossbow, suit, number, EquipSlot::Weapon)
+{
+    setDescription("出牌阶段无限制出【杀】");
+}
+
+int CrossbowCard::attackRangeBonus() const { return 0; }
+bool CrossbowCard::canExtraKill() const { return true; }
+
+QinglongBladeCard::QinglongBladeCard(CardSuit suit, int number)
+    : EquipmentCard(CardType::QinglongBlade, suit, number, EquipSlot::Weapon)
+{
+    setDescription("攻击距离+2");
+}
+
+int QinglongBladeCard::attackRangeBonus() const { return 2; }
+
+ZhangbaSnakeCard::ZhangbaSnakeCard(CardSuit suit, int number)
+    : EquipmentCard(CardType::ZhangbaSnake, suit, number, EquipSlot::Weapon)
+{
+    setDescription("攻击距离+3");
+}
+
+int ZhangbaSnakeCard::attackRangeBonus() const { return 3; }
+
+KylinBowCard::KylinBowCard(CardSuit suit, int number)
+    : EquipmentCard(CardType::KylinBow, suit, number, EquipSlot::Weapon)
+{
+    setDescription("攻击距离+5");
+}
+
+int KylinBowCard::attackRangeBonus() const { return 5; }
+
+QinggangSwordCard::QinggangSwordCard(CardSuit suit, int number)
+    : EquipmentCard(CardType::QinggangSword, suit, number, EquipSlot::Weapon)
+{
+    setDescription("攻击距离+2，无视防具");
+}
+
+int QinggangSwordCard::attackRangeBonus() const { return 2; }
+bool QinggangSwordCard::ignoreArmor() const { return true; }
+
+IceSwordCard::IceSwordCard(CardSuit suit, int number)
+    : EquipmentCard(CardType::IceSword, suit, number, EquipSlot::Weapon)
+{
+    setDescription("攻击距离+2");
+}
+
+int IceSwordCard::attackRangeBonus() const { return 2; }
+
+DualSwordCard::DualSwordCard(CardSuit suit, int number)
+    : EquipmentCard(CardType::DualSword, suit, number, EquipSlot::Weapon)
+{
+    setDescription("攻击距离+2");
+}
+
+int DualSwordCard::attackRangeBonus() const { return 2; }
+
+// ==================== 防具牌 ====================
+
+EightDiagramsCard::EightDiagramsCard(CardSuit suit, int number)
+    : EquipmentCard(CardType::EightDiagrams, suit, number, EquipSlot::Armor)
+{
+    setDescription("需要出【闪】时判定：红色则视为出【闪】");
+}
+
+BenevolentShieldCard::BenevolentShieldCard(CardSuit suit, int number)
+    : EquipmentCard(CardType::BenevolentShield, suit, number, EquipSlot::Armor)
+{
+    setDescription("黑色【杀】对你无效");
 }

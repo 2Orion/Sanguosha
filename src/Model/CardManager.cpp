@@ -21,7 +21,13 @@ void CardManager::initialize()
     m_drawPile.clear();
     m_discardPile.clear();
 
-    auto addCards = [&](CardType type, int count) {
+    auto addOne = [&](CardType type, CardSuit suit, int number) {
+        Card* card = createCard(type, suit, number);
+        m_allCards.push_back(card);
+        m_drawPile.push_back(card);
+    };
+
+    auto addMultiple = [&](CardType type, int count) {
         for (int i = 0; i < count; ++i) {
             Card* card = createCard(type, randomSuit(), (i % 13) + 1);
             m_allCards.push_back(card);
@@ -29,19 +35,80 @@ void CardManager::initialize()
         }
     };
 
-    addCards(CardType::Kill, 15);
-    addCards(CardType::Dodge, 10);
-    addCards(CardType::Peach, 6);
-    addCards(CardType::Wine, 3);
-    addCards(CardType::Dismantle, 3);
-    addCards(CardType::Steal, 3);
-    addCards(CardType::Bountiful, 3);
-    addCards(CardType::BarbarianInvasion, 2);
-    addCards(CardType::Volley, 2);
+    // ==================== 基本牌（58张） ====================
+    addMultiple(CardType::Kill, 30);
+    addMultiple(CardType::Dodge, 15);
+    addMultiple(CardType::Peach, 8);
+    addMultiple(CardType::Wine, 5);
 
-    Card* peachGarden = createCard(CardType::PeachGarden, randomSuit(), 1);
-    m_allCards.push_back(peachGarden);
-    m_drawPile.push_back(peachGarden);
+    // ==================== 普通锦囊（20张） ====================
+    addMultiple(CardType::Dismantle, 3);
+    addMultiple(CardType::Steal, 3);
+    addMultiple(CardType::Bountiful, 3);
+    addMultiple(CardType::BarbarianInvasion, 3);
+    addMultiple(CardType::Volley, 3);
+    addOne(CardType::PeachGarden, CardSuit::Heart, 1);
+
+    // 决斗（♠A, ♦A, ♣A）
+    addOne(CardType::Duel, CardSuit::Spade, 1);
+    addOne(CardType::Duel, CardSuit::Diamond, 1);
+    addOne(CardType::Duel, CardSuit::Club, 1);
+
+    // 借刀杀人（♠Q, ♣K）
+    addOne(CardType::Borrow, CardSuit::Spade, 12);
+    addOne(CardType::Borrow, CardSuit::Club, 13);
+
+    // 五谷丰登（♥3, ♥4）
+    addOne(CardType::Harvest, CardSuit::Heart, 3);
+    addOne(CardType::Harvest, CardSuit::Heart, 4);
+
+    // 无懈可击（♠K, ♣Q, ♣K）
+    addOne(CardType::Nullify, CardSuit::Spade, 13);
+    addOne(CardType::Nullify, CardSuit::Club, 12);
+    addOne(CardType::Nullify, CardSuit::Club, 13);
+
+    // ==================== 延时锦囊（6张） ====================
+    // 乐不思蜀（♥6 ×2, ♠6）
+    addOne(CardType::Happy, CardSuit::Heart, 6);
+    addOne(CardType::Happy, CardSuit::Heart, 6);
+    addOne(CardType::Happy, CardSuit::Spade, 6);
+
+    // 兵粮寸断（♠10, ♣10）
+    addOne(CardType::Famine, CardSuit::Spade, 10);
+    addOne(CardType::Famine, CardSuit::Club, 10);
+
+    // 闪电（♠A）
+    addOne(CardType::Lightning, CardSuit::Spade, 1);
+
+    // ==================== 装备牌（11张） ====================
+    // 诸葛连弩（♠A ×2）
+    addOne(CardType::Crossbow, CardSuit::Spade, 1);
+    addOne(CardType::Crossbow, CardSuit::Spade, 1);
+
+    // 青龙偃月刀（♠5）
+    addOne(CardType::QinglongBlade, CardSuit::Spade, 5);
+
+    // 丈八蛇矛（♠Q）
+    addOne(CardType::ZhangbaSnake, CardSuit::Spade, 12);
+
+    // 麒麟弓（♥5）
+    addOne(CardType::KylinBow, CardSuit::Heart, 5);
+
+    // 青釭剑（♠6）
+    addOne(CardType::QinggangSword, CardSuit::Spade, 6);
+
+    // 寒冰剑（♠2）
+    addOne(CardType::IceSword, CardSuit::Spade, 2);
+
+    // 雌雄双股剑（♠2）
+    addOne(CardType::DualSword, CardSuit::Spade, 2);
+
+    // 八卦阵（♠2 ×2）
+    addOne(CardType::EightDiagrams, CardSuit::Spade, 2);
+    addOne(CardType::EightDiagrams, CardSuit::Spade, 2);
+
+    // 仁王盾（♠2）
+    addOne(CardType::BenevolentShield, CardSuit::Spade, 2);
 
     shuffle();
 }
@@ -119,17 +186,36 @@ Card* CardManager::findCardById(int id) const
 Card* CardManager::createCard(CardType type, CardSuit suit, int number)
 {
     switch (type) {
+    // 基本牌
     case CardType::Kill:               return new KillCard(suit, number);
     case CardType::Dodge:              return new DodgeCard(suit, number);
     case CardType::Peach:              return new PeachCard(suit, number);
     case CardType::Wine:               return new WineCard(suit, number);
+    // 锦囊牌
     case CardType::Dismantle:          return new DismantleCard(suit, number);
     case CardType::Steal:              return new StealCard(suit, number);
     case CardType::Bountiful:          return new BountifulCard(suit, number);
     case CardType::BarbarianInvasion:  return new BarbarianCard(suit, number);
     case CardType::Volley:             return new VolleyCard(suit, number);
     case CardType::PeachGarden:        return new PeachGardenCard(suit, number);
-    default: break;
+    // 新锦囊牌
+    case CardType::Duel:               return new DuelCard(suit, number);
+    case CardType::Lightning:          return new LightningCard(suit, number);
+    case CardType::Nullify:            return new NullifyCard(suit, number);
+    case CardType::Borrow:             return new BorrowCard(suit, number);
+    case CardType::Harvest:            return new HarvestCard(suit, number);
+    case CardType::Happy:              return new HappyCard(suit, number);
+    case CardType::Famine:             return new FamineCard(suit, number);
+    // 装备牌
+    case CardType::Crossbow:           return new CrossbowCard(suit, number);
+    case CardType::QinglongBlade:      return new QinglongBladeCard(suit, number);
+    case CardType::ZhangbaSnake:       return new ZhangbaSnakeCard(suit, number);
+    case CardType::KylinBow:           return new KylinBowCard(suit, number);
+    case CardType::QinggangSword:      return new QinggangSwordCard(suit, number);
+    case CardType::IceSword:           return new IceSwordCard(suit, number);
+    case CardType::DualSword:          return new DualSwordCard(suit, number);
+    case CardType::EightDiagrams:      return new EightDiagramsCard(suit, number);
+    case CardType::BenevolentShield:   return new BenevolentShieldCard(suit, number);
     }
     return nullptr;
 }

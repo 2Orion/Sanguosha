@@ -146,24 +146,104 @@ Card* Player::getRandomHandCard() const
 
 // ==================== 装备区 ====================
 
-const std::vector<Card*>& Player::equipCards() const { return m_equipCards; }
+void Player::rebuildEquipCardsVector() const
+{
+    m_equipCardsCache.clear();
+    for (int i = 0; i < 4; ++i) {
+        if (m_equipSlots[i]) {
+            m_equipCardsCache.push_back(m_equipSlots[i]);
+        }
+    }
+}
 
-bool Player::hasEquipCards() const { return !m_equipCards.empty(); }
+EquipmentCard* Player::equippedAt(EquipSlot slot) const
+{
+    int idx = static_cast<int>(slot);
+    return (idx >= 0 && idx < 4) ? m_equipSlots[idx] : nullptr;
+}
+
+void Player::equipCard(EquipmentCard* card)
+{
+    if (!card) return;
+    int idx = static_cast<int>(card->equipSlot());
+    if (idx < 0 || idx >= 4) return;
+
+    // 替换同槽旧装备
+    EquipmentCard* old = m_equipSlots[idx];
+    m_equipSlots[idx] = card;
+
+    emit equipmentChanged(card->equipSlot());
+    emit stateChanged();
+
+    // 旧装备由调用方处理（进弃牌堆）
+    (void)old;
+}
+
+void Player::unequipSlot(EquipSlot slot)
+{
+    int idx = static_cast<int>(slot);
+    if (idx < 0 || idx >= 4) return;
+    if (m_equipSlots[idx]) {
+        m_equipSlots[idx] = nullptr;
+        emit equipmentChanged(slot);
+        emit stateChanged();
+    }
+}
+
+int Player::attackRange() const
+{
+    int range = 1;  // 基础攻击距离
+    EquipmentCard* weapon = equippedAt(EquipSlot::Weapon);
+    if (weapon) {
+        range += weapon->attackRangeBonus();
+    }
+    return range;
+}
+
+bool Player::hasArmor() const
+{
+    return equippedAt(EquipSlot::Armor) != nullptr;
+}
+
+bool Player::hasCrossbow() const
+{
+    EquipmentCard* weapon = equippedAt(EquipSlot::Weapon);
+    return weapon && weapon->canExtraKill();
+}
+
+// 旧接口兼容
+
+const std::vector<Card*>& Player::equipCards() const
+{
+    rebuildEquipCardsVector();
+    return m_equipCardsCache;
+}
+
+bool Player::hasEquipCards() const
+{
+    for (int i = 0; i < 4; ++i) {
+        if (m_equipSlots[i]) return true;
+    }
+    return false;
+}
 
 void Player::addEquipCard(Card* card)
 {
-    if (card && std::find(m_equipCards.begin(), m_equipCards.end(), card) == m_equipCards.end()) {
-        m_equipCards.push_back(card);
-        emit stateChanged();
+    EquipmentCard* eq = dynamic_cast<EquipmentCard*>(card);
+    if (eq) {
+        equipCard(eq);
     }
 }
 
 void Player::removeEquipCard(Card* card)
 {
-    if (card) {
-        auto it = std::find(m_equipCards.begin(), m_equipCards.end(), card);
-        if (it != m_equipCards.end()) m_equipCards.erase(it);
-        emit stateChanged();
+    for (int i = 0; i < 4; ++i) {
+        if (m_equipSlots[i] == card) {
+            m_equipSlots[i] = nullptr;
+            emit equipmentChanged(static_cast<EquipSlot>(i));
+            emit stateChanged();
+            return;
+        }
     }
 }
 
@@ -212,6 +292,10 @@ std::vector<Card*> Player::allSelectableCards() const
 {
     std::vector<Card*> result;
     result.insert(result.end(), m_handCards.begin(), m_handCards.end());
-    result.insert(result.end(), m_equipCards.begin(), m_equipCards.end());
+    for (int i = 0; i < 4; ++i) {
+        if (m_equipSlots[i]) {
+            result.push_back(m_equipSlots[i]);
+        }
+    }
     return result;
 }

@@ -117,9 +117,31 @@ ActionResult ActionViewModel::playCard(int cardId, int playerId,
         return ActionResult::RequiresDodge;
     }
 
+    // 装备牌：execute 内部已处理装备逻辑，不从手牌移除（由 equipCard 内部处理），
+    // 也不需要进弃牌堆（牌已装备到装备区）
+    bool isEquip = card->isEquipment();
+    EquipmentCard* oldEquip = nullptr;
+    if (isEquip) {
+        EquipmentCard* eq = dynamic_cast<EquipmentCard*>(card);
+        if (eq) {
+            EquipSlot slot = eq->equipSlot();
+            oldEquip = user->equippedAt(slot);
+        }
+    }
+
     ActionResult result = card->execute(m_state, user, targets);
-    user->removeHandCard(card);
-    if (m_state->cardManager()) m_state->cardManager()->discard(card);
+
+    if (isEquip) {
+        // 装备牌：从手牌移除，但不进弃牌堆
+        user->removeHandCard(card);
+        // 旧装备进弃牌堆
+        if (oldEquip && m_state->cardManager()) {
+            m_state->cardManager()->discard(oldEquip);
+        }
+    } else {
+        user->removeHandCard(card);
+        if (m_state->cardManager()) m_state->cardManager()->discard(card);
+    }
 
     QString targetStr;
     for (size_t i = 0; i < targets.size(); ++i) {

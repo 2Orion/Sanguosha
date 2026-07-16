@@ -14,6 +14,12 @@ bool canPlayKill(const GameState* state, const Player* player)
 {
     if (!state || !player) return false;
 
+    // 诸葛连弩：无限制出杀
+    if (player->hasCrossbow()) {
+        return true;
+    }
+
+    // 张飞咆哮：无限制出杀
     if (player->character() &&
         player->character()->characterName() == "张飞") {
         return true;
@@ -493,6 +499,141 @@ int getDiscardCount(const Player* player)
     int limit = handLimit(player);
 
     return std::max(0, handCount - limit);
+}
+
+// ==================== 装备与距离 ====================
+
+int getAttackRange(const GameState* state, const Player* attacker)
+{
+    (void)state;
+    if (!attacker) return 1;
+    return attacker->attackRange();
+}
+
+bool isInAttackRange(const GameState* state, const Player* attacker, const Player* target)
+{
+    if (!state || !attacker || !target) return false;
+    int range = getAttackRange(state, attacker);
+    // 简化：两人游戏，距离始终为 1
+    // TODO: 多人游戏时需计算座位距离
+    (void)range;
+    return true;
+}
+
+bool armorEffectCheck(const GameState* state, const Player* defender, Card* attackCard)
+{
+    (void)state;
+    if (!defender || !attackCard) return false;
+
+    EquipmentCard* armor = defender->equippedAt(EquipSlot::Armor);
+    if (!armor) return false;
+
+    // 仁王盾：黑色杀无效
+    if (armor->cardType() == CardType::BenevolentShield && attackCard->isBlack()) {
+        return true;  // 防具生效，杀被抵消
+    }
+
+    return false;
+}
+
+// ==================== 新锦囊执行 ====================
+
+void executeDuel(GameState* state, Player* user, Player* target)
+{
+    if (!state || !user || !target) return;
+
+    PendingActionInfo info;
+    info.source = user;
+    info.target = target;
+    info.sourceCard = nullptr;
+    info.requiredCardType = CardType::Kill;
+    info.description = (user->displayName() + " 对 " + target->displayName()
+                       + " 使用了【决斗】，请打出【杀】").toStdString();
+    info.canSkip = false;
+
+    state->setPendingAction(info);
+}
+
+void executeLightning(GameState* state, Player* user, Player* target)
+{
+    if (!state || !user || !target) return;
+    // 闪电放入目标判定区，在判定阶段结算
+    // 简化实现：直接对当前使用者进行判定
+    (void)target;
+    target->addJudgmentCard(nullptr);  // 实际应由 Card 对象传入
+    // TODO: 在 Judge 阶段实现完整的闪电结算（判定 + 伤害/转移）
+}
+
+void executeNullify(GameState* state, Player* user)
+{
+    // 无懈可击由 checkNullifyChain 在锦囊结算前触发
+    (void)state;
+    (void)user;
+}
+
+bool checkNullifyChain(GameState* state, Card* targetCard,
+                        Player* targetPlayer, Player* sourcePlayer)
+{
+    (void)state;
+    (void)targetCard;
+    (void)targetPlayer;
+    (void)sourcePlayer;
+    // TODO: 完整实现无懈可击的连锁询问
+    return false;
+}
+
+void executeBorrow(GameState* state, Player* user, Player* target)
+{
+    if (!state || !user || !target) return;
+
+    // 令目标对一名角色使用杀（若目标有武器）
+    // 简化实现：目标必须对使用者之外的另一名角色出杀
+    PendingActionInfo info;
+    info.source = user;
+    info.target = target;
+    info.sourceCard = nullptr;
+    info.requiredCardType = CardType::Kill;
+    info.description = (user->displayName() + " 对 " + target->displayName()
+                       + " 使用了【借刀杀人】，请使用【杀】").toStdString();
+    info.canSkip = true;
+
+    state->setPendingAction(info);
+}
+
+void executeHarvest(GameState* state, Player* user)
+{
+    if (!state || !user || !state->cardManager()) return;
+
+    int aliveCount = static_cast<int>(state->alivePlayers().size());
+    std::vector<Card*> revealed = state->cardManager()->drawCards(aliveCount);
+
+    if (revealed.empty()) return;
+
+    // 简化实现：展示的牌由使用者获得一张，其余弃置
+    if (!revealed.empty()) {
+        Card* chosen = revealed.front();
+        user->addHandCard(chosen);
+        for (size_t i = 1; i < revealed.size(); ++i) {
+            if (revealed[i]) {
+                state->cardManager()->discard(revealed[i]);
+            }
+        }
+    }
+}
+
+void executeHappy(GameState* state, Player* user, Player* target)
+{
+    if (!state || !user || !target) return;
+    // 乐不思蜀放入目标判定区
+    // 简化实现：直接标记，在 Judge 阶段处理
+    // 实际应由 Card 对象传入后放入 judgmentCards
+}
+
+void executeFamine(GameState* state, Player* user, Player* target)
+{
+    if (!state || !user || !target) return;
+    // 兵粮寸断放入目标判定区
+    // 简化实现：直接标记，在 Judge 阶段处理
 }
 
 } // namespace GameRule

@@ -16,12 +16,14 @@ struct CardData {
     CardColor color = CardColor::Black;
     bool isBasic = false;
     bool isStrategy = false;
+    bool isEquipment = false;
     QString suitSymbol;
     QString numberString;
     bool isSelected = false;
     bool isPlayable = false;
     bool isHighlighted = false;
     int ownerId = -1;
+    int equipSlot = -1;  // EquipSlot 枚举值，-1 表示非装备牌
 };
 
 using CardList = QVector<CardData>;

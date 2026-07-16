@@ -8,6 +8,9 @@
 class GameState;
 class Player;
 
+// 前向声明，用于 EquipmentCard::equipSlot()
+enum class EquipSlot;
+
 class Card {
 public:
     /// @param type   卡牌类型
@@ -248,6 +251,199 @@ public:
     ActionResult execute(GameState* state,
                           Player* user,
                           const std::vector<Player*>& targets) override;
+};
+
+// ==================== 新锦囊牌 ====================
+
+/// 决斗
+class DuelCard : public StrategyCard {
+public:
+    DuelCard(CardSuit suit, int number);
+
+    bool canTarget(const GameState* state,
+                   const Player* user,
+                   const Player* target) const override;
+    std::vector<Player*> getValidTargets(const GameState* state,
+                                          const Player* user) const override;
+    ActionResult execute(GameState* state,
+                          Player* user,
+                          const std::vector<Player*>& targets) override;
+};
+
+/// 闪电（延时锦囊）
+class LightningCard : public StrategyCard {
+public:
+    LightningCard(CardSuit suit, int number);
+
+    std::vector<Player*> getValidTargets(const GameState* state,
+                                          const Player* user) const override;
+    ActionResult execute(GameState* state,
+                          Player* user,
+                          const std::vector<Player*>& targets) override;
+};
+
+/// 无懈可击
+class NullifyCard : public StrategyCard {
+public:
+    NullifyCard(CardSuit suit, int number);
+
+    bool canUse(const GameState* state, const Player* user) const override;
+    std::vector<Player*> getValidTargets(const GameState* state,
+                                          const Player* user) const override;
+    ActionResult execute(GameState* state,
+                          Player* user,
+                          const std::vector<Player*>& targets) override;
+};
+
+/// 借刀杀人
+class BorrowCard : public StrategyCard {
+public:
+    BorrowCard(CardSuit suit, int number);
+
+    bool canTarget(const GameState* state,
+                   const Player* user,
+                   const Player* target) const override;
+    std::vector<Player*> getValidTargets(const GameState* state,
+                                          const Player* user) const override;
+    ActionResult execute(GameState* state,
+                          Player* user,
+                          const std::vector<Player*>& targets) override;
+};
+
+/// 五谷丰登
+class HarvestCard : public StrategyCard {
+public:
+    HarvestCard(CardSuit suit, int number);
+
+    std::vector<Player*> getValidTargets(const GameState* state,
+                                          const Player* user) const override;
+    ActionResult execute(GameState* state,
+                          Player* user,
+                          const std::vector<Player*>& targets) override;
+};
+
+/// 乐不思蜀（延时锦囊）
+class HappyCard : public StrategyCard {
+public:
+    HappyCard(CardSuit suit, int number);
+
+    bool canTarget(const GameState* state,
+                   const Player* user,
+                   const Player* target) const override;
+    std::vector<Player*> getValidTargets(const GameState* state,
+                                          const Player* user) const override;
+    ActionResult execute(GameState* state,
+                          Player* user,
+                          const std::vector<Player*>& targets) override;
+};
+
+/// 兵粮寸断（延时锦囊）
+class FamineCard : public StrategyCard {
+public:
+    FamineCard(CardSuit suit, int number);
+
+    bool canTarget(const GameState* state,
+                   const Player* user,
+                   const Player* target) const override;
+    std::vector<Player*> getValidTargets(const GameState* state,
+                                          const Player* user) const override;
+    ActionResult execute(GameState* state,
+                          Player* user,
+                          const std::vector<Player*>& targets) override;
+};
+
+// ==================== 装备牌 ====================
+
+/// 装备牌基类
+class EquipmentCard : public Card {
+public:
+    EquipmentCard(CardType type, CardSuit suit, int number, EquipSlot slot);
+    ~EquipmentCard() override = default;
+
+    EquipSlot equipSlot() const;
+
+    bool canUse(const GameState* state, const Player* user) const override;
+    bool canTarget(const GameState* state, const Player* user,
+                   const Player* target) const override;
+    std::vector<Player*> getValidTargets(const GameState* state,
+                                          const Player* user) const override;
+    ActionResult execute(GameState* state, Player* user,
+                          const std::vector<Player*>& targets) override;
+
+    /// 攻击距离加成
+    virtual int attackRangeBonus() const;
+    /// 防御加成
+    virtual int defenseBonus() const;
+    /// 是否可以额外出杀（诸葛连弩）
+    virtual bool canExtraKill() const;
+    /// 是否无视防具（青釭剑）
+    virtual bool ignoreArmor() const;
+
+protected:
+    EquipSlot m_slot;
+};
+
+/// 诸葛连弩
+class CrossbowCard : public EquipmentCard {
+public:
+    CrossbowCard(CardSuit suit, int number);
+    int attackRangeBonus() const override;
+    bool canExtraKill() const override;
+};
+
+/// 青龙偃月刀
+class QinglongBladeCard : public EquipmentCard {
+public:
+    QinglongBladeCard(CardSuit suit, int number);
+    int attackRangeBonus() const override;
+};
+
+/// 丈八蛇矛
+class ZhangbaSnakeCard : public EquipmentCard {
+public:
+    ZhangbaSnakeCard(CardSuit suit, int number);
+    int attackRangeBonus() const override;
+};
+
+/// 麒麟弓
+class KylinBowCard : public EquipmentCard {
+public:
+    KylinBowCard(CardSuit suit, int number);
+    int attackRangeBonus() const override;
+};
+
+/// 青釭剑
+class QinggangSwordCard : public EquipmentCard {
+public:
+    QinggangSwordCard(CardSuit suit, int number);
+    int attackRangeBonus() const override;
+    bool ignoreArmor() const override;
+};
+
+/// 寒冰剑
+class IceSwordCard : public EquipmentCard {
+public:
+    IceSwordCard(CardSuit suit, int number);
+    int attackRangeBonus() const override;
+};
+
+/// 雌雄双股剑
+class DualSwordCard : public EquipmentCard {
+public:
+    DualSwordCard(CardSuit suit, int number);
+    int attackRangeBonus() const override;
+};
+
+/// 八卦阵
+class EightDiagramsCard : public EquipmentCard {
+public:
+    EightDiagramsCard(CardSuit suit, int number);
+};
+
+/// 仁王盾
+class BenevolentShieldCard : public EquipmentCard {
+public:
+    BenevolentShieldCard(CardSuit suit, int number);
 };
 
 #endif // CARD_H

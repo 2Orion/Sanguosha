@@ -7,6 +7,7 @@
 #include "CommonTypes.h"
 
 class Card;
+class EquipmentCard;
 class Character;
 class GameState;
 
@@ -56,6 +57,20 @@ public:
 
     // ==================== 装备区 ====================
 
+    /// 装备卡牌（替换同槽旧装备，旧装备进弃牌堆）
+    void equipCard(EquipmentCard* card);
+    /// 卸下指定槽位的装备（进弃牌堆）
+    void unequipSlot(EquipSlot slot);
+    /// 查询指定槽位的装备
+    EquipmentCard* equippedAt(EquipSlot slot) const;
+    /// 计算攻击距离（含武器加成）
+    int attackRange() const;
+    /// 是否有防具
+    bool hasArmor() const;
+    /// 是否装备了诸葛连弩（可无限制出杀）
+    bool hasCrossbow() const;
+
+    // 旧接口保持兼容
     const std::vector<Card*>& equipCards() const;
     bool hasEquipCards() const;
     void addEquipCard(Card* card);
@@ -91,6 +106,7 @@ signals:
     void handCardsChanged();
     void characterChanged(const QString& charName);
     void stateChanged();
+    void equipmentChanged(EquipSlot slot);
 
 private:
     int m_playerId = -1;
@@ -100,8 +116,11 @@ private:
     int m_hp = 0;
     bool m_dying = false;
 
+    void rebuildEquipCardsVector() const;
+
     std::vector<Card*> m_handCards;
-    std::vector<Card*> m_equipCards;
+    EquipmentCard* m_equipSlots[4] = {nullptr, nullptr, nullptr, nullptr};
+    mutable std::vector<Card*> m_equipCardsCache;
     std::vector<Card*> m_judgmentCards;
 
     bool m_usedKillThisTurn = false;
