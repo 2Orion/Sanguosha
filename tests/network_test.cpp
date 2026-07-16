@@ -59,7 +59,7 @@ CardData makeCardData()
 {
     CardData d;
     d.cardId = 42;
-    d.cardType = CardType::QinglongSaber;
+    d.cardType = CardType::QinglongBlade;
     d.suit = CardSuit::Heart;
     d.number = 5;
     d.cardName = QStringLiteral("青龙偃月刀");
@@ -74,7 +74,7 @@ CardData makeCardData()
     d.isHighlighted = false;
     d.ownerId = 1;
     d.isEquipment = true;
-    d.equipSlot = EquipSlot::Weapon;
+    d.equipSlot = static_cast<int>(EquipSlot::Weapon);
     d.attackRange = 2;
     return d;
 }
@@ -94,8 +94,8 @@ PlayerData makePlayerData()
     d.handCardCount = 5;
     d.handCardLimit = 3;
     d.isCurrentPlayer = true;
-    d.weaponCard = makeCardData();
-    d.armorCard = CardData{};  // 空槽
+    d.attackRange = 3;
+    d.equipCards = {makeCardData()};
     return d;
 }
 
@@ -132,6 +132,13 @@ void compareCardData(const CardData& a, const CardData& b)
     QCOMPARE(a.isEquipment, b.isEquipment);
     QCOMPARE(a.equipSlot, b.equipSlot);
     QCOMPARE(a.attackRange, b.attackRange);
+}
+
+void compareEquipCards(const QVector<CardData>& a, const QVector<CardData>& b)
+{
+    QCOMPARE(a.size(), b.size());
+    for (int i = 0; i < a.size(); ++i)
+        compareCardData(a.at(i), b.at(i));
 }
 
 /// 完整帧 encode → decodeFrames → decodePayload 的 round-trip
@@ -289,9 +296,8 @@ private slots:
         QCOMPARE(dst.handCardCount, src.handCardCount);
         QCOMPARE(dst.handCardLimit, src.handCardLimit);
         QCOMPARE(dst.isCurrentPlayer, src.isCurrentPlayer);
-        compareCardData(dst.weaponCard, src.weaponCard);
-        compareCardData(dst.armorCard, src.armorCard);
-        QCOMPARE(dst.armorCard.cardId, -1);  // 空槽语义保留
+        QCOMPARE(dst.attackRange, src.attackRange);
+        compareEquipCards(dst.equipCards, src.equipCards);
     }
 
     void pendingActionDataRoundTrip()
@@ -418,7 +424,7 @@ private slots:
         const auto dst = frameRoundTrip(MessageType::PlayerDataUpdated, src);
         QCOMPARE(dst.playerId, 1);
         QCOMPARE(dst.data.characterName, src.data.characterName);
-        compareCardData(dst.data.weaponCard, src.data.weaponCard);
+        compareEquipCards(dst.data.equipCards, src.data.equipCards);
     }
 
     void handCardsMsgRoundTrip()
@@ -713,7 +719,12 @@ private slots:
 
         // 第三个连接：连上即收到拒绝 Ack（playerId=-1），随后被断开
         RawClient c2;
-        QVERIFY(c2.connectTo(port));
+        c2.socket.connectToHost(QHostAddress::LocalHost, port);
+        QVERIFY(QTest::qWaitFor([&c2] {
+            return c2.socket.state() == QAbstractSocket::ConnectedState
+                || (c2.socket.state() == QAbstractSocket::UnconnectedState
+                    && c2.socket.bytesAvailable() > 0);
+        }, 8000));
         QVERIFY(c2.waitFrames(1));
         QCOMPARE(c2.frames[0].type, MessageType::HandshakeAck);
         const auto ack = MessageSerializer::decodePayload<HandshakeAckMsg>(

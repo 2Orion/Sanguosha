@@ -261,6 +261,10 @@ add_executable(ViewTest
     ${VIEWMODEL_HEADERS}
     ${APP_SOURCES}
     ${APP_HEADERS}
+    ${SERVER_APP_SOURCES}
+    ${SERVER_APP_HEADERS}
+    ${CLIENT_APP_SOURCES}
+    ${CLIENT_APP_HEADERS}
 )
 
 target_include_directories(ViewTest PRIVATE
@@ -270,11 +274,14 @@ target_include_directories(ViewTest PRIVATE
     ${CMAKE_SOURCE_DIR}/src/ViewModel
     ${CMAKE_SOURCE_DIR}/src/View
     ${CMAKE_SOURCE_DIR}/src/App
+    ${CMAKE_SOURCE_DIR}/src/Network
 )
 
 target_link_libraries(ViewTest PRIVATE
     SanguoshaModel
+    SanguoshaNetwork
     Qt${QT_VERSION_MAJOR}::Widgets
+    Qt${QT_VERSION_MAJOR}::Network
     Qt${QT_VERSION_MAJOR}::Test
 )
 

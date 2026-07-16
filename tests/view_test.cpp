@@ -404,8 +404,15 @@ void ViewTest::mainWindowAndAppComposition()
     const auto groups = window.findChildren<QButtonGroup*>();
     QCOMPARE(groups.size(), 2);
     const auto startButtons = window.findChildren<QPushButton*>();
-    QCOMPARE(startButtons.size(), 1);
-    QPushButton* startButton = startButtons.front();
+    QCOMPARE(startButtons.size(), 3);
+    QPushButton* startButton = nullptr;
+    for (QPushButton* button : startButtons) {
+        if (button->text() == QStringLiteral("开始对战")) {
+            startButton = button;
+            break;
+        }
+    }
+    QVERIFY(startButton != nullptr);
     QVERIFY(!startButton->isEnabled());
 
     groups.at(0)->button(0)->click();
