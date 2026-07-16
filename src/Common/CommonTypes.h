@@ -84,8 +84,8 @@ enum class PhaseType {
 /// 卡牌所在区域
 enum class CardArea {
     Hand,      // 手牌区
-    Equipment, // 装备区（预留）
-    Judgment,  // 判定区（预留）
+    Equipment, // 装备区
+    Judgment,  // 判定区
     Pending    // 处理中
 };
 

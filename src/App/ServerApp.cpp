@@ -149,6 +149,15 @@ void ServerApp::wireViewModelBroadcasts()
         m_server->broadcast(MessageType::LogMessage,
                             MessageSerializer::encodePayload(msg));
     });
+    connect(m_gvm, &GameViewModel::judgmentPerformed, this,
+            [this](const CardData& judgeCard, const QString& resultText, bool effective) {
+        JudgmentPerformedMsg msg;
+        msg.judgeCard = judgeCard;
+        msg.resultText = resultText;
+        msg.effective = effective;
+        m_server->broadcast(MessageType::JudgmentPerformed,
+                            MessageSerializer::encodePayload(msg));
+    });
     connect(avm, &ActionViewModel::targetSelectionStarted, this,
             [this](const QVector<int>& ids) {
         TargetSelectionStartedMsg msg;
@@ -191,6 +200,11 @@ void ServerApp::onClientCommandReceived(int playerId, MessageType type,
     case MessageType::DiscardCardRequested: {
         const auto msg = MessageSerializer::decodePayload<DiscardCardMsg>(payload);
         m_gvm->onDiscardCardRequested(msg.cardId, playerId);
+        break;
+    }
+    case MessageType::SkillRequested: {
+        const auto msg = MessageSerializer::decodePayload<SkillRequestedMsg>(payload);
+        avm->onSkillRequested(msg.cardIds, playerId);
         break;
     }
     case MessageType::EndPlayRequested:

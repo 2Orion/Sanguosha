@@ -15,8 +15,10 @@ public:
 
     void setCards(const CardList& cards, bool faceUp = true);
     void setSelection(int cardId, bool selected);
+    void setMultiSelectMode(bool multi) { m_multiSelect = multi; }
 
     int selectedCardId() const;
+    QVector<int> selectedCardIds() const;
     void clearSelection();
     int cardCount() const { return m_cards.size(); }
 
@@ -39,6 +41,7 @@ private:
 
     CardList m_cards;
     bool m_faceUp = false;
+    bool m_multiSelect = false;
     std::vector<CardWidget*> m_cardWidgets;
 
     static constexpr int CARD_WIDTH  = 80;

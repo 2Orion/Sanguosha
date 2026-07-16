@@ -71,6 +71,14 @@ void GameClient::discardCard(int cardId, int playerId)
     send(MessageType::DiscardCardRequested, msg);
 }
 
+void GameClient::useSkill(const QVector<int>& cardIds, int playerId)
+{
+    SkillRequestedMsg msg;
+    msg.cardIds = cardIds;
+    msg.playerId = playerId;
+    send(MessageType::SkillRequested, msg);
+}
+
 void GameClient::endPlayPhase() { send(MessageType::EndPlayRequested); }
 void GameClient::advancePhase() { send(MessageType::AdvanceRequested); }
 void GameClient::skipResponse() { send(MessageType::SkipRequested); }
@@ -164,6 +172,11 @@ void GameClient::dispatchMessage(MessageType type, const QByteArray& payload)
     case MessageType::TargetSelectionFinished:
         emit targetSelectionFinished();
         return;
+    case MessageType::JudgmentPerformed: {
+        const auto msg = MessageSerializer::decodePayload<JudgmentPerformedMsg>(payload);
+        emit judgmentPerformed(msg.judgeCard, msg.resultText, msg.effective);
+        return;
+    }
     case MessageType::Ping:
         send(MessageType::Pong);
         return;

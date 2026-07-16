@@ -47,6 +47,14 @@ QPushButton* visibleButton(ActionPanelWidget* panel)
     return nullptr;
 }
 
+QPushButton* buttonWithText(ActionPanelWidget* panel, const QString& text)
+{
+    for (QPushButton* button : panel->findChildren<QPushButton*>()) {
+        if (button->text() == text) return button;
+    }
+    return nullptr;
+}
+
 class ExposedPlayerInfoWidget : public PlayerInfoWidget {
 public:
     using PlayerInfoWidget::mousePressEvent;
@@ -63,6 +71,7 @@ private slots:
     void playerInfoDisplayAndClick();
     void actionPanelStates();
     void gameBoardRouting();
+    void gameBoardSkillSelection();
     void targetSelectionState();
     void mainWindowAndAppComposition();
 };
@@ -137,6 +146,16 @@ void ViewTest::handCardAreaInteraction()
     area.clearSelection();
     QCOMPARE(area.selectedCardId(), -1);
 
+    area.setMultiSelectMode(true);
+    QTest::mouseClick(first, Qt::LeftButton, Qt::NoModifier, QPoint(15, 15));
+    QTest::mouseClick(second, Qt::LeftButton, Qt::NoModifier, QPoint(15, 15));
+    const QVector<int> selectedIds = area.selectedCardIds();
+    QCOMPARE(selectedIds.size(), 2);
+    QVERIFY(selectedIds.contains(10));
+    QVERIFY(selectedIds.contains(11));
+    area.clearSelection();
+    area.setMultiSelectMode(false);
+
     QTest::mouseDClick(second, Qt::LeftButton, Qt::NoModifier, QPoint(15, 15));
     QVERIFY(doubleClickedSpy.count() >= 1);
 
@@ -168,6 +187,9 @@ void ViewTest::playerInfoDisplayAndClick()
     data.handCardCount = 3;
     data.handCardLimit = 2;
     data.isCurrentPlayer = true;
+    CardData judgment = makeCardData(99, QStringLiteral("乐不思蜀"));
+    judgment.cardType = CardType::Happy;
+    data.judgmentCards.append(judgment);
     widget.setDisplayData(data);
 
     QCOMPARE(widget.playerId(), 7);
@@ -175,12 +197,15 @@ void ViewTest::playerInfoDisplayAndClick()
     QVERIFY(widget.findChildren<QLabel*>().size() >= 5);
     bool foundName = false;
     bool foundSkill = false;
+    bool foundJudgment = false;
     for (QLabel* label : widget.findChildren<QLabel*>()) {
         foundName = foundName || label->text().contains(QStringLiteral("Alice"));
         foundSkill = foundSkill || label->text().contains(QStringLiteral("Skill"));
+        foundJudgment = foundJudgment || label->text().contains(QStringLiteral("乐不思蜀"));
     }
     QVERIFY(foundName);
     QVERIFY(foundSkill);
+    QVERIFY(foundJudgment);
 
     widget.setTargetable(true);
     QVERIFY(widget.isTargetable());
@@ -206,21 +231,33 @@ void ViewTest::actionPanelStates()
     panel.resize(600, 60);
     panel.show();
     const auto buttons = panel.findChildren<QPushButton*>();
-    QCOMPARE(buttons.size(), 3);
+    QCOMPARE(buttons.size(), 4);
     for (QPushButton* button : buttons)
         QVERIFY(!button->isVisible());
 
     QSignalSpy playEndedSpy(&panel, &ActionPanelWidget::playPhaseEnded);
     QSignalSpy skippedSpy(&panel, &ActionPanelWidget::respondSkipped);
     QSignalSpy discardSpy(&panel, &ActionPanelWidget::discardConfirmed);
+    QSignalSpy skillSpy(&panel, &ActionPanelWidget::skillRequested);
 
     panel.updateForPhase(PhaseType::Prepare, false);
     QVERIFY(visibleButton(&panel) == nullptr);
     panel.updateForPhase(PhaseType::Play, false);
-    QPushButton* playButton = visibleButton(&panel);
+    QPushButton* playButton = buttonWithText(&panel, QStringLiteral("结束出牌"));
     QVERIFY(playButton != nullptr);
+    QVERIFY(playButton->isVisible());
     QTest::mouseClick(playButton, Qt::LeftButton);
     QCOMPARE(playEndedSpy.count(), 1);
+
+    panel.setSkillAvailable(true);
+    QPushButton* skillButton = buttonWithText(&panel, QStringLiteral("发动技能"));
+    QVERIFY(skillButton != nullptr);
+    QVERIFY(skillButton->isVisible());
+    QTest::mouseClick(skillButton, Qt::LeftButton);
+    QCOMPARE(skillSpy.count(), 1);
+    panel.setSkillSelectionMode(true);
+    QCOMPARE(skillButton->text(), QStringLiteral("确认技能"));
+    panel.setSkillSelectionMode(false);
 
     panel.updateForPhase(PhaseType::Discard, false);
     QPushButton* discardButton = visibleButton(&panel);
@@ -347,6 +384,80 @@ void ViewTest::gameBoardRouting()
     QSignalSpy advanceSpy(&board, &GameBoardWidget::advanceRequested);
     board.onPhaseChanged(PhaseType::Prepare);
     QTRY_COMPARE_WITH_TIMEOUT(advanceSpy.count(), 1, 1000);
+}
+
+void ViewTest::gameBoardSkillSelection()
+{
+    GameBoardWidget board;
+    board.resize(900, 700);
+    board.show();
+
+    PlayerData current;
+    current.playerId = 0;
+    current.displayName = QStringLiteral("Sun Quan");
+    current.characterName = QStringLiteral("孙权");
+    current.hp = 4;
+    current.maxHp = 4;
+    current.isAlive = true;
+    current.isCurrentPlayer = true;
+    current.canUseActiveSkill = true;
+    board.onPlayerDataUpdated(0, current);
+
+    PlayerData opponent = current;
+    opponent.playerId = 1;
+    opponent.displayName = QStringLiteral("Opponent");
+    opponent.isCurrentPlayer = false;
+    opponent.canUseActiveSkill = false;
+    board.onPlayerDataUpdated(1, opponent);
+
+    CardList cards;
+    cards.append(makeCardData(301, QStringLiteral("First")));
+    cards.append(makeCardData(302, QStringLiteral("Second")));
+    board.onHandCardsUpdated(0, cards);
+    board.onPhaseChanged(PhaseType::Play);
+    QCoreApplication::processEvents();
+
+    auto* panel = board.findChild<ActionPanelWidget*>();
+    QVERIFY(panel != nullptr);
+    auto* skillButton = panel->findChild<QPushButton*>(QStringLiteral("skillButton"));
+    QVERIFY(skillButton != nullptr);
+    QVERIFY(skillButton->isVisible());
+
+    QSignalSpy skillSpy(&board, &GameBoardWidget::skillRequested);
+    QTest::mouseClick(skillButton, Qt::LeftButton);
+    QCOMPARE(skillButton->text(), QStringLiteral("确认技能"));
+
+    HandCardAreaWidget* ownArea = nullptr;
+    for (HandCardAreaWidget* area : board.findChildren<HandCardAreaWidget*>()) {
+        for (CardWidget* card : area->findChildren<CardWidget*>()) {
+            if (card->cardId() == 301) ownArea = area;
+        }
+    }
+    QVERIFY(ownArea != nullptr);
+
+    for (CardWidget* card : ownArea->findChildren<CardWidget*>()) {
+        QTest::mouseClick(card, Qt::LeftButton, Qt::NoModifier, QPoint(15, 15));
+    }
+    QCOMPARE(ownArea->selectedCardIds().size(), 2);
+
+    QTest::mouseClick(skillButton, Qt::LeftButton);
+    QCOMPARE(skillSpy.count(), 1);
+    const QVector<int> selected = skillSpy.at(0).at(0).value<QVector<int>>();
+    QCOMPARE(selected.size(), 2);
+    QVERIFY(selected.contains(301));
+    QVERIFY(selected.contains(302));
+    QCOMPARE(skillSpy.at(0).at(1).toInt(), 0);
+    QVERIFY(ownArea->selectedCardIds().isEmpty());
+
+    CardData judgeCard = makeCardData(400, QStringLiteral("判定牌"));
+    judgeCard.suitSymbol = QStringLiteral("♠");
+    judgeCard.numberString = QStringLiteral("7");
+    board.onJudgmentPerformed(judgeCard, QStringLiteral("判定生效"), true);
+    bool foundJudgment = false;
+    for (QLabel* label : board.findChildren<QLabel*>()) {
+        foundJudgment = foundJudgment || label->text().contains(QStringLiteral("判定生效"));
+    }
+    QVERIFY(foundJudgment);
 }
 
 void ViewTest::targetSelectionState()

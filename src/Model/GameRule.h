@@ -1,6 +1,8 @@
 #ifndef GAMERULE_H
 #define GAMERULE_H
 
+#include <functional>
+
 class GameState;
 class Player;
 class Card;
@@ -60,13 +62,25 @@ namespace GameRule {
     // 新锦囊
     void executeDuel(GameState* state, Player* user, Player* target, Card* duelCard);
     void handleDuelResponse(GameState* state, Player* responder, Card* killCard);
-    void executeLightning(GameState* state, Player* user, Player* target);
-    void executeNullify(GameState* state, Player* user);
     void executeBorrow(GameState* state, Player* user, Player* target);
     void executeHarvest(GameState* state, Player* user);
-    void executeHappy(GameState* state, Player* user, Player* target);
-    void executeFamine(GameState* state, Player* user, Player* target);
-    bool checkNullifyChain(GameState* state, Card* targetCard, Player* targetPlayer, Player* sourcePlayer);
+
+    // ==================== 无懈可击 ====================
+
+    /// 玩家是否有无懈可击可响应
+    bool hasNullifyToRespond(const Player* player);
+
+    /// 在锦囊效果执行前检查无懈可击链
+    /// onSkip 为对方放弃无懈时应恢复执行的策略效果回调
+    bool checkNullifyBeforeEffect(GameState* state, Card* strategyCard,
+                                   Player* target, Player* source,
+                                   std::function<void()> onSkip);
+
+    /// 处理无懈可击响应结果
+    void handleNullifyResponse(GameState* state, Player* responder,
+                                Card* nullifyCard, bool usedNullify);
+    bool checkNullifyChain(GameState* state, Card* targetCard,
+                           Player* targetPlayer, Player* sourcePlayer);
 
     // ==================== AOE 响应处理 ====================
 

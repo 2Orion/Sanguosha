@@ -77,7 +77,7 @@ public:
     void addEquipCard(Card* card);
     void removeEquipCard(Card* card);
 
-    // ==================== 判定区（预留） ====================
+    // ==================== 判定区 ====================
 
     const std::vector<Card*>& judgmentCards() const;
     bool hasJudgmentCards() const;
@@ -89,6 +89,8 @@ public:
     void resetTurnState();
     bool hasUsedKillThisTurn() const;
     void setUsedKillThisTurn(bool used);
+    bool hasUsedActiveSkillThisTurn() const;
+    void setUsedActiveSkillThisTurn(bool used);
     bool isWineEnhanced() const;
     void setWineEnhanced(bool enhanced);
 
@@ -126,6 +128,7 @@ private:
     std::vector<Card*> m_judgmentCards;
 
     bool m_usedKillThisTurn = false;
+    bool m_usedActiveSkillThisTurn = false;
     bool m_wineEnhanced = false;
 };
 

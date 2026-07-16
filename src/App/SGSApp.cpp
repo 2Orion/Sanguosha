@@ -6,8 +6,6 @@
 #include "ServerApp.h"
 #include "ClientApp.h"
 #include "GameClient.h"
-#include "GameState.h"
-#include "Player.h"
 #include <QMessageBox>
 #include <QNetworkInterface>
 
@@ -58,6 +56,8 @@ void SGSApp::startLocalGame(int charId1, int charId2)
             m_gvm, &GameViewModel::onAdvanceRequested);
     connect(m_board, &GameBoardWidget::skipRequested,
             m_gvm, &GameViewModel::onSkipRequested);
+    connect(m_board, &GameBoardWidget::skillRequested,
+            avm, &ActionViewModel::onSkillRequested);
 
     // ViewModel → View
     connect(m_gvm, &GameViewModel::phaseChanged,
@@ -78,6 +78,8 @@ void SGSApp::startLocalGame(int charId1, int charId2)
             m_board, &GameBoardWidget::onGameOver);
     connect(m_gvm, &GameViewModel::logMessage,
             m_board, &GameBoardWidget::onLogMessage);
+    connect(m_gvm, &GameViewModel::judgmentPerformed,
+            m_board, &GameBoardWidget::onJudgmentPerformed);
 
     // 生命周期
     connect(m_board, &GameBoardWidget::gameFinished,
@@ -103,13 +105,19 @@ void SGSApp::onGameFinished()
 
 namespace {
 
-QString localIpAddress()
+/// 收集所有非回环 IPv4 地址（可能有多个网卡：Wi-Fi、有线、虚拟网卡等）
+QStringList localIpAddresses()
 {
+    QStringList ips;
     for (const QHostAddress& addr : QNetworkInterface::allAddresses()) {
-        if (addr != QHostAddress::LocalHost && addr.protocol() == QAbstractSocket::IPv4Protocol)
-            return addr.toString();
+        if (addr != QHostAddress::LocalHost
+            && addr.protocol() == QAbstractSocket::IPv4Protocol) {
+            ips.append(addr.toString());
+        }
     }
-    return QStringLiteral("127.0.0.1");
+    if (ips.isEmpty())
+        ips.append(QStringLiteral("127.0.0.1"));
+    return ips;
 }
 
 } // namespace
@@ -131,18 +139,24 @@ void SGSApp::onCreateRoom()
         return;
     }
 
-    // 在状态标签显示本机 IP（房主告诉对手）
-    QString ip = localIpAddress();
+    // 2. 显示本机所有可用 IP（连接成功后才切换到选将页）
+    QStringList ips = localIpAddresses();
+    QString ipText = ips.join(QStringLiteral(", "));
     static_cast<MainWindow*>(m_mainWindow)->setNetworkStatusText(
-        QStringLiteral("服务器已启动  IP: %1 : %2  等待对手连接...")
-            .arg(ip).arg(Protocol::kDefaultPort));
+        QStringLiteral("本机 IP: %1   端口: %2\n等待对手连接...")
+            .arg(ipText).arg(Protocol::kDefaultPort));
 
-    // 2. 创建本地客户端并连接服务器
+    // 3. 创建本地客户端并连接服务器
     m_clientApp = new ClientApp(this);
     connect(m_clientApp->gameClient(), &GameClient::connected,
-            this, [this](int playerId) {
+            this, [this, ipText](int playerId) {
         m_myPlayerId = playerId;
         m_clientApp->boardWidget()->setLocalPlayerId(playerId);
+        // TCP 连接完成后再显示选将页，确保 SelectCharacter 不会排在 Handshake 之前
+        static_cast<MainWindow*>(m_mainWindow)->showCharacterSelection(
+            playerId, QStringLiteral("房主"),
+            QStringLiteral("本机 IP: %1   端口: %2\n等待对手连接...")
+                .arg(ipText).arg(Protocol::kDefaultPort));
     });
     connect(m_clientApp->gameClient(), &GameClient::gameStarted,
             this, &SGSApp::onClientGameStarted);
@@ -152,10 +166,6 @@ void SGSApp::onCreateRoom()
             this, [this]() { onConnectionError(QStringLiteral("与服务器断开连接")); });
 
     m_clientApp->connectToServer(QStringLiteral("127.0.0.1"), Protocol::kDefaultPort);
-
-    // 3. UI 切换到选将界面
-    auto* mainWin = static_cast<MainWindow*>(m_mainWindow);
-    mainWin->showCharacterSelection(0, QStringLiteral("房主"));
 }
 
 void SGSApp::onJoinRoom(const QString& host, quint16 port)
@@ -168,6 +178,9 @@ void SGSApp::onJoinRoom(const QString& host, quint16 port)
             this, [this](int playerId) {
         m_myPlayerId = playerId;
         m_clientApp->boardWidget()->setLocalPlayerId(playerId);
+        // 连接成功后再显示选将页（确保 TCP 连接已完成，SelectCharacter 不会排在 Handshake 之前）
+        static_cast<MainWindow*>(m_mainWindow)->showCharacterSelection(
+            playerId, QStringLiteral("加入者"));
     });
     connect(m_clientApp->gameClient(), &GameClient::gameStarted,
             this, &SGSApp::onClientGameStarted);
@@ -181,10 +194,6 @@ void SGSApp::onJoinRoom(const QString& host, quint16 port)
             this, [this]() { onConnectionError(QStringLiteral("与服务器断开连接")); });
 
     m_clientApp->connectToServer(host, port);
-
-    // 2. UI 切换到选将界面
-    auto* mainWin = static_cast<MainWindow*>(m_mainWindow);
-    mainWin->showCharacterSelection(1, QStringLiteral("加入者"));
 }
 
 void SGSApp::onCharacterConfirmed(int charId)

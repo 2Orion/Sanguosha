@@ -17,8 +17,10 @@ namespace Protocol {
 /// 协议版本号。Common 值类型（CardData/PlayerData/PendingActionData）字段
 /// 增删时必须递增（plan2.0.md §7.2 契约）。
 /// v1：CardData 含装备字段 isEquipment/equipSlot/attackRange，
-///     PlayerData 含 weaponCard/armorCard 按槽装备区。
-constexpr quint16 kProtocolVersion = 1;
+///     PlayerData 含 equipCards 装备区。
+/// v2：PlayerData 新增 canUseActiveSkill/judgmentCards，并新增主动技能命令
+///     与判定结果广播。
+constexpr quint16 kProtocolVersion = 2;
 
 /// 默认监听端口
 constexpr quint16 kDefaultPort = 9527;
@@ -42,6 +44,7 @@ enum class MessageType : quint8 {
     EndPlayRequested     = 14,  // ~ GameViewModel::onEndPlayRequested()
     AdvanceRequested     = 15,  // ~ GameViewModel::onAdvanceRequested()
     SkipRequested        = 16,  // ~ GameViewModel::onSkipRequested()
+    SkillRequested       = 17,  // ~ ActionViewModel::onSkillRequested(cardIds, playerId)
 
     // ---- VM 信号的网络化（S→C，广播；HandCardsUpdated 按接收方脱敏） ----
     PhaseChanged            = 30,  // ~ GameViewModel::phaseChanged(PhaseType)
@@ -53,6 +56,7 @@ enum class MessageType : quint8 {
     LogMessage              = 36,  // ~ GameViewModel::logMessage(QString)
     TargetSelectionStarted  = 37,  // ~ ActionViewModel::targetSelectionStarted(QVector<int>)
     TargetSelectionFinished = 38,  // ~ ActionViewModel::targetSelectionFinished()
+    JudgmentPerformed       = 39,  // ~ GameViewModel::judgmentPerformed(...)
 
     // ---- 保活 ----
     Ping = 50,
@@ -101,6 +105,11 @@ struct DiscardCardMsg {               // C→S ~ onDiscardCardRequested(cardId, 
     qint32 playerId = -1;
 };
 
+struct SkillRequestedMsg {            // C→S ~ onSkillRequested(cardIds, playerId)
+    QVector<int> cardIds;
+    qint32 playerId = -1;
+};
+
 struct PhaseChangedMsg {              // S→C ~ phaseChanged(PhaseType)
     PhaseType phase = PhaseType::Prepare;
 };
@@ -129,6 +138,12 @@ struct LogMessageMsg {                // S→C ~ logMessage(QString)
 
 struct TargetSelectionStartedMsg {    // S→C ~ targetSelectionStarted(QVector<int>)
     QVector<int> targetIds;
+};
+
+struct JudgmentPerformedMsg {         // S→C ~ judgmentPerformed(...)
+    CardData judgeCard;
+    QString resultText;
+    bool effective = false;
 };
 
 // ==================== 手牌脱敏（Step 5） ====================

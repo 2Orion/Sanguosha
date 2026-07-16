@@ -22,7 +22,11 @@ public:
     ~GameBoardWidget() override;
 
     /// 设置本地玩家 ID（联网模式用；本地双人模式默认 0 = 下方）
-    void setLocalPlayerId(int playerId) { m_localPlayerId = playerId; }
+    void setLocalPlayerId(int playerId)
+    {
+        m_localPlayerId = playerId;
+        m_restrictToLocalPlayer = true;
+    }
 
 signals:
     // View → ViewModel（命令）
@@ -35,6 +39,7 @@ signals:
     void skipRequested();          // 跳过响应
     void confirmDiscardRequested();
     void gameFinished();
+    void skillRequested(const QVector<int>& cardIds, int playerId);
 
 public slots:
     // ViewModel → View（状态推送）
@@ -47,6 +52,7 @@ public slots:
     void onPendingActionCleared();
     void onGameOver(int winnerId);
     void onLogMessage(const QString& msg);
+    void onJudgmentPerformed(const CardData& judgeCard, const QString& resultText, bool effective);
     void refreshDisplay();
 
 private slots:
@@ -56,16 +62,22 @@ private slots:
     void onPlayPhaseEnded();
     void onResponseSkipped();
     void onDiscardConfirmed();
+    void onSkillClicked();
 
 private:
     void setupLayout();
+    HandCardAreaWidget* handAreaForPlayer(int playerId) const;
+    void exitSkillSelection();
+    bool canControlPlayer(int playerId) const;
 
-    enum class State { Idle, SelectingTarget, Responding, Discarding };
+    enum class State { Idle, SelectingTarget, SelectingSkill, Responding, Discarding };
     State m_state = State::Idle;
 
     PhaseType m_currentPhase = PhaseType::Prepare;
     int m_currentPlayerId = 0;
     int m_localPlayerId = 0;     // 本地玩家 ID（0=下方，1=上方）
+    bool m_restrictToLocalPlayer = false;
+    bool m_skillAvailable = false;
     int m_responderId = -1;       // 当前需要响应的玩家 ID
     int m_pendingCardId = -1;
     int m_pendingUserId = -1;

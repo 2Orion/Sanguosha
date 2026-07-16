@@ -111,6 +111,11 @@ void executeKill(GameState* state, Player* user, Player* target)
     info.description = (user->displayName() + " 对 " + target->displayName() + " 使用了【杀】，请打出【闪】").toStdString();
     info.canSkip = false;
 
+    // 吕布无双：需要两张闪
+    if (user->character() && user->character()->requireExtraDodge()) {
+        info.requiredDodgeTotal = 2;
+    }
+
     state->setPendingAction(info);
 }
 
@@ -135,6 +140,18 @@ void handleKillResponse(GameState* state, Player* responder, Card* dodgeCard)
         if (state->cardManager()) {
             state->cardManager()->discard(dodgeCard);
         }
+
+        // 吕布无双：需要多张闪，检查是否还需继续出闪
+        if (info.requiredDodgeTotal > 1 && info.dodgeProgress < info.requiredDodgeTotal - 1) {
+            PendingActionInfo next = info;
+            next.dodgeProgress = info.dodgeProgress + 1;
+            next.description = (QStringLiteral("【吕布无双】还需 %1 张【闪】— ")
+                                .arg(info.requiredDodgeTotal - next.dodgeProgress)
+                                + responder->displayName()).toStdString();
+            state->setPendingAction(next);
+            return;
+        }
+
         state->clearPendingAction();
     } else {
         int damageValue = 1;
@@ -642,7 +659,8 @@ void executeDuel(GameState* state, Player* user, Player* target, Card* duelCard)
     info.requiredCardType = CardType::Kill;
     info.description = (user->displayName() + " 对 " + target->displayName()
                        + " 使用了【决斗】，请打出【杀】").toStdString();
-    info.canSkip = false;
+    info.canSkip = true;
+    info.isDuel = true;
 
     state->setPendingAction(info);
 }
@@ -653,7 +671,7 @@ void handleDuelResponse(GameState* state, Player* responder, Card* killCard)
 
     PendingActionInfo info = state->pendingActionInfo();
     if (info.requiredCardType != CardType::Kill || info.target != responder ||
-        !info.source || !info.sourceCard ||
+        !info.source || !info.isDuel || !info.sourceCard ||
         info.sourceCard->cardType() != CardType::Duel) {
         return;
     }
@@ -671,7 +689,7 @@ void handleDuelResponse(GameState* state, Player* responder, Card* killCard)
             const PendingActionInfo& current = state->pendingActionInfo();
             if (current.source == info.source && current.target == info.target &&
                 current.sourceCard == info.sourceCard &&
-                current.requiredCardType == CardType::Kill) {
+                current.requiredCardType == CardType::Kill && current.isDuel) {
                 state->clearPendingAction();
             }
         }
@@ -692,25 +710,84 @@ void handleDuelResponse(GameState* state, Player* responder, Card* killCard)
     nextInfo.requiredCardType = CardType::Kill;
     nextInfo.description = (responder->displayName() + " 在【决斗】中打出【杀】，"
                            + info.source->displayName() + " 需继续打出【杀】").toStdString();
-    nextInfo.canSkip = false;
+    nextInfo.canSkip = true;
+    nextInfo.isDuel = true;
     state->setPendingAction(nextInfo);
 }
 
-void executeLightning(GameState* state, Player* user, Player* target)
+bool hasNullifyToRespond(const Player* player)
 {
-    if (!state || !user || !target) return;
-    // 闪电放入目标判定区，在判定阶段结算
-    // 简化实现：直接对当前使用者进行判定
-    (void)target;
-    target->addJudgmentCard(nullptr);  // 实际应由 Card 对象传入
-    // TODO: 在 Judge 阶段实现完整的闪电结算（判定 + 伤害/转移）
+    if (!player || !player->isAlive()) return false;
+    for (Card* card : player->handCards()) {
+        if (!card) continue;
+        if (card->cardType() == CardType::Nullify ||
+            (player->character() &&
+             player->character()->skillTransformCard(card) == CardType::Nullify)) {
+            return true;
+        }
+    }
+    return false;
 }
 
-void executeNullify(GameState* state, Player* user)
+bool checkNullifyBeforeEffect(GameState* state, Card* strategyCard,
+                               Player* target, Player* source,
+                               std::function<void()> onSkip)
 {
-    // 无懈可击由 checkNullifyChain 在锦囊结算前触发
-    (void)state;
-    (void)user;
+    if (!state || !strategyCard || !target || !source) return false;
+    if (!hasNullifyToRespond(target)) return false;
+
+    PendingActionInfo info;
+    info.source = source;
+    info.target = target;
+    info.sourceCard = strategyCard;
+    info.requiredCardType = CardType::Nullify;
+    info.description = (target->displayName() + " 可以使用【无懈可击】抵消 "
+                        + source->displayName() + " 的【"
+                        + QString::fromStdString(strategyCard->cardName()) + "】").toStdString();
+    info.canSkip = true;
+    info.onNullifySkipped = std::move(onSkip);
+
+    state->setPendingAction(info);
+    return true;
+}
+
+void handleNullifyResponse(GameState* state, Player* responder,
+                            Card* nullifyCard, bool usedNullify)
+{
+    if (!state || !responder || !state->hasPendingAction()) return;
+
+    PendingActionInfo info = state->pendingActionInfo();
+    if (info.requiredCardType != CardType::Nullify || info.target != responder) return;
+
+    if (usedNullify) {
+        if (!nullifyCard || !responder->hasCard(nullifyCard) ||
+            (nullifyCard->cardType() != CardType::Nullify &&
+             (!responder->character() ||
+              responder->character()->skillTransformCard(nullifyCard) != CardType::Nullify))) {
+            return;
+        }
+
+        // 使用了无懈可击：消除锦囊效果，无懈可击进弃牌堆
+        responder->removeHandCard(nullifyCard);
+        if (state->cardManager()) {
+            state->cardManager()->discard(nullifyCard);
+        }
+        state->clearPendingAction();
+
+        // 普通锦囊通常已在 ActionViewModel 中进入弃牌堆；延时锦囊会
+        // 等无懈结果，此处统一补入。CardManager 会忽略重复指针。
+        if (state->cardManager() && info.sourceCard) {
+            state->cardManager()->discard(info.sourceCard);
+        }
+
+        // TODO: 实现连锁——锦囊来源方也可使用无懈反无懈
+    } else {
+        // 放弃使用无懈可击：执行被延迟的锦囊效果
+        state->clearPendingAction();
+        if (info.onNullifySkipped) {
+            info.onNullifySkipped();
+        }
+    }
 }
 
 bool checkNullifyChain(GameState* state, Card* targetCard,
@@ -720,7 +797,8 @@ bool checkNullifyChain(GameState* state, Card* targetCard,
     (void)targetCard;
     (void)targetPlayer;
     (void)sourcePlayer;
-    // TODO: 完整实现无懈可击的连锁询问
+    // checkNullifyBeforeEffect 已在各锦囊 execute 中直接调用
+    // 此函数保留作为扩展点（如 multiple target AOE 的集中判定）
     return false;
 }
 
@@ -761,21 +839,6 @@ void executeHarvest(GameState* state, Player* user)
             }
         }
     }
-}
-
-void executeHappy(GameState* state, Player* user, Player* target)
-{
-    if (!state || !user || !target) return;
-    // 乐不思蜀放入目标判定区
-    // 简化实现：直接标记，在 Judge 阶段处理
-    // 实际应由 Card 对象传入后放入 judgmentCards
-}
-
-void executeFamine(GameState* state, Player* user, Player* target)
-{
-    if (!state || !user || !target) return;
-    // 兵粮寸断放入目标判定区
-    // 简化实现：直接标记，在 Judge 阶段处理
 }
 
 } // namespace GameRule

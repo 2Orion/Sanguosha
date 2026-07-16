@@ -40,11 +40,17 @@ public:
     void discardCard(int cardId, int playerId);
     int getDiscardCount(int playerId) const;
 
+    // ==================== 主动技能 ====================
+
+    bool canUseActiveSkill(int playerId) const;
+    bool useActiveSkill(int playerId, const std::vector<int>& cardIds);
+
     // ==================== View 命令槽（由 SGSApp 直连） ====================
 public slots:
     void onPlayCardRequested(int cardId, int playerId);
     void onTargetSelected(int playerIndex);
     void onRespondCardRequested(int cardId, int responderId);
+    void onSkillRequested(const QVector<int>& cardIds, int playerId);
 
 signals:
     void logMessage(const QString& msg);

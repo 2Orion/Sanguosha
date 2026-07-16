@@ -77,6 +77,19 @@ void PlayerInfoWidget::setDisplayData(const PlayerData& data)
     } else {
         m_attackRangeLabel->setVisible(false);
     }
+
+    // ===== 判定区 =====
+    if (!data.judgmentCards.isEmpty()) {
+        QStringList jd;
+        for (const CardData& jc : data.judgmentCards) {
+            if (jc.cardId < 0) continue;
+            jd << QStringLiteral("🔮 ") + jc.cardName;
+        }
+        m_judgmentLabel->setText(QStringLiteral("判定: ") + jd.join(QStringLiteral(" | ")));
+        m_judgmentLabel->setVisible(true);
+    } else {
+        m_judgmentLabel->setVisible(false);
+    }
 }
 
 void PlayerInfoWidget::setCurrentPlayer(bool isCurrent)
@@ -140,6 +153,13 @@ void PlayerInfoWidget::setupUi()
     equipRow->addWidget(m_attackRangeLabel);
     equipRow->addStretch();
     info->addLayout(equipRow);
+
+    // 判定区
+    m_judgmentLabel = new QLabel(this);
+    m_judgmentLabel->setStyleSheet("font-size: 11px; color: #6A1B9A; font-weight: bold;"
+        " background: #F3E5F5; border: 1px solid #CE93D8; border-radius: 4px; padding: 1px 4px;");
+    m_judgmentLabel->setVisible(false);
+    info->addWidget(m_judgmentLabel);
 
     m_skillLabel = new QLabel(this); m_skillLabel->setWordWrap(true); m_skillLabel->setStyleSheet("font-size: 11px; color: #666;");
     info->addWidget(m_skillLabel);

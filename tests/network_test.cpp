@@ -94,8 +94,16 @@ PlayerData makePlayerData()
     d.handCardCount = 5;
     d.handCardLimit = 3;
     d.isCurrentPlayer = true;
+    d.canUseActiveSkill = true;
     d.attackRange = 3;
     d.equipCards = {makeCardData()};
+    CardData judgment = makeCardData();
+    judgment.cardId = 77;
+    judgment.cardType = CardType::Happy;
+    judgment.cardName = QStringLiteral("乐不思蜀");
+    judgment.isEquipment = false;
+    judgment.equipSlot = -1;
+    d.judgmentCards = {judgment};
     return d;
 }
 
@@ -296,8 +304,10 @@ private slots:
         QCOMPARE(dst.handCardCount, src.handCardCount);
         QCOMPARE(dst.handCardLimit, src.handCardLimit);
         QCOMPARE(dst.isCurrentPlayer, src.isCurrentPlayer);
+        QCOMPARE(dst.canUseActiveSkill, src.canUseActiveSkill);
         QCOMPARE(dst.attackRange, src.attackRange);
         compareEquipCards(dst.equipCards, src.equipCards);
+        compareEquipCards(dst.judgmentCards, src.judgmentCards);
     }
 
     void pendingActionDataRoundTrip()
@@ -408,6 +418,16 @@ private slots:
         QCOMPARE(dst.playerId, 1);
     }
 
+    void skillRequestedRoundTrip()
+    {
+        SkillRequestedMsg src;
+        src.cardIds = {4, 8, 15};
+        src.playerId = 1;
+        const auto dst = frameRoundTrip(MessageType::SkillRequested, src);
+        QCOMPARE(dst.cardIds, src.cardIds);
+        QCOMPARE(dst.playerId, 1);
+    }
+
     void phaseChangedRoundTrip()
     {
         PhaseChangedMsg src;
@@ -425,6 +445,8 @@ private slots:
         QCOMPARE(dst.playerId, 1);
         QCOMPARE(dst.data.characterName, src.data.characterName);
         compareEquipCards(dst.data.equipCards, src.data.equipCards);
+        compareEquipCards(dst.data.judgmentCards, src.data.judgmentCards);
+        QCOMPARE(dst.data.canUseActiveSkill, true);
     }
 
     void handCardsMsgRoundTrip()
@@ -507,6 +529,18 @@ private slots:
         src.targetIds = {0, 1};
         const auto dst = frameRoundTrip(MessageType::TargetSelectionStarted, src);
         QCOMPARE(dst.targetIds, src.targetIds);
+    }
+
+    void judgmentPerformedRoundTrip()
+    {
+        JudgmentPerformedMsg src;
+        src.judgeCard = makeCardData();
+        src.resultText = QStringLiteral("闪电判定生效");
+        src.effective = true;
+        const auto dst = frameRoundTrip(MessageType::JudgmentPerformed, src);
+        compareCardData(dst.judgeCard, src.judgeCard);
+        QCOMPARE(dst.resultText, src.resultText);
+        QCOMPARE(dst.effective, true);
     }
 
     void payloadlessMessagesRoundTrip()
@@ -1079,6 +1113,107 @@ private slots:
             return int(gvm->gameState()->player(0)->handCards().size())
                    == handSizeBefore - 1;
         }, 3000));
+    }
+
+    void skillCommandUsesConnectionIdentityAndOncePerTurn()
+    {
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        GameClient c0, c1;
+        QSignalSpy connected0(&c0, &GameClient::connected);
+        QSignalSpy connected1(&c1, &GameClient::connected);
+        c0.connectToServer(QStringLiteral("127.0.0.1"), port);
+        c1.connectToServer(QStringLiteral("127.0.0.1"), port);
+        QVERIFY(QTest::qWaitFor(
+            [&] { return connected0.count() >= 1 && connected1.count() >= 1; }, 8000));
+
+        c0.selectCharacter(4); // 孙权
+        c1.selectCharacter(0);
+        QVERIFY(QTest::qWaitFor([&] { return app.isGameRunning(); }, 8000));
+
+        auto* gvm = app.gameViewModel();
+        gvm->onAdvanceRequested(); // Prepare -> Judge
+        gvm->onAdvanceRequested(); // Judge -> Draw
+        gvm->onAdvanceRequested(); // Draw -> Play
+        QCOMPARE(gvm->gameState()->currentPhase(), PhaseType::Play);
+
+        KillCard first(CardSuit::Spade, 7);
+        DodgeCard second(CardSuit::Heart, 6);
+        Player* sunQuan = gvm->gameState()->player(0);
+        sunQuan->addHandCard(&first);
+        sunQuan->addHandCard(&second);
+
+        QSignalSpy commandSpy(app.gameServer(), &GameServer::clientCommandReceived);
+        c1.useSkill(QVector<int>{first.id(), second.id()}, 0); // 伪造为玩家 0
+        QVERIFY(QTest::qWaitFor([&] { return commandSpy.count() >= 1; }, 3000));
+        QVERIFY(sunQuan->hasCard(&first));
+        QVERIFY(sunQuan->hasCard(&second));
+        QVERIFY(!sunQuan->hasUsedActiveSkillThisTurn());
+
+        c0.useSkill(QVector<int>{first.id(), second.id()}, 1); // 伪造字段被忽略
+        QVERIFY(QTest::qWaitFor([&] { return commandSpy.count() >= 2; }, 3000));
+        QVERIFY(QTest::qWaitFor([&] { return sunQuan->hasUsedActiveSkillThisTurn(); }, 3000));
+        QVERIFY(!sunQuan->hasCard(&first));
+        QVERIFY(!sunQuan->hasCard(&second));
+
+        const auto& remaining = sunQuan->handCards();
+        QVERIFY(!remaining.empty());
+        const int replacementId = remaining.front()->id();
+        c0.useSkill(QVector<int>{replacementId}, 0);
+        QVERIFY(QTest::qWaitFor([&] { return commandSpy.count() >= 3; }, 3000));
+        QVERIFY(std::any_of(sunQuan->handCards().begin(), sunQuan->handCards().end(),
+                            [replacementId](Card* card) {
+            return card && card->id() == replacementId;
+        }));
+    }
+
+    void judgmentBroadcastRoutesOverNetwork()
+    {
+        ServerApp app;
+        QVERIFY(app.listen(0, true));
+        const quint16 port = app.gameServer()->serverPort();
+
+        GameClient c0, c1;
+        QSignalSpy connected0(&c0, &GameClient::connected);
+        QSignalSpy connected1(&c1, &GameClient::connected);
+        c0.connectToServer(QStringLiteral("127.0.0.1"), port);
+        c1.connectToServer(QStringLiteral("127.0.0.1"), port);
+        QVERIFY(QTest::qWaitFor(
+            [&] { return connected0.count() >= 1 && connected1.count() >= 1; }, 8000));
+
+        struct JudgmentUpdate {
+            CardData card;
+            QString text;
+            bool effective = false;
+        };
+        QVector<JudgmentUpdate> updates0;
+        QVector<JudgmentUpdate> updates1;
+        connect(&c0, &GameClient::judgmentPerformed, &c0,
+                [&updates0](const CardData& card, const QString& text, bool effective) {
+            updates0.push_back({card, text, effective});
+        });
+        connect(&c1, &GameClient::judgmentPerformed, &c1,
+                [&updates1](const CardData& card, const QString& text, bool effective) {
+            updates1.push_back({card, text, effective});
+        });
+
+        c0.selectCharacter(0);
+        c1.selectCharacter(1);
+        QVERIFY(QTest::qWaitFor([&] { return app.isGameRunning(); }, 8000));
+
+        CardData judgeCard = makeCardData();
+        judgeCard.cardId = 909;
+        const QString result = QStringLiteral("【闪电】判定生效");
+        app.gameViewModel()->judgmentPerformed(judgeCard, result, true);
+
+        QVERIFY(QTest::qWaitFor(
+            [&] { return updates0.size() == 1 && updates1.size() == 1; }, 3000));
+        compareCardData(updates0.front().card, judgeCard);
+        compareCardData(updates1.front().card, judgeCard);
+        QCOMPARE(updates0.front().text, result);
+        QCOMPARE(updates1.front().effective, true);
     }
 
     void advanceAndEndPlayCommandsRouteOverNetwork()
@@ -1787,6 +1922,15 @@ private slots:
         client.skipResponse();
         QVERIFY(waitForCount(7));
         QCOMPARE(received[6].type, MessageType::SkipRequested);
+
+        client.useSkill(QVector<int>{11, 12}, 0);
+        QVERIFY(waitForCount(8));
+        QCOMPARE(received[7].type, MessageType::SkillRequested);
+        {
+            const auto msg = MessageSerializer::decodePayload<SkillRequestedMsg>(received[7].payload);
+            QCOMPARE(msg.cardIds, QVector<int>({11, 12}));
+            QCOMPARE(msg.playerId, 0);
+        }
     }
 
     void gameClientReceivesGameStartedAndBroadcastsWithRedaction()

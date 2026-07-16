@@ -37,6 +37,7 @@ public:
     void respondCard(int cardId, int responderId);
     void selectTarget(int playerIndex);
     void discardCard(int cardId, int playerId);
+    void useSkill(const QVector<int>& cardIds, int playerId);
     void endPlayPhase();
     void advancePhase();
     void skipResponse();
@@ -59,6 +60,8 @@ signals:
     void logMessage(const QString& msg);
     void targetSelectionStarted(const QVector<int>& targetIds);
     void targetSelectionFinished();
+    void judgmentPerformed(const CardData& judgeCard, const QString& resultText,
+                           bool effective);
 
 private slots:
     void onSocketConnected();

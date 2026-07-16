@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QString>
 #include <QVector>
+#include <QTimer>
 #include <memory>
 #include "CommonTypes.h"
 #include "GameState.h"
@@ -56,6 +57,9 @@ signals:
     void pendingActionCleared();
     void stateChanged();
 
+    /// 判定结果展示（cardId-1 表示非判定牌，suit/number 为判定牌信息，effective 表示判定生效）
+    void judgmentPerformed(const CardData& judgeCard, const QString& resultText, bool effective);
+
     /// 手牌数据更新（双人模式实时推送双方手牌）
     void handCardsUpdated(int playerId, const CardList& cards);
 
@@ -91,6 +95,11 @@ private:
     void pushHandCards(int playerId);
     void pushAllData();
 
+    // 判定辅助
+    void processJudgment(Player* target, Card* judgeCard);
+    Card* drawJudgeCard();
+    void onJudgeTimerFired();
+
     Player* currentPlayer() const;
     Player* opponentPlayer() const;
     Player* playerByIndex(int index) const;
@@ -100,6 +109,13 @@ private:
     std::unique_ptr<CardManager> m_cardManager;
     std::unique_ptr<ActionViewModel> m_actionVM;
     std::vector<QMetaObject::Connection> m_modelConnections;
+
+    // 判定阶段
+    QTimer* m_judgeTimer = nullptr;
+    int m_judgeTargetPlayerId = -1;
+    bool m_judgePending = false;
+    bool m_skipDrawPhase = false;
+    bool m_skipPlayPhase = false;
 };
 
 #endif // GAMEVIEWMODEL_H

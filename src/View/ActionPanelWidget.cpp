@@ -53,6 +53,20 @@ void ActionPanelWidget::setupUi()
     connect(m_endPlayBtn, &QPushButton::clicked, this, &ActionPanelWidget::playPhaseEnded);
     layout->addWidget(m_endPlayBtn);
 
+    // 发动技能
+    m_skillBtn = new QPushButton(QStringLiteral("发动技能"), this);
+    m_skillBtn->setObjectName(QStringLiteral("skillButton"));
+    m_skillBtn->setStyleSheet(
+        "QPushButton { font-size: 13px; font-weight: bold; color: white;"
+        "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        "    stop:0 #AB47BC, stop:1 #7B1FA2);"
+        "  border: none; border-radius: 4px; padding: 6px 16px; }"
+        "QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        "    stop:0 #CE93D8, stop:1 #9C27B0); }"
+        "QPushButton:pressed { background: #6A1B9A; }");
+    connect(m_skillBtn, &QPushButton::clicked, this, &ActionPanelWidget::skillRequested);
+    layout->addWidget(m_skillBtn);
+
     // 跳过响应
     m_skipResponseBtn = new QPushButton(QStringLiteral("跳过"), this);
     m_skipResponseBtn->setStyleSheet(
@@ -155,9 +169,22 @@ void ActionPanelWidget::setHint(const QString& text)
 
 // ==================== 内部辅助 ====================
 
+void ActionPanelWidget::setSkillAvailable(bool available)
+{
+    m_skillBtn->setVisible(available);
+}
+
+void ActionPanelWidget::setSkillSelectionMode(bool selecting)
+{
+    m_skillBtn->setText(selecting ? QStringLiteral("确认技能")
+                                  : QStringLiteral("发动技能"));
+    if (selecting) m_skillBtn->setVisible(true);
+}
+
 void ActionPanelWidget::hideAllButtons()
 {
     m_endPlayBtn->setVisible(false);
     m_skipResponseBtn->setVisible(false);
     m_confirmDiscardBtn->setVisible(false);
+    m_skillBtn->setVisible(false);
 }

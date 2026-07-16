@@ -6,7 +6,7 @@
 #include "Protocol.h"
 
 /// Common 值类型的 QDataStream 序列化运算符
-/// （协议版本 v1 字段集；字段增删时递增 Protocol::kProtocolVersion 并同步这里）
+/// （协议版本 v2 字段集；字段增删时递增 Protocol::kProtocolVersion 并同步这里）
 QDataStream& operator<<(QDataStream& out, const CardData& d);
 QDataStream& operator>>(QDataStream& in, CardData& d);
 QDataStream& operator<<(QDataStream& out, const PlayerData& d);
@@ -32,6 +32,8 @@ QDataStream& operator<<(QDataStream& out, const TargetSelectedMsg& m);
 QDataStream& operator>>(QDataStream& in, TargetSelectedMsg& m);
 QDataStream& operator<<(QDataStream& out, const DiscardCardMsg& m);
 QDataStream& operator>>(QDataStream& in, DiscardCardMsg& m);
+QDataStream& operator<<(QDataStream& out, const SkillRequestedMsg& m);
+QDataStream& operator>>(QDataStream& in, SkillRequestedMsg& m);
 QDataStream& operator<<(QDataStream& out, const PhaseChangedMsg& m);
 QDataStream& operator>>(QDataStream& in, PhaseChangedMsg& m);
 QDataStream& operator<<(QDataStream& out, const PlayerDataMsg& m);
@@ -46,6 +48,8 @@ QDataStream& operator<<(QDataStream& out, const LogMessageMsg& m);
 QDataStream& operator>>(QDataStream& in, LogMessageMsg& m);
 QDataStream& operator<<(QDataStream& out, const TargetSelectionStartedMsg& m);
 QDataStream& operator>>(QDataStream& in, TargetSelectionStartedMsg& m);
+QDataStream& operator<<(QDataStream& out, const JudgmentPerformedMsg& m);
+QDataStream& operator>>(QDataStream& in, JudgmentPerformedMsg& m);
 } // namespace Protocol
 
 /// 帧封装/解码 — 帧格式：

@@ -61,7 +61,8 @@ QDataStream& operator<<(QDataStream& out, const PlayerData& d)
         << d.skillName << d.skillDescription
         << qint32(d.hp) << qint32(d.maxHp) << d.isAlive << d.isDying
         << qint32(d.handCardCount) << qint32(d.handCardLimit) << d.isCurrentPlayer
-        << qint32(d.attackRange) << d.equipCards;
+        << d.canUseActiveSkill << qint32(d.attackRange) << d.equipCards
+        << d.judgmentCards;
     return out;
 }
 
@@ -72,7 +73,8 @@ QDataStream& operator>>(QDataStream& in, PlayerData& d)
        >> d.skillName >> d.skillDescription
        >> hp >> maxHp >> d.isAlive >> d.isDying
        >> handCardCount >> handCardLimit >> d.isCurrentPlayer
-       >> attackRange >> d.equipCards;
+       >> d.canUseActiveSkill >> attackRange >> d.equipCards
+       >> d.judgmentCards;
     d.attackRange = attackRange;
     d.playerId = playerId;
     d.hp = hp;
@@ -202,6 +204,18 @@ QDataStream& operator>>(QDataStream& in, DiscardCardMsg& m)
     return in;
 }
 
+QDataStream& operator<<(QDataStream& out, const SkillRequestedMsg& m)
+{
+    out << m.cardIds << m.playerId;
+    return out;
+}
+
+QDataStream& operator>>(QDataStream& in, SkillRequestedMsg& m)
+{
+    in >> m.cardIds >> m.playerId;
+    return in;
+}
+
 QDataStream& operator<<(QDataStream& out, const PhaseChangedMsg& m)
 {
     writeEnum(out, m.phase);
@@ -283,6 +297,18 @@ QDataStream& operator<<(QDataStream& out, const TargetSelectionStartedMsg& m)
 QDataStream& operator>>(QDataStream& in, TargetSelectionStartedMsg& m)
 {
     in >> m.targetIds;
+    return in;
+}
+
+QDataStream& operator<<(QDataStream& out, const JudgmentPerformedMsg& m)
+{
+    out << m.judgeCard << m.resultText << m.effective;
+    return out;
+}
+
+QDataStream& operator>>(QDataStream& in, JudgmentPerformedMsg& m)
+{
+    in >> m.judgeCard >> m.resultText >> m.effective;
     return in;
 }
 

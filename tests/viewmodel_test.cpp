@@ -65,8 +65,12 @@ private slots:
     void actionQueriesAndPlay();
     void responseValidation();
     void duelAlternatingResponses();
+    void delayedStrategyAndNullifyZones();
+    void activeSkillValidation();
     void discardAndTargetValidation();
     void gameViewModelInitialization();
+    void gameViewModelActiveSkillData();
+    void gameViewModelJudgmentResolution();
     void gameViewModelPhaseProgression();
     void gameViewModelPendingDto();
     void dyingResponseRouting();
@@ -206,6 +210,81 @@ void ViewModelTest::duelAlternatingResponses()
     QCOMPARE(fixture.player2.hp(), hpBefore - 1);
 }
 
+void ViewModelTest::delayedStrategyAndNullifyZones()
+{
+    ActionFixture direct;
+    HappyCard happy(CardSuit::Heart, 6);
+    direct.player1.addHandCard(&happy);
+    QCOMPARE(direct.actionVM.playCard(happy.id(), 0, {1}), ActionResult::Completed);
+    QVERIFY(!direct.player1.hasCard(&happy));
+    QVERIFY(direct.player2.hasJudgmentCards());
+    QCOMPARE(direct.player2.judgmentCards().front(), &happy);
+    QCOMPARE(direct.cardManager.discardPileCount(), 0);
+
+    ActionFixture cancelled;
+    HappyCard nullifiedHappy(CardSuit::Spade, 6);
+    NullifyCard nullify(CardSuit::Club, 12);
+    cancelled.player1.addHandCard(&nullifiedHappy);
+    cancelled.player2.addHandCard(&nullify);
+
+    cancelled.actionVM.playCard(nullifiedHappy.id(), 0, {1});
+    QVERIFY(cancelled.state.hasPendingAction());
+    QCOMPARE(cancelled.state.pendingActionInfo().requiredCardType, CardType::Nullify);
+    QVERIFY(!cancelled.player2.hasJudgmentCards());
+    QCOMPARE(cancelled.cardManager.discardPileCount(), 0);
+
+    cancelled.actionVM.respondCard(nullify.id(), 1);
+    QVERIFY(!cancelled.state.hasPendingAction());
+    QVERIFY(!cancelled.player2.hasJudgmentCards());
+    QVERIFY(!cancelled.player2.hasCard(&nullify));
+    QCOMPARE(cancelled.cardManager.discardPileCount(), 2);
+}
+
+void ViewModelTest::activeSkillValidation()
+{
+    ActionFixture fixture;
+    SunQuan sunQuan;
+    fixture.player1.setCharacter(&sunQuan);
+    KillCard first(CardSuit::Spade, 7);
+    DodgeCard second(CardSuit::Heart, 6);
+    fixture.player1.addHandCard(&first);
+    fixture.player1.addHandCard(&second);
+
+    QVERIFY(fixture.actionVM.canUseActiveSkill(0));
+    QVERIFY(!fixture.actionVM.canUseActiveSkill(1));
+
+    QVERIFY(!fixture.actionVM.useActiveSkill(0, {first.id(), first.id()}));
+    QVERIFY(fixture.player1.hasCard(&first));
+    QVERIFY(!fixture.player1.hasUsedActiveSkillThisTurn());
+
+    QVERIFY(!fixture.actionVM.useActiveSkill(0, {first.id(), 999999}));
+    QVERIFY(fixture.player1.hasCard(&first));
+    QVERIFY(fixture.player1.hasCard(&second));
+
+    const int handBefore = fixture.player1.handCardCount();
+    QVERIFY(fixture.actionVM.useActiveSkill(0, {first.id(), second.id()}));
+    QCOMPARE(fixture.player1.handCardCount(), handBefore);
+    QVERIFY(fixture.player1.hasUsedActiveSkillThisTurn());
+    QVERIFY(!fixture.actionVM.canUseActiveSkill(0));
+    QVERIFY(!fixture.actionVM.useActiveSkill(0, {
+        fixture.player1.handCards().front()->id()
+    }));
+
+    fixture.player1.resetTurnState();
+    QVERIFY(fixture.actionVM.canUseActiveSkill(0));
+
+    PendingActionInfo pending;
+    pending.source = &fixture.player1;
+    pending.target = &fixture.player2;
+    pending.requiredCardType = CardType::Dodge;
+    fixture.state.setPendingAction(pending);
+    QVERIFY(!fixture.actionVM.canUseActiveSkill(0));
+    fixture.state.clearPendingAction();
+
+    fixture.state.setCurrentPhase(PhaseType::Discard);
+    QVERIFY(!fixture.actionVM.canUseActiveSkill(0));
+}
+
 void ViewModelTest::discardAndTargetValidation()
 {
     ActionFixture fixture;
@@ -298,6 +377,67 @@ void ViewModelTest::gameViewModelInitialization()
             QVERIFY(!card.numberString.isEmpty());
         }
     }
+}
+
+void ViewModelTest::gameViewModelActiveSkillData()
+{
+    GameViewModel viewModel;
+    QVector<PlayerData> player0Updates;
+    connect(&viewModel, &GameViewModel::playerDataUpdated, this,
+            [&](int playerId, const PlayerData& data) {
+        if (playerId == 0) player0Updates.append(data);
+    });
+
+    QVERIFY(viewModel.startGame(4, 0)); // 玩家 0：孙权
+    QVERIFY(!player0Updates.isEmpty());
+    QCOMPARE(player0Updates.last().canUseActiveSkill, false);
+
+    viewModel.advancePhase(); // Prepare -> Judge
+    viewModel.advancePhase(); // Judge -> Draw
+    viewModel.advancePhase(); // Draw -> Play
+    QVERIFY(!player0Updates.isEmpty());
+    QCOMPARE(player0Updates.last().canUseActiveSkill, true);
+
+    HappyCard delayed(CardSuit::Heart, 6);
+    viewModel.gameState()->player(0)->addJudgmentCard(&delayed);
+    QVERIFY(!player0Updates.last().judgmentCards.isEmpty());
+    QCOMPARE(player0Updates.last().judgmentCards.front().cardId, delayed.id());
+    QCOMPARE(player0Updates.last().judgmentCards.front().cardType, CardType::Happy);
+
+    const int selectedId = viewModel.gameState()->player(0)->handCards().front()->id();
+    QVERIFY(viewModel.actionVM()->useActiveSkill(0, {selectedId}));
+    QCOMPARE(player0Updates.last().canUseActiveSkill, false);
+}
+
+void ViewModelTest::gameViewModelJudgmentResolution()
+{
+    GameViewModel viewModel;
+    QVERIFY(viewModel.startGame(0, 1));
+    Player* current = viewModel.gameState()->player(0);
+    HappyCard delayed(CardSuit::Spade, 6);
+    current->addJudgmentCard(&delayed);
+
+    const auto& drawPile = viewModel.gameState()->cardManager()->getDrawPile();
+    QVERIFY(!drawPile.empty());
+    Card* expectedResult = drawPile.back();
+    const bool expectedEffective = expectedResult->suit() != CardSuit::Heart;
+
+    QVector<CardData> judgeCards;
+    QVector<bool> effectiveResults;
+    connect(&viewModel, &GameViewModel::judgmentPerformed, this,
+            [&](const CardData& card, const QString&, bool effective) {
+        judgeCards.append(card);
+        effectiveResults.append(effective);
+    });
+
+    viewModel.advancePhase(); // Prepare -> Judge
+    viewModel.advancePhase(); // 执行判定，等待展示定时器
+    QCOMPARE(viewModel.gameState()->currentPhase(), PhaseType::Judge);
+    QCOMPARE(judgeCards.size(), 1);
+    QCOMPARE(judgeCards.front().cardId, expectedResult->id());
+    QCOMPARE(effectiveResults.front(), expectedEffective);
+    QVERIFY(!current->hasJudgmentCards());
+    QCOMPARE(viewModel.gameState()->cardManager()->discardPileCount(), 2);
 }
 
 void ViewModelTest::gameViewModelPhaseProgression()

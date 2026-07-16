@@ -1,7 +1,7 @@
 # Model 层公开接口定义
 
 > 本文档描述当前代码中 Model 层及其共享类型的公开接口，作为 ViewModel 层调用 Model 的契约。
-> 最后全量核对日期：2026-07-16。
+> 最后全量核对日期：2026-07-17。
 > 接口代码块以仓库中的头文件为准；private 成员不在本文档中重复列出。
 
 ## 目录
@@ -146,7 +146,7 @@ class Character;
 | EquipSlot | 装备槽位：武器、防具，坐骑预留 |
 | CardType | 具体卡牌类型 |
 | PhaseType | 回合阶段 |
-| CardArea | 卡牌所在区域；装备区已使用，判定区结算仍为预留 |
+| CardArea | 卡牌所在区域；手牌区、装备区、判定区和处理中状态 |
 | GameEvent | 武将技能触发事件 |
 | ActionResult | 卡牌执行后是否需要后续响应 |
 
@@ -161,6 +161,7 @@ PendingActionInfo 用于描述当前等待玩家响应的动作。它属于 Mode
 ~~~cpp
 #include <string>
 #include <vector>
+#include <functional>
 
 struct PendingActionInfo {
     Player* source = nullptr;
@@ -173,6 +174,10 @@ struct PendingActionInfo {
     Player* continuationSource = nullptr;
     CardType continuationCardType = CardType::Kill;
     std::vector<Player*> continuationTargets;
+    std::function<void()> onNullifySkipped;
+    bool isDuel = false;
+    int requiredDodgeTotal = 1;
+    int dodgeProgress = 0;
 };
 ~~~
 
@@ -190,6 +195,10 @@ struct PendingActionInfo {
 | continuationSource | AOE 目标濒死获救后恢复响应链的来源玩家 |
 | continuationCardType | 续接 AOE 所需的响应牌类型 |
 | continuationTargets | AOE 目标濒死获救后仍待处理的目标 |
+| onNullifySkipped | 目标放弃【无懈可击】时恢复原锦囊效果的回调 |
+| isDuel | 标记当前要求出【杀】的动作属于【决斗】，避免误走 AOE 路由 |
+| requiredDodgeTotal | 抵消本次【杀】总共需要的【闪】数量，默认 1，吕布【无双】为 2 |
+| dodgeProgress | 当前已经成功打出的【闪】数量 |
 
 ### 2.2 公共接口
 
@@ -504,12 +513,12 @@ public:
 | BarbarianCard | 合法目标为除使用者外的所有存活玩家 | 建立依次要求出杀的响应链，返回 RequiresKill |
 | VolleyCard | 合法目标为除使用者外的所有存活玩家 | 建立依次要求出闪的响应链，返回 RequiresDodge |
 | PeachGardenCard | 合法目标列表为所有存活玩家 | 所有未满体力的玩家回复 1 点体力 |
-| DuelCard | 目标必须是其他存活玩家 | 记录原决斗卡并要求目标先出杀，返回 RequiresKill；双方交替出杀，未出者受到对方造成的 1 点伤害 |
-| LightningCard | 目标为使用者自己 | 当前仅调用判定区骨架；闪电判定、伤害和转移未实现 |
-| NullifyCard | 存活玩家可进入 canUse，无显式目标 | `executeNullify`/`checkNullifyChain` 仍是空实现，不会抵消锦囊 |
+| DuelCard | 目标必须是其他存活玩家 | 记录原决斗卡并要求目标先出杀；双方交替出杀，未出者受到对方造成的 1 点伤害；目标有【无懈可击】时先进入无懈响应 |
+| LightningCard | 目标为使用者自己 | 放入使用者判定区；黑桃 2-9 造成 3 点伤害，否则移动到下一名存活玩家 |
+| NullifyCard | 不作为主动牌选择目标 | 通过待定动作抵消过河拆桥、顺手牵羊、决斗、借刀杀人、乐不思蜀或兵粮寸断；当前未实现反无懈连锁 |
 | BorrowCard | 目标为其他存活且有装备的玩家 | 建立一次要求出杀的简化待定动作，未实现完整借刀目标选择/交武器规则 |
 | HarvestCard | 合法目标为所有存活玩家 | 简化为使用者获得展示牌的第一张，其余弃置 |
-| HappyCard / FamineCard | 目标为其他存活玩家 | 当前只有目标判断和结算骨架，未放入真实判定牌，也未跳过阶段 |
+| HappyCard / FamineCard | 目标为其他存活玩家 | 无懈检查后放入目标判定区；判定失败时分别跳过出牌阶段或摸牌阶段 |
 | EquipmentCard | 出牌阶段对自己使用 | 装入对应槽位并替换旧装备；诸葛连弩的无限出杀已接入，其他专属触发效果多数未接入主结算链 |
 
 卡牌的 execute 通常只处理传入目标列表的第一个目标；AOE 卡牌的目标链由 GameRule 和 PendingActionInfo::remainingTargets 管理。
@@ -614,6 +623,7 @@ public:
 };
 
 class SunQuan : public Character {
+    Q_OBJECT
 public:
     SunQuan(QObject* parent = nullptr);
     bool hasSkill() const override;
@@ -621,6 +631,7 @@ public:
 };
 
 class ZhouYu : public Character {
+    Q_OBJECT
 public:
     ZhouYu(QObject* parent = nullptr);
     bool hasSkill() const override;
@@ -628,6 +639,7 @@ public:
 };
 
 class LvBu : public Character {
+    Q_OBJECT
 public:
     LvBu(QObject* parent = nullptr);
     bool hasSkill() const override;
@@ -635,6 +647,7 @@ public:
 };
 
 class DaQiao : public Character {
+    Q_OBJECT
 public:
     DaQiao(QObject* parent = nullptr);
     bool hasSkill() const override;
@@ -645,6 +658,7 @@ public:
 };
 
 class SiMaYi : public Character {
+    Q_OBJECT
 public:
     SiMaYi(QObject* parent = nullptr);
     bool hasSkill() const override;
@@ -661,9 +675,9 @@ public:
 | GuanYu | 红色牌通过 skillTransformCard 转为 CardType::Kill |
 | ZhangFei | GameRule::canPlayKill 对张飞放宽本回合杀次数；自身 triggerCondition 当前返回 false |
 | ZhaoYun | Kill 与 Dodge 互相转换，其他牌保持原类型 |
-| SunQuan | canDiscardAndDraw 返回 true，但当前出牌/ViewModel 流程没有制衡命令入口 |
+| SunQuan | canDiscardAndDraw 返回 true；ActionViewModel 校验当前回合、出牌阶段、牌权和每回合一次限制，支持选择任意张手牌等量置换 |
 | ZhouYu | onDrawPhaseBonus 返回 1，GameViewModel 摸牌阶段已接入 |
-| LvBu | requireExtraDodge 返回 true，但当前杀的响应结算尚未读取该值 |
+| LvBu | requireExtraDodge 返回 true；executeKill/handleKillResponse 已接入连续两张【闪】计数 |
 | DaQiao | 流离查询接口已存在，但当前杀的目标结算尚未调用 |
 | SiMaYi | OnDamage 触发框架已接入；当前从待定动作的 source 推断伤害来源，并获得其一张随机手牌 |
 
@@ -740,6 +754,8 @@ public:
     void resetTurnState();
     bool hasUsedKillThisTurn() const;
     void setUsedKillThisTurn(bool used);
+    bool hasUsedActiveSkillThisTurn() const;
+    void setUsedActiveSkillThisTurn(bool used);
     bool isWineEnhanced() const;
     void setWineEnhanced(bool enhanced);
 
@@ -773,6 +789,7 @@ signals:
 - setDying(true) 发出 dying(playerId)；从濒死状态恢复时发出 revived(playerId)。
 - handCardAdded、handCardRemoved 的参数是卡牌 ID，不是 Card*。
 - `markDead()` 负责一次性发出 died(playerId)；GameRule::checkDeath 在最终死亡时调用它，避免濒死阶段提前发出死亡信号。
+- resetTurnState() 会同时重置本回合出杀、主动技能使用和酒强化状态；主动技能状态变化会发出 stateChanged()。
 - setCharacter、手牌变化和体力变化会触发对应的状态信号；装备变化同时发出 equipmentChanged(slot) 和 stateChanged()。
 
 ---
@@ -915,12 +932,18 @@ namespace GameRule {
     void handleDuelResponse(GameState* state,
                             Player* responder,
                             Card* killCard);
-    void executeLightning(GameState* state, Player* user, Player* target);
-    void executeNullify(GameState* state, Player* user);
     void executeBorrow(GameState* state, Player* user, Player* target);
     void executeHarvest(GameState* state, Player* user);
-    void executeHappy(GameState* state, Player* user, Player* target);
-    void executeFamine(GameState* state, Player* user, Player* target);
+    bool hasNullifyToRespond(const Player* player);
+    bool checkNullifyBeforeEffect(GameState* state,
+                                  Card* strategyCard,
+                                  Player* target,
+                                  Player* source,
+                                  std::function<void()> onSkip);
+    void handleNullifyResponse(GameState* state,
+                               Player* responder,
+                               Card* nullifyCard,
+                               bool usedNullify);
     bool checkNullifyChain(GameState* state,
                            Card* targetCard,
                            Player* targetPlayer,
@@ -959,7 +982,8 @@ namespace GameRule {
 | 响应判断 | hasDodgeToRespond、hasKillToRespond、hasPeachToSave | 检查手牌及武将转化后的响应能力 |
 | 基本牌 | executeKill、handleKillResponse、executePeach、executeWine | 处理杀、闪、桃、酒的实际效果 |
 | 装备与距离 | getAttackRange、isInAttackRange、armorEffectCheck | 计算武器攻击范围并判定防具效果 |
-| 锦囊牌 | executeDismantle、executeSteal、executeBountiful、executeBarbarianInvasion、executeVolley、executePeachGarden、executeDuel、executeLightning、executeNullify、executeBorrow、executeHarvest、executeHappy、executeFamine、checkNullifyChain | 处理锦囊牌效果 |
+| 锦囊牌 | executeDismantle、executeSteal、executeBountiful、executeBarbarianInvasion、executeVolley、executePeachGarden、executeDuel、executeBorrow、executeHarvest | 处理需要独立规则函数的锦囊效果；延时锦囊由 Card::execute 入判定区、GameViewModel 在判定阶段结算 |
+| 无懈可击 | hasNullifyToRespond、checkNullifyBeforeEffect、handleNullifyResponse、checkNullifyChain | 创建/处理单层无懈响应；checkNullifyChain 当前保留为反无懈扩展点 |
 | 决斗响应 | handleDuelResponse | 验证并弃置响应杀，交换下一位响应者；未出杀时结算伤害 |
 | AOE 响应 | handleAoeKillResponse、handleAoeDodgeResponse、handleAoeSkipResponse | 处理南蛮入侵和万箭齐发的逐目标响应 |
 | 伤害与濒死 | dealDamage、startDyingProcess、handleDyingPeach、skipDyingResponse、checkDeath、checkGameOver | 伤害、救援、死亡及终局判定 |
@@ -969,8 +993,9 @@ namespace GameRule {
 
 - INITIAL_HAND_COUNT 为 4，DRAW_PHASE_COUNT 为 2。
 - executeKill 会设置攻击者本回合已使用杀，并在 GameState 中创建要求出闪的待定动作。
-- handleKillResponse 传入有效卡牌时会移除并弃置该牌；传入 nullptr 时对响应者造成伤害。攻击者有酒强化时伤害为 2，随后消耗强化状态。
+- handleKillResponse 传入有效卡牌时会移除并弃置该牌；吕布造成的【杀】会累计两张【闪】；传入 nullptr 时对响应者造成伤害。攻击者有酒强化时伤害为 2，随后消耗强化状态。
 - executeDuel 在待定动作中保留 duelCard；handleDuelResponse 在响应者出杀后交换 source/target，继续交替响应，传入 nullptr 时由 source 对当前 target 造成 1 点伤害并结束决斗。
+- checkNullifyBeforeEffect 只在目标确有【无懈可击】时创建待定动作；目标使用无懈则原锦囊失效，放弃则执行 onNullifySkipped 恢复原效果。当前不支持来源方再使用无懈反制。
 - executeBarbarianInvasion 和 executeVolley 会按存活目标顺序创建响应链。
 - AOE 响应处理完成当前目标后，会根据 remainingTargets 创建下一个待定动作；目标濒死获救时使用 continuationTargets 恢复响应链。
 - dealDamage 会触发受伤武将技能；目标体力不大于 0 且尚未濒死时，会进入 startDyingProcess。
@@ -1017,7 +1042,7 @@ View 不应接收 PendingActionInfo、Player*、Card* 等 Model 指针。跨越 
 
 - PendingActionData：来源/目标玩家 ID、来源卡牌 ID、响应类型、描述、可否跳过和剩余目标 ID。
 - CardData（列表别名 CardList）：卡牌展示所需的 ID、类型、花色、点数、名称、描述、可选/可出/高亮状态，以及 isEquipment、equipSlot、attackRange。
-- PlayerData：玩家 ID、名称、武将与技能、体力、手牌数量/上限、攻击范围和 equipCards 装备列表。
+- PlayerData：玩家 ID、名称、武将与技能、体力、手牌数量/上限、当前玩家标记、主动技能可用状态、攻击范围、equipCards 装备列表和 judgmentCards 判定区列表。
 
 View/ViewModel 的完整连接表和 ViewModel 内的路由/拦截逻辑见 connection.md。本文件只定义 Model 的对象接口，不再描述 View 与 ViewModel 的直接调用流程。
 

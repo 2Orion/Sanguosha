@@ -23,6 +23,8 @@ ClientApp::ClientApp(QObject* parent)
             m_client, &GameClient::advancePhase);
     connect(m_board, &GameBoardWidget::skipRequested,
             m_client, &GameClient::skipResponse);
+    connect(m_board, &GameBoardWidget::skillRequested,
+            m_client, &GameClient::useSkill);
 
     // ==================== GameClient → View（直连） ====================
     connect(m_client, &GameClient::phaseChanged,
@@ -43,6 +45,11 @@ ClientApp::ClientApp(QObject* parent)
             m_board, &GameBoardWidget::onGameOver);
     connect(m_client, &GameClient::logMessage,
             m_board, &GameBoardWidget::onLogMessage);
+    connect(m_client, &GameClient::judgmentPerformed,
+            m_board, &GameBoardWidget::onJudgmentPerformed);
+    connect(m_client, &GameClient::connected, this, [this](int playerId) {
+        m_board->setLocalPlayerId(playerId);
+    });
 }
 
 void ClientApp::connectToServer(const QString& host, quint16 port)

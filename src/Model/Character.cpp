@@ -107,7 +107,7 @@ CardType ZhaoYun::skillTransformCard(const Card* card) const
 // ==================== 孙权 - 制衡 ====================
 
 SunQuan::SunQuan(QObject* parent)
-    : Character("孙权", 4, "制衡", "出牌阶段可弃任意张牌并摸等量的牌", parent)
+    : Character("孙权", 4, "制衡", "出牌阶段限一次，可弃置任意张手牌并摸等量的牌", parent)
 {
 }
 

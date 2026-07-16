@@ -17,11 +17,14 @@ public:
     void updateForPhase(PhaseType phase, bool hasPendingAction);
     void updateForPendingAction(const PendingActionData& info);
     void setHint(const QString& text);
+    void setSkillAvailable(bool available);
+    void setSkillSelectionMode(bool selecting);
 
 signals:
     void playPhaseEnded();
     void respondSkipped();
     void discardConfirmed();
+    void skillRequested();
 
 private:
     void setupUi();
@@ -31,6 +34,7 @@ private:
     QPushButton* m_endPlayBtn;
     QPushButton* m_skipResponseBtn;
     QPushButton* m_confirmDiscardBtn;
+    QPushButton* m_skillBtn;
 };
 
 #endif // ACTIONPANELWIDGET_H

@@ -6,6 +6,7 @@
 #include "Card.h"
 #include "Character.h"
 #include <algorithm>
+#include <unordered_set>
 
 namespace {
 
@@ -36,7 +37,14 @@ bool requiresExplicitTarget(const Card* card)
 
 bool isDuelResponse(const PendingActionInfo& info)
 {
-    return info.sourceCard && info.sourceCard->cardType() == CardType::Duel;
+    return info.isDuel ||
+           (info.sourceCard && info.sourceCard->cardType() == CardType::Duel);
+}
+
+bool isDelayedStrategy(CardType type)
+{
+    return type == CardType::Happy || type == CardType::Famine ||
+           type == CardType::Lightning;
 }
 
 } // namespace
@@ -201,6 +209,10 @@ ActionResult ActionViewModel::playCard(int cardId, int playerId,
         if (oldEquip && m_state->cardManager()) {
             m_state->cardManager()->discard(oldEquip);
         }
+    } else if (isDelayedStrategy(card->cardType())) {
+        // 延时锦囊已经进入判定区，或正在等待【无懈可击】响应。
+        // 真正被抵消/判定完成时再进入弃牌堆。
+        user->removeHandCard(card);
     } else {
         user->removeHandCard(card);
         if (m_state->cardManager()) m_state->cardManager()->discard(card);
@@ -295,6 +307,12 @@ void ActionViewModel::respondCard(int cardId, int playerId)
         break;
     }
 
+    case CardType::Nullify:
+        GameRule::handleNullifyResponse(m_state, responder, card, true);
+        emitLog(responder->displayName() + QStringLiteral(" 使用【") +
+                QString::fromStdString(card->cardName()) + QStringLiteral("】抵消锦囊"));
+        break;
+
     default:
         break;
     }
@@ -343,6 +361,12 @@ void ActionViewModel::skipResponse(int playerId, bool forceNoCard)
         break;
     }
 
+    case CardType::Nullify: {
+        GameRule::handleNullifyResponse(m_state, responder, nullptr, false);
+        emitLog(responder->displayName() + QStringLiteral(" 放弃使用【无懈可击】，锦囊生效"));
+        break;
+    }
+
     default:
         break;
     }
@@ -371,6 +395,54 @@ int ActionViewModel::getDiscardCount(int playerId) const
 {
     Player* player = findPlayer(playerId);
     return GameRule::getDiscardCount(player);
+}
+
+// ==================== 主动技能 ====================
+
+bool ActionViewModel::canUseActiveSkill(int playerId) const
+{
+    Player* player = findPlayer(playerId);
+    if (!m_state || !player || !player->isAlive() || !player->character()) return false;
+    if (m_state->currentPhase() != PhaseType::Play ||
+        m_state->currentPlayer() != player || m_state->hasPendingAction()) {
+        return false;
+    }
+    if (m_pendingCardId >= 0 || player->hasUsedActiveSkillThisTurn()) return false;
+    return player->character()->canDiscardAndDraw() && player->hasHandCards();
+}
+
+bool ActionViewModel::useActiveSkill(int playerId, const std::vector<int>& cardIds)
+{
+    Player* player = findPlayer(playerId);
+    if (!canUseActiveSkill(playerId) || cardIds.empty() || !player) return false;
+
+    std::unordered_set<int> uniqueIds;
+    std::vector<Card*> cards;
+    cards.reserve(cardIds.size());
+    for (int cardId : cardIds) {
+        if (!uniqueIds.insert(cardId).second) return false;
+        Card* card = findCard(cardId);
+        if (!card || !player->hasCard(card)) return false;
+        cards.push_back(card);
+    }
+
+    player->setUsedActiveSkillThisTurn(true);
+    for (Card* card : cards) player->removeHandCard(card);
+    if (m_state->cardManager()) m_state->cardManager()->discardMultiple(cards);
+
+    std::vector<Card*> drawn;
+    if (m_state->cardManager()) {
+        drawn = m_state->cardManager()->drawCards(static_cast<int>(cards.size()));
+        for (Card* card : drawn) {
+            if (card) player->addHandCard(card);
+        }
+    }
+
+    emitLog(player->displayName() + QStringLiteral(" 发动【制衡】，弃置 %1 张牌并摸 %2 张牌")
+            .arg(static_cast<int>(cards.size()))
+            .arg(static_cast<int>(drawn.size())));
+    emit actionCompleted();
+    return true;
 }
 
 // ==================== 内部 ====================
@@ -451,4 +523,9 @@ void ActionViewModel::onTargetSelected(int playerIndex)
 void ActionViewModel::onRespondCardRequested(int cardId, int responderId)
 {
     respondCard(cardId, responderId);
+}
+
+void ActionViewModel::onSkillRequested(const QVector<int>& cardIds, int playerId)
+{
+    useActiveSkill(playerId, std::vector<int>(cardIds.begin(), cardIds.end()));
 }

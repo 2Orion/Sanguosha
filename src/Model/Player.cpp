@@ -258,7 +258,7 @@ void Player::removeEquipCard(Card* card)
     }
 }
 
-// ==================== 判定区（预留） ====================
+// ==================== 判定区 ====================
 
 const std::vector<Card*>& Player::judgmentCards() const { return m_judgmentCards; }
 
@@ -285,13 +285,25 @@ void Player::removeJudgmentCard(Card* card)
 
 void Player::resetTurnState()
 {
+    const bool changed = m_usedKillThisTurn || m_usedActiveSkillThisTurn || m_wineEnhanced;
     m_usedKillThisTurn = false;
+    m_usedActiveSkillThisTurn = false;
     m_wineEnhanced = false;
+    if (changed) emit stateChanged();
 }
 
 bool Player::hasUsedKillThisTurn() const { return m_usedKillThisTurn; }
 
 void Player::setUsedKillThisTurn(bool used) { m_usedKillThisTurn = used; }
+
+bool Player::hasUsedActiveSkillThisTurn() const { return m_usedActiveSkillThisTurn; }
+
+void Player::setUsedActiveSkillThisTurn(bool used)
+{
+    if (m_usedActiveSkillThisTurn == used) return;
+    m_usedActiveSkillThisTurn = used;
+    emit stateChanged();
+}
 
 bool Player::isWineEnhanced() const { return m_wineEnhanced; }
 

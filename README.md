@@ -34,8 +34,10 @@ ViewModel/Model，`ClientApp` 直连 `GameBoardWidget` 与 `GameClient`。
 - 牌堆共 101 张：58 张基本牌、26 张普通锦囊、6 张延时锦囊、11 张装备牌。
 - 可选武将共 9 名：曹操、关羽、张飞、赵云、孙权、周瑜、吕布、大乔、司马懿。
 - 本地模式与局域网模式共用同一套服务器规则；网络模式已实现握手、选将、手牌脱敏、心跳和完整对局链路。
-- 【决斗】已实现双方交替出【杀】；【借刀杀人】和【五谷丰登】当前为简化结算。
-- 【闪电】、【无懈可击】、【乐不思蜀】和【兵粮寸断】只有类型/出牌骨架，尚未接通完整判定或连锁结算。
+- 【决斗】已实现双方交替出【杀】，并可在目标放弃【无懈可击】后继续进入决斗响应链。
+- 【闪电】、【乐不思蜀】和【兵粮寸断】已进入判定区并在判定阶段结算；【无懈可击】已接入六种单目标锦囊，但反无懈连锁尚未实现。
+- 孙权【制衡】已支持选择任意张手牌、每回合限一次，并接通本地/网络命令链；吕布【无双】已要求连续打出两张【闪】。大乔【流离】仍只有规则查询接口。
+- 【借刀杀人】和【五谷丰登】当前为简化结算。
 - 装备牌已支持按槽位装备、替换和界面展示，诸葛连弩的无限出杀限制已接入；其余武器/防具的专属触发效果多数仍是属性或规则接口。
 
 ---
@@ -54,7 +56,7 @@ Sanguosha/
 │   │   └── PendingActionData.h # 待定动作值类型
 │   ├── Model/                # QObject + 信号
 │   ├── Network/              # 网络层（局域网对战，已接入主程序）
-│   │   ├── Protocol.h/cpp    # 协议版本号 + MessageType + 消息结构体 + 手牌脱敏 redactCardList
+│   │   ├── Protocol.h/cpp    # 协议 v2 + MessageType + 消息结构体 + 手牌脱敏 redactCardList
 │   │   ├── MessageSerializer.h/cpp # QDataStream 序列化 + 帧封装/解码
 │   │   ├── GameServer.h/cpp  # QTcpServer：连接管理/握手/选将/广播转发（零 Model 依赖）
 │   │   └── GameClient.h/cpp  # QTcpSocket："网络化 ViewModel"，零 Model 依赖、零规则判断
@@ -93,11 +95,16 @@ ViewModel → View (信号直连)
     → GameBoardWidget::onHandCardsUpdated
   GameViewModel::playerDataUpdated(PlayerData)
     → GameBoardWidget::onPlayerDataUpdated
+  GameViewModel::judgmentPerformed(CardData, QString, bool)
+    → GameBoardWidget::onJudgmentPerformed
 
 View → ViewModel (信号直连 public slots)
   GameBoardWidget::playCardRequested(cardId, playerId)
     → ActionViewModel::onPlayCardRequested
       → 校验 + 目标选择 + playCard(…)
+  GameBoardWidget::skillRequested(cardIds, playerId)
+    → ActionViewModel::onSkillRequested
+      → 身份/阶段/牌权/使用次数校验 + 制衡结算
 ```
 
 详见 [`connection.md`](connection.md)。
@@ -172,6 +179,7 @@ $env:QT_QPA_PLATFORM = "offscreen"; .\build\ViewTest.exe
 $env:QT_QPA_PLATFORM = "offscreen"; .\build\NetworkTest.exe
 ```
 
-当前完整套件包含 5 个测试目标；`NetworkTest -functions` 当前列出 59 个测试函数。覆盖基本卡牌规则、
-【决斗】交替响应、AOE/濒死链、响应与回合权限、QWidget/App 组装、网络序列化/帧解码、身份伪造防护、
-手牌脱敏、`GameClient`/`ClientApp` 往返、心跳保活和进程内端到端对局。
+当前完整套件包含 5 个测试目标；`NetworkTest -functions` 当前列出 63 个测试函数。覆盖基本卡牌规则、
+【决斗】交替响应与无懈恢复、吕布双闪、延时锦囊判定、孙权制衡、AOE/濒死链、响应与回合权限、
+QWidget/App 组装、协议 v2 序列化/帧解码、身份伪造防护、手牌脱敏、技能与判定网络消息、
+`GameClient`/`ClientApp` 往返、心跳保活和进程内端到端对局。

@@ -18,10 +18,14 @@ struct PlayerData {
     int handCardCount = 0;
     int handCardLimit = 0;
     bool isCurrentPlayer = false;
+    bool canUseActiveSkill = false;
     int attackRange = 1;       // 攻击距离（含武器加成）
 
     // ==================== 装备区展示数据 ====================
     QVector<CardData> equipCards;  // 已装备的卡牌列表（按槽位顺序，仅非空槽）
+
+    // ==================== 判定区展示数据 ====================
+    QVector<CardData> judgmentCards;  // 判定区延时锦囊（乐不思蜀/兵粮寸断/闪电）
 };
 
 #endif // PLAYERDATA_H

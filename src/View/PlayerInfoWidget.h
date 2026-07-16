@@ -46,6 +46,9 @@ private:
     // 装备区
     QLabel* m_equipLabel;
     QLabel* m_attackRangeLabel;
+
+    // 判定区
+    QLabel* m_judgmentLabel;
 };
 
 #endif // PLAYERINFOWIDGET_H

@@ -24,6 +24,7 @@ GameBoardWidget::GameBoardWidget(QWidget* parent) : QWidget(parent)
     connect(m_actionPanel, &ActionPanelWidget::playPhaseEnded, this, &GameBoardWidget::onPlayPhaseEnded);
     connect(m_actionPanel, &ActionPanelWidget::respondSkipped, this, &GameBoardWidget::onResponseSkipped);
     connect(m_actionPanel, &ActionPanelWidget::discardConfirmed, this, &GameBoardWidget::onDiscardConfirmed);
+    connect(m_actionPanel, &ActionPanelWidget::skillRequested, this, &GameBoardWidget::onSkillClicked);
 }
 
 GameBoardWidget::~GameBoardWidget() = default;
@@ -54,6 +55,7 @@ void GameBoardWidget::setupLayout()
 
 void GameBoardWidget::onPhaseChanged(PhaseType phase)
 {
+    exitSkillSelection();
     m_currentPhase = phase;
     m_actionPanel->updateForPhase(phase, false);
 
@@ -66,6 +68,8 @@ void GameBoardWidget::onPhaseChanged(PhaseType phase)
         break;
     case PhaseType::Play:
         m_state = State::Idle;
+        m_actionPanel->setSkillAvailable(
+            m_skillAvailable && canControlPlayer(m_currentPlayerId));
         break;
     case PhaseType::Discard:
         m_state = State::Discarding;
@@ -81,7 +85,17 @@ void GameBoardWidget::onPlayerDataUpdated(int playerId, const PlayerData& data)
         m_bottomPlayerInfo->setDisplayData(data);
     else
         m_topPlayerInfo->setDisplayData(data);
-    if (data.isCurrentPlayer) m_currentPlayerId = playerId;
+    if (data.isCurrentPlayer) {
+        m_currentPlayerId = playerId;
+        m_skillAvailable = data.canUseActiveSkill;
+        if (m_state == State::SelectingSkill && !m_skillAvailable) {
+            exitSkillSelection();
+        }
+        if (m_currentPhase == PhaseType::Play && m_state == State::Idle) {
+            m_actionPanel->setSkillAvailable(
+                m_skillAvailable && canControlPlayer(m_currentPlayerId));
+        }
+    }
     if (data.isDying) {
         auto* w = (playerId == m_localPlayerId) ? m_bottomPlayerInfo : m_topPlayerInfo;
         w->setStyleSheet(
@@ -119,6 +133,7 @@ void GameBoardWidget::onTargetSelectionFinished()
 
 void GameBoardWidget::onPendingActionCreated(const PendingActionData& info)
 {
+    exitSkillSelection();
     onTargetSelectionFinished();
     m_state = State::Responding;
     m_responderId = (info.requiredCardType == CardType::Peach)
@@ -134,10 +149,15 @@ void GameBoardWidget::onPendingActionCleared()
     m_responderId = -1;
     // 恢复操作面板到当前阶段应有的按钮状态
     m_actionPanel->updateForPhase(m_currentPhase, false);
+    if (m_currentPhase == PhaseType::Play) {
+        m_actionPanel->setSkillAvailable(
+            m_skillAvailable && canControlPlayer(m_currentPlayerId));
+    }
 }
 
 void GameBoardWidget::onGameOver(int winnerId)
 {
+    exitSkillSelection();
     m_autoAdvanceTimer->stop();
     m_state = State::Idle;
     QString msg = (winnerId >= 0)
@@ -149,8 +169,86 @@ void GameBoardWidget::onGameOver(int winnerId)
     emit gameFinished();
 }
 
+void GameBoardWidget::onSkillClicked()
+{
+    if (m_state == State::Idle) {
+        if (m_currentPhase != PhaseType::Play || !m_skillAvailable ||
+            !canControlPlayer(m_currentPlayerId)) {
+            return;
+        }
+
+        auto* area = handAreaForPlayer(m_currentPlayerId);
+        area->clearSelection();
+        area->setMultiSelectMode(true);
+        m_state = State::SelectingSkill;
+        m_actionPanel->setSkillSelectionMode(true);
+        m_actionPanel->setHint(QStringLiteral("请选择要用于技能的手牌，再点击确认技能"));
+        return;
+    }
+
+    if (m_state != State::SelectingSkill) return;
+
+    auto* area = handAreaForPlayer(m_currentPlayerId);
+    const QVector<int> selectedIds = area->selectedCardIds();
+    if (selectedIds.isEmpty()) {
+        exitSkillSelection();
+        return;
+    }
+
+    const int playerId = m_currentPlayerId;
+    exitSkillSelection();
+    emit skillRequested(selectedIds, playerId);
+}
+
 void GameBoardWidget::onLogMessage(const QString& msg) { m_logLabel->setText(msg); }
+
+void GameBoardWidget::onJudgmentPerformed(const CardData& judgeCard, const QString& resultText, bool effective)
+{
+    // 在日志区域显示判定结果，格式如: "判定牌: ♠7  结果: 【乐不思蜀】判定: 非♥，跳过出牌阶段"
+    QString display = QStringLiteral("判定牌: ") + judgeCard.suitSymbol + judgeCard.numberString
+                    + QStringLiteral("  ") + judgeCard.cardName
+                    + QStringLiteral("  →  ") + resultText;
+    m_logLabel->setText(display);
+
+    // 生效时高亮日志区域（红色），否则灰色
+    if (effective) {
+        m_logLabel->setStyleSheet("QLabel { font-size: 13px; color: #D32F2F; font-weight: bold;"
+            " padding: 8px 12px; background: #FFEBEE; border: 2px solid #EF9A9A; border-radius: 6px; }");
+    } else {
+        m_logLabel->setStyleSheet("QLabel { font-size: 13px; color: #2E7D32; font-weight: bold;"
+            " padding: 8px 12px; background: #E8F5E9; border: 2px solid #A5D6A7; border-radius: 6px; }");
+    }
+}
+
 void GameBoardWidget::refreshDisplay() {}
+
+// ==================== 手牌区定位 ====================
+
+HandCardAreaWidget* GameBoardWidget::handAreaForPlayer(int playerId) const
+{
+    return (playerId == m_localPlayerId) ? m_bottomHandArea : m_topHandArea;
+}
+
+bool GameBoardWidget::canControlPlayer(int playerId) const
+{
+    return !m_restrictToLocalPlayer || playerId == m_localPlayerId;
+}
+
+void GameBoardWidget::exitSkillSelection()
+{
+    if (m_state != State::SelectingSkill) return;
+
+    auto* area = handAreaForPlayer(m_currentPlayerId);
+    area->clearSelection();
+    area->setMultiSelectMode(false);
+    m_state = State::Idle;
+    m_actionPanel->setSkillSelectionMode(false);
+    m_actionPanel->updateForPhase(m_currentPhase, false);
+    if (m_currentPhase == PhaseType::Play) {
+        m_actionPanel->setSkillAvailable(
+            m_skillAvailable && canControlPlayer(m_currentPlayerId));
+    }
+}
 
 // ==================== 交互 ====================
 
@@ -165,7 +263,10 @@ void GameBoardWidget::onCardClicked(int cardId)
             emit respondCardRequested(cardId, m_responderId);
         break;
     case State::Discarding:
-        m_bottomHandArea->setSelection(cardId, true);
+        handAreaForPlayer(m_currentPlayerId)->setSelection(cardId, true);
+        break;
+    case State::SelectingSkill:
+        // HandCardAreaWidget 已在多选模式中切换了该牌的选中状态。
         break;
     case State::SelectingTarget:
         break;
@@ -193,10 +294,11 @@ void GameBoardWidget::onResponseSkipped()
 void GameBoardWidget::onDiscardConfirmed()
 {
     if (m_state == State::Discarding) {
-        int selId = m_bottomHandArea->selectedCardId();
+        auto* area = handAreaForPlayer(m_currentPlayerId);
+        int selId = area->selectedCardId();
         if (selId >= 0) {
             emit discardCardRequested(selId, m_currentPlayerId);
-            m_bottomHandArea->clearSelection();
+            area->clearSelection();
         }
     }
 }

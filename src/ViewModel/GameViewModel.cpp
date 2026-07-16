@@ -5,6 +5,7 @@
 #include "Player.h"
 #include "Card.h"
 #include "Character.h"
+#include <algorithm>
 
 namespace {
 
@@ -23,6 +24,11 @@ GameViewModel::GameViewModel(QObject* parent)
     m_actionVM = std::make_unique<ActionViewModel>(this);
     m_state->setCardManager(m_cardManager.get());
     m_actionVM->setGameState(m_state.get());
+
+    // 判定展示定时器（1.5s 后自动推进）
+    m_judgeTimer = new QTimer(this);
+    m_judgeTimer->setSingleShot(true);
+    connect(m_judgeTimer, &QTimer::timeout, this, &GameViewModel::onJudgeTimerFired);
 }
 
 GameViewModel::~GameViewModel() = default;
@@ -45,7 +51,11 @@ void GameViewModel::advancePhase()
     if (m_state->isGameOver()) return;
     switch (m_state->currentPhase()) {
     case PhaseType::Prepare: executePhasePrepare(); setNextPhase(PhaseType::Judge); break;
-    case PhaseType::Judge:   executePhaseJudge();   setNextPhase(PhaseType::Draw); break;
+    case PhaseType::Judge:
+        executePhaseJudge();
+        // 如有判定进行中，由判定定时器控制后续推进
+        if (!m_judgePending) setNextPhase(PhaseType::Draw);
+        break;
     case PhaseType::Draw:    executePhaseDraw();    setNextPhase(PhaseType::Play); break;
     case PhaseType::Play:
         // 与 endPlayPhase() 保持一致：待定动作（如杀等待闪）尚未结算时
@@ -166,7 +176,142 @@ void GameViewModel::executePhasePrepare()
     }
 }
 
-void GameViewModel::executePhaseJudge() {}
+void GameViewModel::executePhaseJudge()
+{
+    Player* player = currentPlayer();
+    if (!player) return;
+
+    const auto& cards = player->judgmentCards();
+    if (cards.empty()) return; // 无判定牌，正常推进
+
+    // 处理当前玩家判定区的第一张判定牌
+    m_judgeTargetPlayerId = player->playerId();
+    Card* judgeCard = cards.front();
+    if (!judgeCard) return;
+
+    // 从牌堆顶摸判定牌
+    Card* resultCard = m_cardManager->drawCard();
+    if (!resultCard) return;
+
+    // 构建判定结果数据
+    CardData resultData;
+    resultData.cardId = resultCard->id();
+    resultData.cardType = resultCard->cardType();
+    resultData.suit = resultCard->suit();
+    resultData.number = resultCard->number();
+    resultData.cardName = QString::fromStdString(resultCard->cardName());
+    resultData.suitSymbol = QString::fromStdString(resultCard->suitSymbol());
+    resultData.numberString = QString::fromStdString(resultCard->numberString());
+    resultData.color = resultCard->color();
+
+    // 判定牌进弃牌堆
+    m_cardManager->discard(resultCard);
+
+    // 根据判定牌类型处理效果
+    bool effective = false;
+    QString resultText;
+    CardType judgeType = judgeCard->cardType();
+
+    switch (judgeType) {
+    case CardType::Happy: // 乐不思蜀：非红桃则跳过出牌阶段
+        if (resultCard->suit() == CardSuit::Heart) {
+            resultText = player->displayName() + QStringLiteral("【乐不思蜀】判定: ♥，判定通过");
+            effective = false;
+        } else {
+            resultText = player->displayName() + QStringLiteral("【乐不思蜀】判定: 非♥，跳过出牌阶段");
+            effective = true;
+        }
+        break;
+
+    case CardType::Famine: // 兵粮寸断：非梅花则跳过摸牌阶段
+        if (resultCard->suit() == CardSuit::Club) {
+            resultText = player->displayName() + QStringLiteral("【兵粮寸断】判定: ♣，判定通过");
+            effective = false;
+        } else {
+            resultText = player->displayName() + QStringLiteral("【兵粮寸断】判定: 非♣，跳过摸牌阶段");
+            effective = true;
+        }
+        break;
+
+    case CardType::Lightning: // 闪电：黑桃2-9则3点伤害
+        if (resultCard->suit() == CardSuit::Spade && resultCard->number() >= 2 && resultCard->number() <= 9) {
+            resultText = player->displayName() + QStringLiteral("【闪电】判定: ♠")
+                         + QString::number(resultCard->number()) + QStringLiteral("，受到3点雷电伤害！");
+            effective = true;
+        } else {
+            resultText = player->displayName() + QStringLiteral("【闪电】判定: 不中，移至下家");
+            effective = false;
+        }
+        break;
+
+    default:
+        resultText = player->displayName() + QStringLiteral(" 判定完成");
+        break;
+    }
+
+    // 移除判定牌，并按结算结果放入弃牌堆或移动到下家。
+    player->removeJudgmentCard(judgeCard);
+
+    bool judgmentCardMoved = false;
+    if (judgeType == CardType::Lightning && !effective) {
+        int count = m_state->playerCount();
+        int curIdx = player->playerId();
+        for (int i = 1; i <= count; ++i) {
+            int nextIdx = (curIdx + i) % count;
+            Player* next = m_state->player(nextIdx);
+            if (next && next->isAlive()) {
+                next->addJudgmentCard(judgeCard);
+                judgmentCardMoved = true;
+                emitLog(QStringLiteral("【闪电】移至 ") + next->displayName());
+                break;
+            }
+        }
+    }
+
+    if (!judgmentCardMoved && m_cardManager) {
+        m_cardManager->discard(judgeCard);
+    }
+
+    if (judgeType == CardType::Lightning && effective) {
+        GameRule::dealDamage(m_state.get(), player, 3, nullptr);
+    }
+
+    // 发射判定信号 + 日志
+    emit judgmentPerformed(resultData, resultText, effective);
+    emitLog(resultText);
+
+    // 设置阶段跳过标记（由 setNextPhase 检查）
+    m_skipDrawPhase = m_skipDrawPhase || (judgeType == CardType::Famine && effective);
+    m_skipPlayPhase = m_skipPlayPhase || (judgeType == CardType::Happy && effective);
+
+    pushAllData();
+
+    // 启动1.5s定时器展示判定结果，之后推进阶段
+    m_judgePending = true;
+    m_judgeTimer->start(1500);
+}
+
+Card* GameViewModel::drawJudgeCard()
+{
+    return m_cardManager ? m_cardManager->drawCard() : nullptr;
+}
+
+void GameViewModel::onJudgeTimerFired()
+{
+    // 闪电伤害可能开启濒死响应；先等该响应链结束，再继续判定阶段。
+    if (m_state && m_state->hasPendingAction()) {
+        m_judgeTimer->start(100);
+        return;
+    }
+
+    m_judgePending = false;
+    m_judgeTargetPlayerId = -1;
+
+    // 判定展示结束，推进阶段
+    if (m_state && !m_state->isGameOver()) {
+        advancePhase();
+    }
+}
 
 void GameViewModel::executePhaseDraw()
 {
@@ -191,6 +336,10 @@ void GameViewModel::executePhaseDraw()
 
 void GameViewModel::executePhaseEnd()
 {
+    // 清除本回合的判定跳过标记
+    m_skipDrawPhase = false;
+    m_skipPlayPhase = false;
+
     Player* player = currentPlayer();
     if (!player) return;
     emitLog(player->displayName() + QStringLiteral(" 结束回合"));
@@ -206,6 +355,22 @@ void GameViewModel::setNextPhase(PhaseType phase)
             setNextPhase(PhaseType::End);
             return;
         }
+    }
+
+    // 兵粮寸断生效：跳过摸牌阶段
+    if (phase == PhaseType::Draw && m_skipDrawPhase) {
+        m_skipDrawPhase = false;
+        emitLog(currentPlayer() ? currentPlayer()->displayName() + QStringLiteral(" 被【兵粮寸断】，跳过摸牌阶段") : QString());
+        setNextPhase(PhaseType::Play);
+        return;
+    }
+
+    // 乐不思蜀生效：跳过出牌阶段
+    if (phase == PhaseType::Play && m_skipPlayPhase) {
+        m_skipPlayPhase = false;
+        emitLog(currentPlayer() ? currentPlayer()->displayName() + QStringLiteral(" 被【乐不思蜀】，跳过出牌阶段") : QString());
+        setNextPhase(PhaseType::Discard);
+        return;
     }
 
     m_state->setCurrentPhase(phase);
@@ -253,6 +418,7 @@ void GameViewModel::pushPlayerData(int playerId)
     d.handCardCount = p->handCardCount();
     d.handCardLimit = p->handCardLimit();
     d.isCurrentPlayer = (p->playerId() == currentPlayerId());
+    d.canUseActiveSkill = m_actionVM->canUseActiveSkill(playerId);
     d.attackRange = p->attackRange();
     if (p->character()) {
         d.skillName = QString::fromStdString(p->character()->skillName());
@@ -283,6 +449,27 @@ void GameViewModel::pushPlayerData(int playerId)
             cd.equipSlot = i;
             d.equipCards.append(cd);
         }
+    }
+
+    // 填充判定区数据
+    d.judgmentCards.clear();
+    for (Card* jc : p->judgmentCards()) {
+        if (!jc) continue;
+        CardData cd;
+        cd.cardId = jc->id();
+        cd.cardType = jc->cardType();
+        cd.suit = jc->suit();
+        cd.number = jc->number();
+        cd.cardName = QString::fromStdString(jc->cardName());
+        cd.description = QString::fromStdString(jc->description());
+        cd.color = jc->color();
+        cd.isBasic = jc->isBasic();
+        cd.isStrategy = true; // 延时锦囊也是锦囊
+        cd.suitSymbol = QString::fromStdString(jc->suitSymbol());
+        cd.numberString = QString::fromStdString(jc->numberString());
+        cd.isPlayable = false;
+        cd.ownerId = playerId;
+        d.judgmentCards.append(cd);
     }
 
     emit playerDataUpdated(playerId, d);

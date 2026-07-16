@@ -91,6 +91,8 @@ private slots:
     void characterSkills();
     void cardRulesAndEffects();
     void duelAlternatingResponses();
+    void duelNullifyValidation();
+    void lvBuRequiresTwoDodges();
     void areaOfEffectAndDying();
 };
 
@@ -273,9 +275,11 @@ void ModelTest::playerStateAndSignals()
     QVERIFY(!player.hasEquipCards());
     QVERIFY(!player.hasJudgmentCards());
     player.setUsedKillThisTurn(true);
+    player.setUsedActiveSkillThisTurn(true);
     player.setWineEnhanced(true);
     player.resetTurnState();
     QVERIFY(!player.hasUsedKillThisTurn());
+    QVERIFY(!player.hasUsedActiveSkillThisTurn());
     QVERIFY(!player.isWineEnhanced());
 }
 
@@ -494,6 +498,80 @@ void ModelTest::duelAlternatingResponses()
     GameRule::handleDuelResponse(&fixture.state, &fixture.player2, nullptr);
     QVERIFY(!fixture.state.hasPendingAction());
     QCOMPARE(fixture.player2.hp(), hpBefore - 1);
+}
+
+void ModelTest::duelNullifyValidation()
+{
+    DuelFixture cancelled;
+    DuelCard duel(CardSuit::Spade, 1);
+    NullifyCard nullify(CardSuit::Club, 12);
+    KillCard invalid(CardSuit::Heart, 7);
+    cancelled.player2.addHandCard(&nullify);
+    cancelled.player2.addHandCard(&invalid);
+
+    QCOMPARE(duel.execute(&cancelled.state, &cancelled.player1, {&cancelled.player2}),
+             ActionResult::Completed);
+    QVERIFY(cancelled.state.hasPendingAction());
+    QCOMPARE(cancelled.state.pendingActionInfo().requiredCardType, CardType::Nullify);
+    QCOMPARE(cancelled.state.pendingActionInfo().sourceCard, &duel);
+
+    GameRule::handleNullifyResponse(&cancelled.state, &cancelled.player2, &invalid, true);
+    QVERIFY(cancelled.state.hasPendingAction());
+    QVERIFY(cancelled.player2.hasCard(&invalid));
+
+    GameRule::handleNullifyResponse(&cancelled.state, &cancelled.player2, &nullify, true);
+    QVERIFY(!cancelled.state.hasPendingAction());
+    QVERIFY(!cancelled.player2.hasCard(&nullify));
+    QCOMPARE(cancelled.cardManager.discardPileCount(), 2);
+
+    DuelFixture resumed;
+    DuelCard resumedDuel(CardSuit::Diamond, 1);
+    NullifyCard skippedNullify(CardSuit::Spade, 13);
+    resumed.player2.addHandCard(&skippedNullify);
+
+    resumedDuel.execute(&resumed.state, &resumed.player1, {&resumed.player2});
+    GameRule::handleNullifyResponse(&resumed.state, &resumed.player2, nullptr, false);
+    QVERIFY(resumed.state.hasPendingAction());
+    QCOMPARE(resumed.state.pendingActionInfo().requiredCardType, CardType::Kill);
+    QCOMPARE(resumed.state.pendingActionInfo().target, &resumed.player2);
+    QCOMPARE(resumed.state.pendingActionInfo().sourceCard, &resumedDuel);
+    QVERIFY(resumed.state.pendingActionInfo().isDuel);
+}
+
+void ModelTest::lvBuRequiresTwoDodges()
+{
+    DuelFixture fixture;
+    LvBu lvBu;
+    fixture.player1.setCharacter(&lvBu);
+    DodgeCard first(CardSuit::Heart, 2);
+    DodgeCard second(CardSuit::Diamond, 3);
+    fixture.player2.addHandCard(&first);
+    fixture.player2.addHandCard(&second);
+
+    GameRule::executeKill(&fixture.state, &fixture.player1, &fixture.player2);
+    QVERIFY(fixture.state.hasPendingAction());
+    QCOMPARE(fixture.state.pendingActionInfo().requiredDodgeTotal, 2);
+
+    GameRule::handleKillResponse(&fixture.state, &fixture.player2, &first);
+    QVERIFY(fixture.state.hasPendingAction());
+    QCOMPARE(fixture.state.pendingActionInfo().dodgeProgress, 1);
+    QCOMPARE(fixture.player2.hp(), fixture.player2.maxHp());
+
+    GameRule::handleKillResponse(&fixture.state, &fixture.player2, &second);
+    QVERIFY(!fixture.state.hasPendingAction());
+    QCOMPARE(fixture.player2.hp(), fixture.player2.maxHp());
+
+    DuelFixture incomplete;
+    LvBu secondLvBu;
+    incomplete.player1.setCharacter(&secondLvBu);
+    DodgeCard onlyDodge(CardSuit::Club, 4);
+    incomplete.player2.addHandCard(&onlyDodge);
+    GameRule::executeKill(&incomplete.state, &incomplete.player1, &incomplete.player2);
+    GameRule::handleKillResponse(&incomplete.state, &incomplete.player2, &onlyDodge);
+    const int hpBefore = incomplete.player2.hp();
+    GameRule::handleKillResponse(&incomplete.state, &incomplete.player2, nullptr);
+    QVERIFY(!incomplete.state.hasPendingAction());
+    QCOMPARE(incomplete.player2.hp(), hpBefore - 1);
 }
 
 void ModelTest::areaOfEffectAndDying()

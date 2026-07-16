@@ -440,8 +440,14 @@ ActionResult DismantleCard::execute(GameState* state,
     }
 
     Player* target = targets.front();
-    GameRule::executeDismantle(state, user, target);
 
+    // 无懈可击判定
+    if (GameRule::checkNullifyBeforeEffect(state, this, target, user,
+            [state, user, target]() { GameRule::executeDismantle(state, user, target); })) {
+        return ActionResult::Completed;
+    }
+
+    GameRule::executeDismantle(state, user, target);
     return ActionResult::Completed;
 }
 
@@ -487,8 +493,14 @@ ActionResult StealCard::execute(GameState* state,
     }
 
     Player* target = targets.front();
-    GameRule::executeSteal(state, user, target);
 
+    // 无懈可击判定
+    if (GameRule::checkNullifyBeforeEffect(state, this, target, user,
+            [state, user, target]() { GameRule::executeSteal(state, user, target); })) {
+        return ActionResult::Completed;
+    }
+
+    GameRule::executeSteal(state, user, target);
     return ActionResult::Completed;
 }
 
@@ -691,6 +703,14 @@ ActionResult DuelCard::execute(GameState* state,
         return ActionResult::Completed;
     }
     Player* target = targets.front();
+    // 无懈可击判定
+    if (GameRule::checkNullifyBeforeEffect(state, this, target, user,
+            [state, user, target, this]() {
+                GameRule::executeDuel(state, user, target, this);
+            })) {
+        return ActionResult::Completed;
+    }
+
     GameRule::executeDuel(state, user, target, this);
     return ActionResult::RequiresKill;
 }
@@ -721,7 +741,8 @@ ActionResult LightningCard::execute(GameState* state,
     if (!state || !user) {
         return ActionResult::Completed;
     }
-    GameRule::executeLightning(state, user, user);
+    // 闪电放入使用者自己的判定区，在判定阶段结算
+    user->addJudgmentCard(this);
     return ActionResult::Completed;
 }
 
@@ -752,11 +773,11 @@ ActionResult NullifyCard::execute(GameState* state,
                                    Player* user,
                                    const std::vector<Player*>& targets)
 {
+    (void)state;
+    (void)user;
     (void)targets;
-    if (!state || !user) {
-        return ActionResult::Completed;
-    }
-    GameRule::executeNullify(state, user);
+    // 无懈可击不会主动使用，而是通过 pending action 系统响应
+    // 实际逻辑在 ActionViewModel::respondCard + GameRule::handleNullifyResponse
     return ActionResult::Completed;
 }
 
@@ -799,6 +820,13 @@ ActionResult BorrowCard::execute(GameState* state,
         return ActionResult::Completed;
     }
     Player* target = targets.front();
+
+    // 无懈可击判定
+    if (GameRule::checkNullifyBeforeEffect(state, this, target, user,
+            [state, user, target]() { GameRule::executeBorrow(state, user, target); })) {
+        return ActionResult::Completed;
+    }
+
     GameRule::executeBorrow(state, user, target);
     return ActionResult::Completed;
 }
@@ -869,7 +897,15 @@ ActionResult HappyCard::execute(GameState* state,
         return ActionResult::Completed;
     }
     Player* target = targets.front();
-    GameRule::executeHappy(state, user, target);
+
+    // 无懈可击判定
+    if (GameRule::checkNullifyBeforeEffect(state, this, target, user,
+            [target, this]() { target->addJudgmentCard(this); })) {
+        return ActionResult::Completed;
+    }
+
+    // 直接放入目标判定区
+    target->addJudgmentCard(this);
     return ActionResult::Completed;
 }
 
@@ -911,7 +947,15 @@ ActionResult FamineCard::execute(GameState* state,
         return ActionResult::Completed;
     }
     Player* target = targets.front();
-    GameRule::executeFamine(state, user, target);
+
+    // 无懈可击判定
+    if (GameRule::checkNullifyBeforeEffect(state, this, target, user,
+            [target, this]() { target->addJudgmentCard(this); })) {
+        return ActionResult::Completed;
+    }
+
+    // 直接放入目标判定区
+    target->addJudgmentCard(this);
     return ActionResult::Completed;
 }
 

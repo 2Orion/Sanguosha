@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <string>
+#include <functional>
 #include <QObject>
 #include "CommonTypes.h"
 
@@ -24,6 +25,17 @@ struct PendingActionInfo {
     Player* continuationSource = nullptr;
     CardType continuationCardType = CardType::Kill;
     std::vector<Player*> continuationTargets;
+
+    /// 无懈可击：当此待定动作被跳过时执行的回调
+    /// 用于恢复被延迟的锦囊牌效果（如对方选择不使用无懈，则原锦囊继续结算）
+    std::function<void()> onNullifySkipped;
+
+    /// 是否为决斗的轮次（决斗双方交替出杀，不能走 AOE 的分支）
+    bool isDuel = false;
+
+    /// 闪响应计数（吕布无双需 2 张闪，默认 1）
+    int requiredDodgeTotal = 1;
+    int dodgeProgress = 0;
 };
 
 class GameState : public QObject {

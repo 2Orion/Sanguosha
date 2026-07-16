@@ -29,6 +29,14 @@ int HandCardAreaWidget::selectedCardId() const
     return -1;
 }
 
+QVector<int> HandCardAreaWidget::selectedCardIds() const
+{
+    QVector<int> ids;
+    for (auto* w : m_cardWidgets)
+        if (w->isSelected()) ids.append(w->cardId());
+    return ids;
+}
+
 void HandCardAreaWidget::clearSelection()
 {
     for (auto* w : m_cardWidgets) w->setSelected(false);
@@ -42,9 +50,16 @@ void HandCardAreaWidget::resizeEvent(QResizeEvent* e)
 
 void HandCardAreaWidget::onCardWidgetClicked(int cardId)
 {
-    for (auto* w : m_cardWidgets) {
-        if (w->cardId() == cardId) w->setSelected(true);
-        else w->setSelected(false);
+    if (m_multiSelect) {
+        // 多选模式：切换选中状态
+        for (auto* w : m_cardWidgets) {
+            if (w->cardId() == cardId) w->setSelected(!w->isSelected());
+        }
+    } else {
+        // 单选模式：选中当前点击的卡片，取消其他选中
+        for (auto* w : m_cardWidgets) {
+            w->setSelected(w->cardId() == cardId);
+        }
     }
     emit cardClicked(cardId);
 }
