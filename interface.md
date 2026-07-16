@@ -1,7 +1,8 @@
 # Model 层公开接口定义
 
 > 本文档描述当前代码中 Model 层及其共享类型的公开接口，作为 ViewModel 层调用 Model 的契约。
-> 最后核对日期：2026-07-14。接口代码块以仓库中的头文件为准；private 成员不在本文档中重复列出。
+> 最后全量核对日期：2026-07-16。
+> 接口代码块以仓库中的头文件为准；private 成员不在本文档中重复列出。
 
 ## 目录
 
@@ -46,6 +47,12 @@ enum class CardCategory {
     Equipment
 };
 
+enum class EquipSlot {
+    Weapon,
+    Armor,
+    Mount
+};
+
 enum class CardType {
     Kill,
     Dodge,
@@ -57,6 +64,22 @@ enum class CardType {
     BarbarianInvasion,
     Volley,
     PeachGarden,
+    Duel,
+    Lightning,
+    Nullify,
+    Borrow,
+    Harvest,
+    Happy,
+    Famine,
+    Crossbow,
+    QinglongBlade,
+    ZhangbaSnake,
+    KylinBow,
+    QinggangSword,
+    IceSword,
+    DualSword,
+    EightDiagrams,
+    BenevolentShield,
 };
 
 enum class PhaseType {
@@ -120,9 +143,10 @@ class Character;
 | CardSuit | 卡牌花色 |
 | CardColor | 卡牌颜色，由花色派生 |
 | CardCategory | 基本牌、锦囊牌、装备牌 |
+| EquipSlot | 装备槽位：武器、防具，坐骑预留 |
 | CardType | 具体卡牌类型 |
 | PhaseType | 回合阶段 |
-| CardArea | 卡牌所在区域，装备区和判定区暂留 |
+| CardArea | 卡牌所在区域；装备区已使用，判定区结算仍为预留 |
 | GameEvent | 武将技能触发事件 |
 | ActionResult | 卡牌执行后是否需要后续响应 |
 
@@ -158,7 +182,7 @@ struct PendingActionInfo {
 |------|------|
 | source | 动作来源玩家；濒死动作中是当前救援者/响应者 |
 | target | 普通响应动作中的响应目标；濒死动作中是濒死玩家 |
-| sourceCard | 触发动作的卡牌，可为空 |
+| sourceCard | 触发动作的卡牌，可为空；决斗响应链保留原【决斗】指针，供规则/ViewModel 与其他“需要出杀”的动作区分 |
 | requiredCardType | 当前要求的响应牌类型 |
 | description | Model 内部使用的 UTF-8 文本 |
 | canSkip | 当前响应是否允许跳过 |
@@ -300,7 +324,9 @@ protected:
 - 基类 execute 返回 ActionResult::Completed。
 - numberString 将 1/11/12/13 显示为 A/J/Q/K，其他点数显示数字。
 
-### 3.2 基本牌与锦囊牌声明
+### 3.2 代表性基本牌与锦囊牌声明
+
+> 下方代码块展示核心类的接口形状，不重复整个 `Card.h`。当前实际子类清单见代码块后的表格。
 
 ~~~cpp
 class KillCard : public Card {
@@ -441,7 +467,27 @@ public:
                           Player* user,
                           const std::vector<Player*>& targets) override;
 };
+
+class DuelCard : public StrategyCard {
+public:
+    DuelCard(CardSuit suit, int number);
+
+    bool canTarget(const GameState* state,
+                   const Player* user,
+                   const Player* target) const override;
+    std::vector<Player*> getValidTargets(const GameState* state,
+                                          const Player* user) const override;
+    ActionResult execute(GameState* state,
+                          Player* user,
+                          const std::vector<Player*>& targets) override;
+};
 ~~~
+
+| 分类 | 当前子类 |
+|------|------------|
+| 基本牌 | KillCard、DodgeCard、PeachCard、WineCard |
+| 锦囊牌 | DismantleCard、StealCard、BountifulCard、BarbarianCard、VolleyCard、PeachGardenCard、DuelCard、LightningCard、NullifyCard、BorrowCard、HarvestCard、HappyCard、FamineCard |
+| 装备牌 | EquipmentCard、CrossbowCard、QinglongBladeCard、ZhangbaSnakeCard、KylinBowCard、QinggangSwordCard、IceSwordCard、DualSwordCard、EightDiagramsCard、BenevolentShieldCard |
 
 ### 3.3 卡牌行为
 
@@ -458,6 +504,13 @@ public:
 | BarbarianCard | 合法目标为除使用者外的所有存活玩家 | 建立依次要求出杀的响应链，返回 RequiresKill |
 | VolleyCard | 合法目标为除使用者外的所有存活玩家 | 建立依次要求出闪的响应链，返回 RequiresDodge |
 | PeachGardenCard | 合法目标列表为所有存活玩家 | 所有未满体力的玩家回复 1 点体力 |
+| DuelCard | 目标必须是其他存活玩家 | 记录原决斗卡并要求目标先出杀，返回 RequiresKill；双方交替出杀，未出者受到对方造成的 1 点伤害 |
+| LightningCard | 目标为使用者自己 | 当前仅调用判定区骨架；闪电判定、伤害和转移未实现 |
+| NullifyCard | 存活玩家可进入 canUse，无显式目标 | `executeNullify`/`checkNullifyChain` 仍是空实现，不会抵消锦囊 |
+| BorrowCard | 目标为其他存活且有装备的玩家 | 建立一次要求出杀的简化待定动作，未实现完整借刀目标选择/交武器规则 |
+| HarvestCard | 合法目标为所有存活玩家 | 简化为使用者获得展示牌的第一张，其余弃置 |
+| HappyCard / FamineCard | 目标为其他存活玩家 | 当前只有目标判断和结算骨架，未放入真实判定牌，也未跳过阶段 |
+| EquipmentCard | 出牌阶段对自己使用 | 装入对应槽位并替换旧装备；诸葛连弩的无限出杀已接入，其他专属触发效果多数未接入主结算链 |
 
 卡牌的 execute 通常只处理传入目标列表的第一个目标；AOE 卡牌的目标链由 GameRule 和 PendingActionInfo::remainingTargets 管理。
 
@@ -497,6 +550,13 @@ public:
                                   const Player* self) const;
     virtual void triggerSkill(GameState* state, Player* self);
     virtual CardType skillTransformCard(const Card* card) const;
+    virtual int onDrawPhaseBonus() const;
+    virtual bool requireExtraDodge() const;
+    virtual bool canRedirectKill() const;
+    virtual Player* getRedirectTarget(GameState* state,
+                                      Player* self,
+                                      Player* attacker) const;
+    virtual bool canDiscardAndDraw() const;
 
 signals:
     void skillTriggered(const QString& skillName);
@@ -509,6 +569,8 @@ signals:
 - triggerCondition() 返回 false。
 - triggerSkill() 不执行动作。
 - skillTransformCard() 返回原卡牌类型。
+- onDrawPhaseBonus() 返回 0；requireExtraDodge()、canRedirectKill()、canDiscardAndDraw() 返回 false。
+- getRedirectTarget() 返回 nullptr。
 
 ### 4.2 具体武将接口
 
@@ -550,6 +612,47 @@ public:
     bool hasSkill() const override;
     CardType skillTransformCard(const Card* card) const override;
 };
+
+class SunQuan : public Character {
+public:
+    SunQuan(QObject* parent = nullptr);
+    bool hasSkill() const override;
+    bool canDiscardAndDraw() const override;
+};
+
+class ZhouYu : public Character {
+public:
+    ZhouYu(QObject* parent = nullptr);
+    bool hasSkill() const override;
+    int onDrawPhaseBonus() const override;
+};
+
+class LvBu : public Character {
+public:
+    LvBu(QObject* parent = nullptr);
+    bool hasSkill() const override;
+    bool requireExtraDodge() const override;
+};
+
+class DaQiao : public Character {
+public:
+    DaQiao(QObject* parent = nullptr);
+    bool hasSkill() const override;
+    bool canRedirectKill() const override;
+    Player* getRedirectTarget(GameState* state,
+                              Player* self,
+                              Player* attacker) const override;
+};
+
+class SiMaYi : public Character {
+public:
+    SiMaYi(QObject* parent = nullptr);
+    bool hasSkill() const override;
+    bool triggerCondition(GameEvent event,
+                          const GameState* state,
+                          const Player* self) const override;
+    void triggerSkill(GameState* state, Player* self) override;
+};
 ~~~
 
 | 武将 | 当前实现 |
@@ -558,6 +661,11 @@ public:
 | GuanYu | 红色牌通过 skillTransformCard 转为 CardType::Kill |
 | ZhangFei | GameRule::canPlayKill 对张飞放宽本回合杀次数；自身 triggerCondition 当前返回 false |
 | ZhaoYun | Kill 与 Dodge 互相转换，其他牌保持原类型 |
+| SunQuan | canDiscardAndDraw 返回 true，但当前出牌/ViewModel 流程没有制衡命令入口 |
+| ZhouYu | onDrawPhaseBonus 返回 1，GameViewModel 摸牌阶段已接入 |
+| LvBu | requireExtraDodge 返回 true，但当前杀的响应结算尚未读取该值 |
+| DaQiao | 流离查询接口已存在，但当前杀的目标结算尚未调用 |
+| SiMaYi | OnDamage 触发框架已接入；当前从待定动作的 source 推断伤害来源，并获得其一张随机手牌 |
 
 ---
 
@@ -571,6 +679,7 @@ public:
 #include "CommonTypes.h"
 
 class Card;
+class EquipmentCard;
 class Character;
 class GameState;
 
@@ -611,10 +720,17 @@ public:
     bool hasHandCards() const;
     Card* getRandomHandCard() const;
 
-    const std::vector<Card*>& equipCards() const;
-    bool hasEquipCards() const;
-    void addEquipCard(Card* card);
-    void removeEquipCard(Card* card);
+    void equipCard(EquipmentCard* card);
+    void unequipSlot(EquipSlot slot);
+    EquipmentCard* equippedAt(EquipSlot slot) const;
+    int attackRange() const;
+    bool hasArmor() const;
+    bool hasCrossbow() const;
+
+    const std::vector<Card*>& equipCards() const; // 兼容接口
+    bool hasEquipCards() const;                   // 兼容接口
+    void addEquipCard(Card* card);                // 兼容接口
+    void removeEquipCard(Card* card);             // 兼容接口
 
     const std::vector<Card*>& judgmentCards() const;
     bool hasJudgmentCards() const;
@@ -640,6 +756,7 @@ signals:
     void handCardsChanged();
     void characterChanged(const QString& charName);
     void stateChanged();
+    void equipmentChanged(EquipSlot slot);
 };
 ~~~
 
@@ -651,12 +768,12 @@ signals:
 - setHp 将体力限制为不小于 0；damage 和 heal 只处理正数。
 - isAlive() 等价于 hp() > 0；isFullHp() 等价于 hp() >= maxHp()。
 - handCardLimit() 等于当前体力值的非负部分。
-- 手牌、装备区和判定区都使用 std::vector<Card*>，容器不拥有卡牌。
+- 手牌和判定区使用 std::vector<Card*>；装备区内部按 EquipSlot 保存 EquipmentCard*，兼容接口 equipCards() 返回重建后的缓存列表。这些指针都不拥有卡牌。
 - allSelectableCards() 返回手牌和装备区的合并列表，不包含判定区。
 - setDying(true) 发出 dying(playerId)；从濒死状态恢复时发出 revived(playerId)。
 - handCardAdded、handCardRemoved 的参数是卡牌 ID，不是 Card*。
 - `markDead()` 负责一次性发出 died(playerId)；GameRule::checkDeath 在最终死亡时调用它，避免濒死阶段提前发出死亡信号。
-- setCharacter、手牌变化和体力变化会触发对应的状态信号；装备区和判定区变化通过 stateChanged() 通知。
+- setCharacter、手牌变化和体力变化会触发对应的状态信号；装备变化同时发出 equipmentChanged(slot) 和 stateChanged()。
 
 ---
 
@@ -704,20 +821,36 @@ signals:
 
 ### 6.2 行为约定
 
-initialize() 创建并洗牌一副 48 张的简化牌堆：
+initialize() 创建并洗牌一副 101 张的牌堆：
 
 | 卡牌 | 数量 |
 |------|------|
-| 杀 | 15 |
-| 闪 | 10 |
-| 桃 | 6 |
-| 酒 | 3 |
+| 杀 | 30 |
+| 闪 | 15 |
+| 桃 | 8 |
+| 酒 | 5 |
 | 过河拆桥 | 3 |
 | 顺手牵羊 | 3 |
 | 无中生有 | 3 |
-| 南蛮入侵 | 2 |
-| 万箭齐发 | 2 |
+| 南蛮入侵 | 3 |
+| 万箭齐发 | 3 |
 | 桃园结义 | 1 |
+| 决斗 | 3 |
+| 借刀杀人 | 2 |
+| 五谷丰登 | 2 |
+| 无懈可击 | 3 |
+| 乐不思蜀 | 3 |
+| 兵粮寸断 | 2 |
+| 闪电 | 1 |
+| 诸葛连弩 | 2 |
+| 青龙偃月刀 | 1 |
+| 丈八蛇矛 | 1 |
+| 麒麟弓 | 1 |
+| 青釭剑 | 1 |
+| 寒冰剑 | 1 |
+| 雌雄双股剑 | 1 |
+| 八卦阵 | 2 |
+| 仁王盾 | 1 |
 
 - drawCard() 从牌堆取一张；牌堆为空时会先尝试回收弃牌堆并洗牌。
 - 牌堆和弃牌堆都为空时，drawCard() 返回 nullptr 并发出 drawPileEmpty()。
@@ -760,12 +893,38 @@ namespace GameRule {
     void executePeach(GameState* state, Player* user, Player* target);
     void executeWine(GameState* state, Player* user);
 
+    int getAttackRange(const GameState* state, const Player* attacker);
+    bool isInAttackRange(const GameState* state,
+                         const Player* attacker,
+                         const Player* target);
+    bool armorEffectCheck(const GameState* state,
+                          const Player* defender,
+                          Card* attackCard);
+
     void executeDismantle(GameState* state, Player* user, Player* target);
     void executeSteal(GameState* state, Player* user, Player* target);
     void executeBountiful(GameState* state, Player* user);
     void executeBarbarianInvasion(GameState* state, Player* user);
     void executeVolley(GameState* state, Player* user);
     void executePeachGarden(GameState* state);
+
+    void executeDuel(GameState* state,
+                     Player* user,
+                     Player* target,
+                     Card* duelCard);
+    void handleDuelResponse(GameState* state,
+                            Player* responder,
+                            Card* killCard);
+    void executeLightning(GameState* state, Player* user, Player* target);
+    void executeNullify(GameState* state, Player* user);
+    void executeBorrow(GameState* state, Player* user, Player* target);
+    void executeHarvest(GameState* state, Player* user);
+    void executeHappy(GameState* state, Player* user, Player* target);
+    void executeFamine(GameState* state, Player* user, Player* target);
+    bool checkNullifyChain(GameState* state,
+                           Card* targetCard,
+                           Player* targetPlayer,
+                           Player* sourcePlayer);
 
     void handleAoeKillResponse(GameState* state,
                                Player* responder,
@@ -799,7 +958,9 @@ namespace GameRule {
 | 使用判断 | canPlayKill、canPlayCard | 判断是否允许出牌；张飞由 canPlayKill 放宽杀次数 |
 | 响应判断 | hasDodgeToRespond、hasKillToRespond、hasPeachToSave | 检查手牌及武将转化后的响应能力 |
 | 基本牌 | executeKill、handleKillResponse、executePeach、executeWine | 处理杀、闪、桃、酒的实际效果 |
-| 锦囊牌 | executeDismantle、executeSteal、executeBountiful、executeBarbarianInvasion、executeVolley、executePeachGarden | 处理锦囊牌效果 |
+| 装备与距离 | getAttackRange、isInAttackRange、armorEffectCheck | 计算武器攻击范围并判定防具效果 |
+| 锦囊牌 | executeDismantle、executeSteal、executeBountiful、executeBarbarianInvasion、executeVolley、executePeachGarden、executeDuel、executeLightning、executeNullify、executeBorrow、executeHarvest、executeHappy、executeFamine、checkNullifyChain | 处理锦囊牌效果 |
+| 决斗响应 | handleDuelResponse | 验证并弃置响应杀，交换下一位响应者；未出杀时结算伤害 |
 | AOE 响应 | handleAoeKillResponse、handleAoeDodgeResponse、handleAoeSkipResponse | 处理南蛮入侵和万箭齐发的逐目标响应 |
 | 伤害与濒死 | dealDamage、startDyingProcess、handleDyingPeach、skipDyingResponse、checkDeath、checkGameOver | 伤害、救援、死亡及终局判定 |
 | 弃牌 | getDiscardCount | 返回手牌数超过体力上限的数量 |
@@ -809,6 +970,7 @@ namespace GameRule {
 - INITIAL_HAND_COUNT 为 4，DRAW_PHASE_COUNT 为 2。
 - executeKill 会设置攻击者本回合已使用杀，并在 GameState 中创建要求出闪的待定动作。
 - handleKillResponse 传入有效卡牌时会移除并弃置该牌；传入 nullptr 时对响应者造成伤害。攻击者有酒强化时伤害为 2，随后消耗强化状态。
+- executeDuel 在待定动作中保留 duelCard；handleDuelResponse 在响应者出杀后交换 source/target，继续交替响应，传入 nullptr 时由 source 对当前 target 造成 1 点伤害并结束决斗。
 - executeBarbarianInvasion 和 executeVolley 会按存活目标顺序创建响应链。
 - AOE 响应处理完成当前目标后，会根据 remainingTargets 创建下一个待定动作；目标濒死获救时使用 continuationTargets 恢复响应链。
 - dealDamage 会触发受伤武将技能；目标体力不大于 0 且尚未濒死时，会进入 startDyingProcess。
@@ -854,8 +1016,8 @@ GameRule 和 Model
 View 不应接收 PendingActionInfo、Player*、Card* 等 Model 指针。跨越 View 边界的值类型位于 src/Common/：
 
 - PendingActionData：来源/目标玩家 ID、来源卡牌 ID、响应类型、描述、可否跳过和剩余目标 ID。
-- CardData（列表别名 CardList）：卡牌展示所需的 ID、类型、花色、点数、名称、描述和可选/可出/高亮状态。
-- PlayerData：玩家 ID、名称、武将与技能、体力、手牌数量/上限等展示数据。
+- CardData（列表别名 CardList）：卡牌展示所需的 ID、类型、花色、点数、名称、描述、可选/可出/高亮状态，以及 isEquipment、equipSlot、attackRange。
+- PlayerData：玩家 ID、名称、武将与技能、体力、手牌数量/上限、攻击范围和 equipCards 装备列表。
 
 View/ViewModel 的完整连接表和 ViewModel 内的路由/拦截逻辑见 connection.md。本文件只定义 Model 的对象接口，不再描述 View 与 ViewModel 的直接调用流程。
 
@@ -874,7 +1036,7 @@ src/
 │   ├── CommonTypes.h       # CommonTypes.h 的 Model 转发头
 │   ├── GameState.h/.cpp    # 游戏状态与 PendingActionInfo
 │   ├── Card.h/.cpp         # Card 及基本牌、锦囊牌
-│   ├── Character.h/.cpp    # Character 及四名武将
+│   ├── Character.h/.cpp    # Character 及九名武将
 │   ├── Player.h/.cpp       # 玩家状态、区域和信号
 │   ├── CardManager.h/.cpp  # 牌堆、弃牌堆和卡牌生命周期
 │   └── GameRule.h/.cpp     # 无状态规则函数
@@ -882,7 +1044,14 @@ src/
 │   ├── GameViewModel.h/.cpp
 │   └── ActionViewModel.h/.cpp
 ├── App/
-│   └── SGSApp.h/.cpp
+│   ├── SGSApp.h/.cpp       # 主程序组合根，管理本地/联网入口
+│   ├── ServerApp.h/.cpp    # headless 权威对局 + GameServer
+│   └── ClientApp.h/.cpp    # GameBoardWidget + GameClient
+├── Network/
+│   ├── Protocol.h/.cpp
+│   ├── MessageSerializer.h/.cpp
+│   ├── GameServer.h/.cpp
+│   └── GameClient.h/.cpp
 └── View/
     └── ...
 ~~~
@@ -896,6 +1065,7 @@ src/
 - GameState 的玩家列表和 cardManager 字段都是非拥有指针。
 - 当前本地游戏由 GameViewModel 持有 GameState、CardManager 和 ActionViewModel；玩家以 GameState 为 QObject 父对象创建。
 - 当前本地游戏中的武将以 GameViewModel 为 QObject 父对象创建，Player::m_character 只保存指针。
+- 网络模式中 ServerApp 持有权威 GameViewModel/Model 与 GameServer；ClientApp 只持有 GameClient 和 GameBoardWidget，不创建客户端 Model。
 - Card 不属于 QObject 父子树，不能使用 setParent 或 Qt parent 构造参数管理生命周期。
 - GameRule 不拥有任何对象，也不保存全局游戏状态。
 - Model 的指针型信号只适合在 Model 和 ViewModel 内部使用；发送到 View 时必须先转换为 src/Common/ 中的值类型。

@@ -58,7 +58,8 @@ namespace GameRule {
     void executePeachGarden(GameState* state);
 
     // 新锦囊
-    void executeDuel(GameState* state, Player* user, Player* target);
+    void executeDuel(GameState* state, Player* user, Player* target, Card* duelCard);
+    void handleDuelResponse(GameState* state, Player* responder, Card* killCard);
     void executeLightning(GameState* state, Player* user, Player* target);
     void executeNullify(GameState* state, Player* user);
     void executeBorrow(GameState* state, Player* user, Player* target);

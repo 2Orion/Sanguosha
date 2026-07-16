@@ -64,6 +64,7 @@ class ViewModelTest : public QObject {
 private slots:
     void actionQueriesAndPlay();
     void responseValidation();
+    void duelAlternatingResponses();
     void discardAndTargetValidation();
     void gameViewModelInitialization();
     void gameViewModelPhaseProgression();
@@ -172,6 +173,37 @@ void ViewModelTest::responseValidation()
     aoe.actionVM.skipResponse(1);
     QVERIFY(aoe.state.hasPendingAction());
     QCOMPARE(aoe.state.pendingActionInfo().target, &aoe.player3);
+}
+
+void ViewModelTest::duelAlternatingResponses()
+{
+    ActionFixture fixture;
+    DuelCard duel(CardSuit::Spade, 1);
+    KillCard player1Kill(CardSuit::Heart, 7);
+    KillCard player2Kill(CardSuit::Club, 8);
+    fixture.player1.addHandCard(&duel);
+    fixture.player1.addHandCard(&player1Kill);
+    fixture.player2.addHandCard(&player2Kill);
+
+    QCOMPARE(fixture.actionVM.playCard(duel.id(), 0, {1}), ActionResult::RequiresKill);
+    QVERIFY(fixture.state.hasPendingAction());
+    QCOMPARE(fixture.state.pendingActionInfo().target, &fixture.player2);
+    QCOMPARE(fixture.state.pendingActionInfo().sourceCard, &duel);
+
+    fixture.actionVM.respondCard(player2Kill.id(), 1);
+    QVERIFY(fixture.state.hasPendingAction());
+    QCOMPARE(fixture.state.pendingActionInfo().source, &fixture.player2);
+    QCOMPARE(fixture.state.pendingActionInfo().target, &fixture.player1);
+
+    fixture.actionVM.respondCard(player1Kill.id(), 0);
+    QVERIFY(fixture.state.hasPendingAction());
+    QCOMPARE(fixture.state.pendingActionInfo().source, &fixture.player1);
+    QCOMPARE(fixture.state.pendingActionInfo().target, &fixture.player2);
+
+    const int hpBefore = fixture.player2.hp();
+    fixture.actionVM.skipResponse(1, true);
+    QVERIFY(!fixture.state.hasPendingAction());
+    QCOMPARE(fixture.player2.hp(), hpBefore - 1);
 }
 
 void ViewModelTest::discardAndTargetValidation()

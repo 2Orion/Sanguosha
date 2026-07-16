@@ -25,12 +25,18 @@ bool requiresExplicitTarget(const Card* card)
 
     switch (card->cardType()) {
     case CardType::Kill:
+    case CardType::Duel:
     case CardType::Dismantle:
     case CardType::Steal:
         return true;
     default:
         return false;
     }
+}
+
+bool isDuelResponse(const PendingActionInfo& info)
+{
+    return info.sourceCard && info.sourceCard->cardType() == CardType::Duel;
 }
 
 } // namespace
@@ -268,9 +274,15 @@ void ActionViewModel::respondCard(int cardId, int playerId)
         break;
 
     case CardType::Kill:
-        GameRule::handleAoeKillResponse(m_state, responder, card);
-        emitLog(responder->displayName() + QStringLiteral(" 打出【") +
-                QString::fromStdString(card->cardName()) + QStringLiteral("】响应南蛮入侵"));
+        if (isDuelResponse(info)) {
+            GameRule::handleDuelResponse(m_state, responder, card);
+            emitLog(responder->displayName() + QStringLiteral(" 打出【") +
+                    QString::fromStdString(card->cardName()) + QStringLiteral("】响应决斗"));
+        } else {
+            GameRule::handleAoeKillResponse(m_state, responder, card);
+            emitLog(responder->displayName() + QStringLiteral(" 打出【") +
+                    QString::fromStdString(card->cardName()) + QStringLiteral("】响应南蛮入侵"));
+        }
         break;
 
     case CardType::Peach: {
@@ -314,8 +326,13 @@ void ActionViewModel::skipResponse(int playerId, bool forceNoCard)
         break;
 
     case CardType::Kill:
-        GameRule::handleAoeSkipResponse(m_state, responder);
-        emitLog(responder->displayName() + QStringLiteral(" 放弃了响应"));
+        if (isDuelResponse(info)) {
+            GameRule::handleDuelResponse(m_state, responder, nullptr);
+            emitLog(responder->displayName() + QStringLiteral(" 未在决斗中打出【杀】，受到伤害"));
+        } else {
+            GameRule::handleAoeSkipResponse(m_state, responder);
+            emitLog(responder->displayName() + QStringLiteral(" 放弃了响应"));
+        }
         break;
 
     case CardType::Peach: {

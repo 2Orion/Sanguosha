@@ -2,6 +2,44 @@
 
 ## Features
 
+### [2026-07-16] 修复【决斗】无法交替出【杀】导致对局卡死
+
+**现象**：A 对 B 使用【决斗】，B 打出一张【杀】后，即使 A 手中还有【杀】也无法继续响应，
+对局失去可继续操作的待定动作。
+
+**根因**：`ActionViewModel` 将所有 `requiredCardType == CardType::Kill` 的响应统一路由到
+`handleAoeKillResponse`，把【决斗】误当成【南蛮入侵】处理。B 出【杀】后 AOE 处理器会清空
+待定动作，却不会创建“轮到 A 继续出【杀】”的下一步。
+
+**修复**：
+
+- `executeDuel` 将实际【决斗】保存到 `PendingActionInfo::sourceCard`，作为待定响应的类型标识；
+  现有 `PendingActionData::sourceCardId` 可直接向 View/网络层传递，无需修改网络协议。
+- `GameRule` 新增 `handleDuelResponse`：目标先出【杀】，成功后交换 `source`/`target` 并创建下一次
+  【杀】响应；任意一方不出时，由上一位成功出【杀】的角色对其造成 1 点伤害。
+- `ActionViewModel::respondCard`/`skipResponse` 根据 `sourceCard` 区分【决斗】与【南蛮入侵】，
+  分别进入正确的响应处理器；同时将【决斗】列入必须显式指定目标的卡牌。
+- 更新【决斗】卡面描述，明确“目标先出【杀】，双方轮流出【杀】，未出者受到 1 点伤害”。
+
+**涉及文件**：`src/Model/Card.cpp`、`src/Model/GameRule.h/cpp`、
+`src/ViewModel/ActionViewModel.cpp`、`tests/model_test.cpp`、`tests/viewmodel_test.cpp`、
+`README.md`、`interface.md`、`connection.md`、`plan2.0.md`。
+
+**验证**：新增 Model/ViewModel 两层 `duelAlternatingResponses` 回归用例，覆盖
+A 出【决斗】 → B 出【杀】 → A 继续出【杀】 → B 不出并扣 1 点体力的完整交替链。
+删除 `build` 后按 README 方案二使用 Qt 6.11.1 + MinGW 13.1 全量重建成功；
+`ModelSmokeTest` 95/95，`ModelTest`/`ViewModelTest`/`ViewTest`/`NetworkTest` 逐个运行均返回 0。
+
+**测试环境注意**：Windows 默认 PATH 中 `C:\mingw64\bin` 的 GCC 8 运行库位于 Qt 之前时，
+新编译的测试程序会因旧 `libstdc++-6.dll` 缺少 `_ZSt28__throw_bad_array_new_lengthv`
+而在进入测试前以 `0xc0000139` (`STATUS_ENTRYPOINT_NOT_FOUND`) 退出。这是 MinGW DLL 版本错配，
+不是测试断言或决斗逻辑失败；运行前需按 README 将 Qt 6.11.1/MinGW 13.1 的 `bin` 目录放到 PATH 最前。
+
+**文档同步**：全量核对允许修改的根目录项目文档。README 已更新为 101 张牌、9 名武将、
+本地/局域网双模式和 59 个 NetworkTest 测试函数；`interface.md` 已同步公开枚举、卡牌/武将、
+装备 API、牌堆和 GameRule；`connection.md` 已去除“网络层开发中”旧描述；
+`plan2.0.md` 以第 0 节区分当前实现与后续设计。
+
 ### [2026-07-16] 装备牌系统 + 卡牌拓展 — View 层适配
 
 完成装备牌在 View 层的全面适配，包括：

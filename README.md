@@ -1,6 +1,6 @@
 # 三国杀（Sanguosha）
 
-一个基于 MVVM + Qt 信号槽架构的双人本地对战三国杀简化实现。
+一个基于 MVVM + Qt 信号槽架构的双人三国杀简化实现，支持本地同屏和局域网对战。
 
 ---
 
@@ -8,9 +8,8 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  App 层 — SGSApp（纯组合根）                                  │
-│  唯一知道 ViewModel 和 View 具体类型的模块                    │
-│  只做：创建对象 + 建立信号槽直连 + 生命周期，零业务逻辑        │
+│  App 层 — SGSApp / ServerApp / ClientApp（组合根）             │
+│  创建对象、建立本地/网络信号槽连接、管理生命周期             │
 ├──────────────────────────────────────────────────────────────┤
 │                                                               │
 │  View 层 (Qt Widgets)             ViewModel 层 (QObject)      │
@@ -24,7 +23,20 @@
 └──────────────────────────────────────────────────────────────┘
 ```
 
-View 层 **零编译依赖**于 ViewModel 和 Model，只包含 Common 层头文件。View 信号直连 ViewModel 的 public slots，ViewModel 信号直连 View 的槽，所有连接由 `SGSApp::startLocalGame()` 集中建立。
+View 层 **零编译依赖**于 ViewModel 和 Model，只包含 Common 层头文件。本地模式由
+`SGSApp::startLocalGame()` 直连 View 与 ViewModel；网络模式由 `ServerApp` 运行权威
+ViewModel/Model，`ClientApp` 直连 `GameBoardWidget` 与 `GameClient`。
+
+---
+
+## 当前实现
+
+- 牌堆共 101 张：58 张基本牌、26 张普通锦囊、6 张延时锦囊、11 张装备牌。
+- 可选武将共 9 名：曹操、关羽、张飞、赵云、孙权、周瑜、吕布、大乔、司马懿。
+- 本地模式与局域网模式共用同一套服务器规则；网络模式已实现握手、选将、手牌脱敏、心跳和完整对局链路。
+- 【决斗】已实现双方交替出【杀】；【借刀杀人】和【五谷丰登】当前为简化结算。
+- 【闪电】、【无懈可击】、【乐不思蜀】和【兵粮寸断】只有类型/出牌骨架，尚未接通完整判定或连锁结算。
+- 装备牌已支持按槽位装备、替换和界面展示，诸葛连弩的无限出杀限制已接入；其余武器/防具的专属触发效果多数仍是属性或规则接口。
 
 ---
 
@@ -41,7 +53,7 @@ Sanguosha/
 │   │   ├── PlayerData.h      # 玩家展示数据
 │   │   └── PendingActionData.h # 待定动作值类型
 │   ├── Model/                # QObject + 信号
-│   ├── Network/              # 网络层（局域网对战，开发中）
+│   ├── Network/              # 网络层（局域网对战，已接入主程序）
 │   │   ├── Protocol.h/cpp    # 协议版本号 + MessageType + 消息结构体 + 手牌脱敏 redactCardList
 │   │   ├── MessageSerializer.h/cpp # QDataStream 序列化 + 帧封装/解码
 │   │   ├── GameServer.h/cpp  # QTcpServer：连接管理/握手/选将/广播转发（零 Model 依赖）
@@ -116,11 +128,14 @@ cmake -B build -G "MinGW Makefiles" `
 cmake --build build -j
 ```
 
-运行/测试前需把 Qt DLL 加入 PATH（每个新终端执行一次，否则 exe 会因找不到 `Qt6Core.dll` 等而启动失败）：
+运行/测试前需把 Qt DLL 和配套 MinGW 运行库加入 PATH（每个新终端执行一次）：
 
 ```powershell
 $env:PATH = "D:\QT\6.11.1\mingw_64\bin;D:\QT\Tools\mingw1310_64\bin;$env:PATH"
 ```
+
+> 本机 `C:\mingw64\bin` 中的 GCC 8 运行库与 Qt 6.11.1/MinGW 13.1 不兼容。若它在 PATH 中排在 Qt 之前，
+> 测试程序会因旧 `libstdc++-6.dll` 缺少符号而以 `0xc0000139` 退出。
 
 > 判断该用哪个版本：先跑 `g++ --version` 和 `make --version`，若报错或版本 < 11，用版本二；若系统只有 `mingw32-make` 没有 `make`，版本一的 `make -j` 也要相应换成 `mingw32-make -j`。
 
@@ -134,6 +149,8 @@ $env:PATH = "D:\QT\6.11.1\mingw_64\bin;D:\QT\Tools\mingw1310_64\bin;$env:PATH"
 cd build
 .\SanguoshaQt.exe   # 终端运行需先将 Qt 与 MinGW 的 bin 目录加入 PATH
 ```
+
+主界面可直接选择本地双人对战，或通过「创建房间」/「加入房间」使用默认端口 `9527` 进行局域网对战。
 
 ---
 
@@ -155,4 +172,6 @@ $env:QT_QPA_PLATFORM = "offscreen"; .\build\ViewTest.exe
 $env:QT_QPA_PLATFORM = "offscreen"; .\build\NetworkTest.exe
 ```
 
-当前完整套件通过，5 个测试目标均为正常断言通过；覆盖卡牌规则、响应权限、濒死救援、目标选择、主要 QWidget、App 生命周期、网络协议序列化/帧解码（半包/粘包）、ServerApp headless 启动路径（无 QApplication 环境下完整回合循环）、ServerApp↔GameServer 的双向接线与三轮对抗性审查加固（VM 广播顺序、7 条命令分发、跨连接身份伪造防护、越权推进阶段防护、出牌/弃牌回合归属校验、待定动作重入保护）、Step 5 手牌脱敏（对手侧牌面字段占位、cardId 结构信息仍保留、己方视角不受影响）、Step 6 GameClient（对接真实 GameServer/ServerApp：playerId 分配与超员拒绝、7 个发送方法 payload 正确性、gameStarted/phaseChanged/playerDataUpdated/logMessage/脱敏后 handCardsUpdated 转发、双客户端出杀→待定响应往返、断线信号）、Step 7 ClientApp（真实 `GameBoardWidget` + `GameClient` 组合根，从真实 `QTest::mouseClick` 点击手牌到网络命令再到服务器结算的完整链路，验证 `GameBoardWidget` 零改动）、Step 8 心跳保活（无响应客户端在短超时参数下被判定失联并踢出、正常客户端跨多个心跳周期靠自动 `Pong` 保持连接），以及 Step 9 进程内端到端对局（2 个真实 `GameClient` 对接 `ServerApp`，完整跑握手→选将→出杀→主动放弃响应→伤害→濒死救援自动跳过→游戏结束，以及游戏结束后两条非法命令路径被拒绝且服务器不崩溃）。NetworkTest 共 61 个用例。
+当前完整套件包含 5 个测试目标；`NetworkTest -functions` 当前列出 59 个测试函数。覆盖基本卡牌规则、
+【决斗】交替响应、AOE/濒死链、响应与回合权限、QWidget/App 组装、网络序列化/帧解码、身份伪造防护、
+手牌脱敏、`GameClient`/`ClientApp` 往返、心跳保活和进程内端到端对局。

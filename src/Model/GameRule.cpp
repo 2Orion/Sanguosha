@@ -630,20 +630,70 @@ bool armorEffectCheck(const GameState* state, const Player* defender, Card* atta
 
 // ==================== 新锦囊执行 ====================
 
-void executeDuel(GameState* state, Player* user, Player* target)
+void executeDuel(GameState* state, Player* user, Player* target, Card* duelCard)
 {
-    if (!state || !user || !target) return;
+    if (!state || !user || !target || !duelCard ||
+        duelCard->cardType() != CardType::Duel) return;
 
     PendingActionInfo info;
     info.source = user;
     info.target = target;
-    info.sourceCard = nullptr;
+    info.sourceCard = duelCard;
     info.requiredCardType = CardType::Kill;
     info.description = (user->displayName() + " 对 " + target->displayName()
                        + " 使用了【决斗】，请打出【杀】").toStdString();
     info.canSkip = false;
 
     state->setPendingAction(info);
+}
+
+void handleDuelResponse(GameState* state, Player* responder, Card* killCard)
+{
+    if (!state || !responder || !state->hasPendingAction()) return;
+
+    PendingActionInfo info = state->pendingActionInfo();
+    if (info.requiredCardType != CardType::Kill || info.target != responder ||
+        !info.source || !info.sourceCard ||
+        info.sourceCard->cardType() != CardType::Duel) {
+        return;
+    }
+    if (killCard && (!responder->hasCard(killCard) ||
+                     (killCard->cardType() != CardType::Kill &&
+                      (!responder->character() ||
+                       responder->character()->skillTransformCard(killCard) != CardType::Kill)))) {
+        return;
+    }
+
+    if (!killCard) {
+        dealDamage(state, responder, 1, info.source);
+        // dealDamage() may replace the duel response with a dying response.
+        if (!responder->isDying() && state->hasPendingAction()) {
+            const PendingActionInfo& current = state->pendingActionInfo();
+            if (current.source == info.source && current.target == info.target &&
+                current.sourceCard == info.sourceCard &&
+                current.requiredCardType == CardType::Kill) {
+                state->clearPendingAction();
+            }
+        }
+        return;
+    }
+
+    responder->removeHandCard(killCard);
+    if (state->cardManager()) {
+        state->cardManager()->discard(killCard);
+    }
+
+    state->clearPendingAction();
+
+    PendingActionInfo nextInfo;
+    nextInfo.source = responder;
+    nextInfo.target = info.source;
+    nextInfo.sourceCard = info.sourceCard;
+    nextInfo.requiredCardType = CardType::Kill;
+    nextInfo.description = (responder->displayName() + " 在【决斗】中打出【杀】，"
+                           + info.source->displayName() + " 需继续打出【杀】").toStdString();
+    nextInfo.canSkip = false;
+    state->setPendingAction(nextInfo);
 }
 
 void executeLightning(GameState* state, Player* user, Player* target)

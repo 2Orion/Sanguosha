@@ -658,7 +658,7 @@ ActionResult PeachGardenCard::execute(GameState* state,
 DuelCard::DuelCard(CardSuit suit, int number)
     : StrategyCard(CardType::Duel, suit, number)
 {
-    setDescription("目标需打出一张【杀】，否则受到1点伤害");
+    setDescription("目标先打出【杀】，然后双方轮流打出【杀】，未打出者受到1点伤害");
 }
 
 bool DuelCard::canTarget(const GameState* state,
@@ -691,7 +691,7 @@ ActionResult DuelCard::execute(GameState* state,
         return ActionResult::Completed;
     }
     Player* target = targets.front();
-    GameRule::executeDuel(state, user, target);
+    GameRule::executeDuel(state, user, target, this);
     return ActionResult::RequiresKill;
 }
 

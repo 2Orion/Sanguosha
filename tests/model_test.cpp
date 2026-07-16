@@ -90,6 +90,7 @@ private slots:
     void gameStateSignals();
     void characterSkills();
     void cardRulesAndEffects();
+    void duelAlternatingResponses();
     void areaOfEffectAndDying();
 };
 
@@ -459,6 +460,40 @@ void ModelTest::cardRulesAndEffects()
     QCOMPARE(garden.execute(&strategyFixture.state, &strategyFixture.player1, {}), ActionResult::Completed);
     QCOMPARE(strategyFixture.player1.hp(), 4);
     QCOMPARE(strategyFixture.player2.hp(), 3);
+}
+
+void ModelTest::duelAlternatingResponses()
+{
+    DuelFixture fixture;
+    DuelCard duel(CardSuit::Spade, 1);
+    KillCard player1Kill(CardSuit::Heart, 7);
+    KillCard player2Kill(CardSuit::Club, 8);
+    fixture.player1.addHandCard(&player1Kill);
+    fixture.player2.addHandCard(&player2Kill);
+
+    QCOMPARE(duel.execute(&fixture.state, &fixture.player1, {&fixture.player2}),
+             ActionResult::RequiresKill);
+    QVERIFY(fixture.state.hasPendingAction());
+    QCOMPARE(fixture.state.pendingActionInfo().source, &fixture.player1);
+    QCOMPARE(fixture.state.pendingActionInfo().target, &fixture.player2);
+    QCOMPARE(fixture.state.pendingActionInfo().sourceCard, &duel);
+
+    GameRule::handleDuelResponse(&fixture.state, &fixture.player2, &player2Kill);
+    QVERIFY(fixture.state.hasPendingAction());
+    QVERIFY(!fixture.player2.hasCard(&player2Kill));
+    QCOMPARE(fixture.state.pendingActionInfo().source, &fixture.player2);
+    QCOMPARE(fixture.state.pendingActionInfo().target, &fixture.player1);
+
+    GameRule::handleDuelResponse(&fixture.state, &fixture.player1, &player1Kill);
+    QVERIFY(fixture.state.hasPendingAction());
+    QVERIFY(!fixture.player1.hasCard(&player1Kill));
+    QCOMPARE(fixture.state.pendingActionInfo().source, &fixture.player1);
+    QCOMPARE(fixture.state.pendingActionInfo().target, &fixture.player2);
+
+    const int hpBefore = fixture.player2.hp();
+    GameRule::handleDuelResponse(&fixture.state, &fixture.player2, nullptr);
+    QVERIFY(!fixture.state.hasPendingAction());
+    QCOMPARE(fixture.player2.hp(), hpBefore - 1);
 }
 
 void ModelTest::areaOfEffectAndDying()

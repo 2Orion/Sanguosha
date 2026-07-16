@@ -251,10 +251,11 @@ P2 点击"跳过":
 struct CardData {
     int cardId; CardType cardType; CardSuit suit;
     int number; QString cardName; QString description;
-    CardColor color; bool isBasic; bool isStrategy;
+    CardColor color; bool isBasic; bool isStrategy; bool isEquipment;
     QString suitSymbol; QString numberString;
     bool isSelected; bool isPlayable; bool isHighlighted;
     int ownerId;
+    int equipSlot; int attackRange;
 };
 using CardList = QVector<CardData>;
 
@@ -264,6 +265,7 @@ struct PlayerData {
     QString skillName; QString skillDescription;
     int hp; int maxHp; bool isAlive; bool isDying;
     int handCardCount; int handCardLimit; bool isCurrentPlayer;
+    int attackRange; QVector<CardData> equipCards;
 };
 
 // PendingActionData.h
@@ -296,12 +298,13 @@ ViewModel ──信号──► View 槽（SGSApp 建立直连）
 
 ---
 
-## 7. 网络模式：ServerApp 连接表（plan2.0.md §2，开发中）
+## 7. 网络模式：ServerApp / ClientApp 连接表（已实现）
 
 > 服务器侧组合根 `ServerApp`（`src/App/ServerApp.h/cpp`）复用与本地模式完全相同的
 > `GameViewModel`/`ActionViewModel`，只是把 SGSApp 连接给 `GameBoardWidget` 的两端
 > 换成连接给 `GameServer`（`src/Network/GameServer.h/cpp`，QTcpServer）。
-> 客户端侧 `ClientApp`/`GameClient` 尚未实现（见 CLAUDE.md「乙成员任务分步计划」）。
+> 客户端侧 `ClientApp`/`GameClient` 已实现并接入 `SGSApp` 的「创建房间」/「加入房间」流程。
+> 当前 `NetworkTest -functions` 列出 59 个测试函数；本节各 Step 末尾的数字保留当时阶段性历史。
 
 ### 7.1 VM → GameServer（广播，`ServerApp::wireViewModelBroadcasts()`）
 
@@ -516,8 +519,8 @@ emit，且 `handCardsUpdated` 脱敏结果通过 `GameClient` 转发后仍然正
 | Client → View | `logMessage` | `GameBoardWidget::onLogMessage` |
 
 `ClientApp` 不创建 `MainWindow`——`boardWidget()` 把 `GameBoardWidget*` 暴露给调用方自行嵌入
-窗口容器；`gameClient()` 暴露 `GameClient*` 供调用方接入登录/等待界面（联网入口和
-`NetworkConfigDialog` 属丙，不在本计划内）。
+窗口容器；`gameClient()` 暴露 `GameClient*` 供调用方接入连接/等待界面。当前调用方是
+`SGSApp`，联网入口与 `NetworkConfigDialog` 已接入 `MainWindow`。
 
 回归测试见 `tests/network_test.cpp` 的 `clientAppWiresBoardToGameClientWithZeroBoardChanges`：
 对接真实 `ServerApp`，起两个客户端（一个用 `ClientApp`，一个用裸 `GameClient` 扮演对手）完成
@@ -556,7 +559,7 @@ emit，且 `handCardsUpdated` 脱敏结果通过 `GameClient` 转发后仍然正
 失联、`clientDisconnected` 触发、`connectedClientCount()` 归零；
 `respondingClientSurvivesHeartbeatViaGameClientAutoPong`——真实 `GameClient` 跨越多个心跳周期
 （600ms，覆盖至少 2 轮超时窗口）后仍保持连接，验证生产路径的自动 `Pong` 应答生效、正常客户端
-不会被误踢。NetworkTest 增至 60 用例。
+不会被误踢。当时阶段性统计为 60 个用例；当前 `NetworkTest -functions` 列出 59 个测试函数。
 
 ### 7.8 进程内端到端对局（Step 9）
 
@@ -587,4 +590,4 @@ emit，且 `handCardsUpdated` 脱敏结果通过 `GameClient` 转发后仍然正
 QEvent::DeferredDelete)` + `processEvents()`），把 `GameServer::dropClient()` 里 `deleteLater()`
 的连接对象及时冲刷掉。这不是本次具体失败的根因，但作为全套件在用例数持续增长时的资源卫生保留。
 
-NetworkTest 增至 61 用例。
+当时阶段性统计为 61 个用例；当前 `NetworkTest -functions` 列出 59 个测试函数。
