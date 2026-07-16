@@ -68,6 +68,7 @@ class ViewTest : public QObject {
 private slots:
     void cardWidgetInteraction();
     void handCardAreaInteraction();
+    void handCardFanArrangement();
     void playerInfoDisplayAndClick();
     void actionPanelStates();
     void gameBoardRouting();
@@ -166,6 +167,67 @@ void ViewTest::handCardAreaInteraction()
     QCOMPARE(area.cardCount(), 1);
     QCOMPARE(area.findChildren<CardWidget*>().size(), 1);
     QCOMPARE(area.findChildren<CardWidget*>().front()->cardId(), 12);
+}
+
+void ViewTest::handCardFanArrangement()
+{
+    HandCardAreaWidget area;
+    area.resize(600, 140);
+    area.show();
+
+    // ≤6 张：扇形模式，控件外扩 2*FAN_MARGIN，牌面居中绘制、控件正立
+    CardList few;
+    for (int i = 0; i < 5; ++i)
+        few.append(makeCardData(300 + i, QStringLiteral("Fan %1").arg(i)));
+    area.setCards(few, true);
+    QCoreApplication::processEvents();
+    QCOMPARE(area.cardCount(), 5);
+
+    const auto fanCards = area.findChildren<CardWidget*>();
+    QCOMPARE(fanCards.size(), 5);
+    for (CardWidget* c : fanCards) {
+        QVERIFY(c->fanMode());
+        QCOMPARE(c->width(),  CardWidget::CARD_WIDTH + 2 * CardWidget::FAN_MARGIN);
+        QCOMPARE(c->height(), CardWidget::CARD_HEIGHT + 2 * CardWidget::FAN_MARGIN);
+    }
+
+    // 扇形外扩后，固定坐标点击仍命中正确卡片（核心回归保护）
+    QSignalSpy clickedSpy(&area, &HandCardAreaWidget::cardClicked);
+    CardWidget* target = nullptr;
+    for (CardWidget* c : fanCards)
+        if (c->cardId() == 302) target = c;
+    QVERIFY(target != nullptr);
+    QTest::mouseClick(target, Qt::LeftButton, Qt::NoModifier, QPoint(15, 15));
+    QCOMPARE(clickedSpy.count(), 1);
+    QCOMPARE(clickedSpy.at(0).at(0).toInt(), 302);
+    QCOMPARE(area.selectedCardId(), 302);
+
+    // >6 张：退回水平重叠，控件恢复原始 80×112、非扇形
+    CardList many;
+    for (int i = 0; i < 8; ++i)
+        many.append(makeCardData(400 + i, QStringLiteral("Flat %1").arg(i)));
+    area.setCards(many, true);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QCoreApplication::processEvents();
+    QCOMPARE(area.cardCount(), 8);
+
+    const auto flatCards = area.findChildren<CardWidget*>();
+    QCOMPARE(flatCards.size(), 8);
+    for (CardWidget* c : flatCards) {
+        QVERIFY(!c->fanMode());
+        QCOMPARE(c->width(),  CardWidget::CARD_WIDTH);
+        QCOMPARE(c->height(), CardWidget::CARD_HEIGHT);
+    }
+
+    // 水平重叠模式点击仍命中
+    QSignalSpy flatSpy(&area, &HandCardAreaWidget::cardClicked);
+    CardWidget* flatTarget = nullptr;
+    for (CardWidget* c : flatCards)
+        if (c->cardId() == 405) flatTarget = c;
+    QVERIFY(flatTarget != nullptr);
+    QTest::mouseClick(flatTarget, Qt::LeftButton, Qt::NoModifier, QPoint(15, 15));
+    QCOMPARE(flatSpy.count(), 1);
+    QCOMPARE(flatSpy.at(0).at(0).toInt(), 405);
 }
 
 void ViewTest::playerInfoDisplayAndClick()

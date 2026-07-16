@@ -1,4 +1,5 @@
 #include "ActionPanelWidget.h"
+#include "Theme.h"
 #include <QFont>
 
 // ==================== 构造 ====================
@@ -19,93 +20,34 @@ void ActionPanelWidget::setupUi()
 
     // 提示文字
     m_hintLabel = new QLabel(this);
-    m_hintLabel->setStyleSheet(
-        "QLabel {"
-        "  font-size: 13px;"
-        "  color: #555;"
-        "  padding: 4px 8px;"
-        "  background: #F5F5F5;"
-        "  border: 1px solid #E0E0E0;"
-        "  border-radius: 4px;"
-        "}"
-    );
+    m_hintLabel->setStyleSheet(Theme::hintBar());
     layout->addWidget(m_hintLabel, 1); // stretch = 1
 
-    // 结束出牌
+    // 结束出牌（暗朱红）
     m_endPlayBtn = new QPushButton(QStringLiteral("结束出牌"), this);
-    m_endPlayBtn->setStyleSheet(
-        "QPushButton {"
-        "  font-size: 13px; font-weight: bold;"
-        "  color: white;"
-        "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-        "    stop:0 #FF7043, stop:1 #E64A19);"
-        "  border: none; border-radius: 4px;"
-        "  padding: 6px 16px;"
-        "}"
-        "QPushButton:hover {"
-        "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-        "    stop:0 #FF8A65, stop:1 #F4511E);"
-        "}"
-        "QPushButton:pressed {"
-        "  background: #BF360C;"
-        "}"
-    );
+    m_endPlayBtn->setStyleSheet(Theme::gradientButton(
+        "#A03A28", "#71271A", "#B84A34", "#8C3020", "#571D12"));
     connect(m_endPlayBtn, &QPushButton::clicked, this, &ActionPanelWidget::playPhaseEnded);
     layout->addWidget(m_endPlayBtn);
 
-    // 发动技能
+    // 发动技能（暗紫）
     m_skillBtn = new QPushButton(QStringLiteral("发动技能"), this);
     m_skillBtn->setObjectName(QStringLiteral("skillButton"));
-    m_skillBtn->setStyleSheet(
-        "QPushButton { font-size: 13px; font-weight: bold; color: white;"
-        "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-        "    stop:0 #AB47BC, stop:1 #7B1FA2);"
-        "  border: none; border-radius: 4px; padding: 6px 16px; }"
-        "QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-        "    stop:0 #CE93D8, stop:1 #9C27B0); }"
-        "QPushButton:pressed { background: #6A1B9A; }");
+    m_skillBtn->setStyleSheet(Theme::gradientButton(
+        "#6E4098", "#4A2870", "#8250B0", "#5C3488", "#38195A"));
     connect(m_skillBtn, &QPushButton::clicked, this, &ActionPanelWidget::skillRequested);
     layout->addWidget(m_skillBtn);
 
-    // 跳过响应
+    // 跳过响应（深色扁平次要按钮）
     m_skipResponseBtn = new QPushButton(QStringLiteral("跳过"), this);
-    m_skipResponseBtn->setStyleSheet(
-        "QPushButton {"
-        "  font-size: 13px;"
-        "  color: #555;"
-        "  background: #F5F5F5;"
-        "  border: 1px solid #CCC; border-radius: 4px;"
-        "  padding: 6px 16px;"
-        "}"
-        "QPushButton:hover {"
-        "  background: #E0E0E0;"
-        "}"
-        "QPushButton:pressed {"
-        "  background: #BDBDBD;"
-        "}"
-    );
+    m_skipResponseBtn->setStyleSheet(Theme::flatButton());
     connect(m_skipResponseBtn, &QPushButton::clicked, this, &ActionPanelWidget::respondSkipped);
     layout->addWidget(m_skipResponseBtn);
 
-    // 确认弃牌
+    // 确认弃牌（暗松绿）
     m_confirmDiscardBtn = new QPushButton(QStringLiteral("确认弃牌"), this);
-    m_confirmDiscardBtn->setStyleSheet(
-        "QPushButton {"
-        "  font-size: 13px; font-weight: bold;"
-        "  color: white;"
-        "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-        "    stop:0 #66BB6A, stop:1 #388E3C);"
-        "  border: none; border-radius: 4px;"
-        "  padding: 6px 16px;"
-        "}"
-        "QPushButton:hover {"
-        "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-        "    stop:0 #81C784, stop:1 #43A047);"
-        "}"
-        "QPushButton:pressed {"
-        "  background: #1B5E20;"
-        "}"
-    );
+    m_confirmDiscardBtn->setStyleSheet(Theme::gradientButton(
+        "#3E7A46", "#285230", "#4E9458", "#33663C", "#1D3E24"));
     connect(m_confirmDiscardBtn, &QPushButton::clicked, this, &ActionPanelWidget::discardConfirmed);
     layout->addWidget(m_confirmDiscardBtn);
 

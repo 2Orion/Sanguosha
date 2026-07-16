@@ -2,9 +2,13 @@
 #include "PlayerInfoWidget.h"
 #include "HandCardAreaWidget.h"
 #include "ActionPanelWidget.h"
+#include "Theme.h"
 #include <QVBoxLayout>
 #include <QMessageBox>
 #include <QFont>
+#include <QPainter>
+#include <QLinearGradient>
+#include <QRadialGradient>
 
 GameBoardWidget::GameBoardWidget(QWidget* parent) : QWidget(parent)
 {
@@ -39,8 +43,7 @@ void GameBoardWidget::setupLayout()
 
     m_logLabel = new QLabel(this);
     m_logLabel->setWordWrap(true); m_logLabel->setAlignment(Qt::AlignCenter); m_logLabel->setMinimumHeight(32);
-    m_logLabel->setStyleSheet("QLabel { font-size: 12px; color: #444; padding: 6px 12px;"
-        " background: #F5F5F5; border: 1px solid #E0E0E0; border-radius: 6px; }");
+    m_logLabel->setStyleSheet(Theme::hintBar(12));
     main->addWidget(m_logLabel);
 
     m_bottomHandArea = new HandCardAreaWidget(this); m_bottomHandArea->setMinimumHeight(120); main->addWidget(m_bottomHandArea);
@@ -49,6 +52,32 @@ void GameBoardWidget::setupLayout()
 
     main->setStretchFactor(m_topHandArea, 1);
     main->setStretchFactor(m_bottomHandArea, 1);
+}
+
+// ==================== 牌桌背景 ====================
+
+void GameBoardWidget::paintEvent(QPaintEvent*)
+{
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    // 深绿绒面渐变（左上偏亮 → 右下偏暗）
+    QLinearGradient felt(rect().topLeft(), rect().bottomRight());
+    felt.setColorAt(0.0, Theme::TableGreenLight);
+    felt.setColorAt(1.0, Theme::TableGreenDark);
+    painter.fillRect(rect(), felt);
+
+    // 暗角 vignette：中央通透、四周压暗，突出牌桌中心
+    QRadialGradient vignette(rect().center(), qMax(width(), height()) * 0.75);
+    vignette.setColorAt(0.0, QColor(0, 0, 0, 0));
+    vignette.setColorAt(0.7, QColor(0, 0, 0, 0));
+    vignette.setColorAt(1.0, Theme::TableVignette);
+    painter.fillRect(rect(), vignette);
+
+    // 内侧细金线描边，古风镶边感
+    painter.setPen(QPen(QColor(212, 175, 55, 70), 1));
+    painter.setBrush(Qt::NoBrush);
+    painter.drawRoundedRect(rect().adjusted(4, 4, -5, -5), 8, 8);
 }
 
 // ==================== 状态槽 ====================
@@ -98,8 +127,7 @@ void GameBoardWidget::onPlayerDataUpdated(int playerId, const PlayerData& data)
     }
     if (data.isDying) {
         auto* w = (playerId == m_localPlayerId) ? m_bottomPlayerInfo : m_topPlayerInfo;
-        w->setStyleSheet(
-            "PlayerInfoWidget { border: 2px solid #D32F2F; border-radius: 8px; background-color: #FFEBEE; }");
+        w->setStyleSheet(Theme::panelDying());
     }
 }
 
@@ -210,14 +238,8 @@ void GameBoardWidget::onJudgmentPerformed(const CardData& judgeCard, const QStri
                     + QStringLiteral("  →  ") + resultText;
     m_logLabel->setText(display);
 
-    // 生效时高亮日志区域（红色），否则灰色
-    if (effective) {
-        m_logLabel->setStyleSheet("QLabel { font-size: 13px; color: #D32F2F; font-weight: bold;"
-            " padding: 8px 12px; background: #FFEBEE; border: 2px solid #EF9A9A; border-radius: 6px; }");
-    } else {
-        m_logLabel->setStyleSheet("QLabel { font-size: 13px; color: #2E7D32; font-weight: bold;"
-            " padding: 8px 12px; background: #E8F5E9; border: 2px solid #A5D6A7; border-radius: 6px; }");
-    }
+    // 生效时高亮日志区域（红色），否则绿色（深色主题变体）
+    m_logLabel->setStyleSheet(Theme::judgmentBar(effective));
 }
 
 void GameBoardWidget::refreshDisplay() {}

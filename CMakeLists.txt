@@ -128,6 +128,7 @@ set(VIEW_HEADERS
     src/View/GameBoardWidget.h
     src/View/MainWindow.h
     src/View/NetworkConfigDialog.h
+    src/View/Theme.h
 )
 
 # ==================== App 层（组合根） ====================

@@ -69,7 +69,9 @@ Sanguosha/
 │   │   ├── CardWidget.h/cpp
 │   │   ├── PlayerInfoWidget.h/cpp
 │   │   ├── HandCardAreaWidget.h/cpp
-│   │   └── ActionPanelWidget.h/cpp
+│   │   ├── ActionPanelWidget.h/cpp
+│   │   ├── NetworkConfigDialog.h/cpp
+│   │   └── Theme.h           # 深色古风主题：颜色常量 + QSS 片段工具（仅 View 层使用，无逻辑）
 │   └── App/                  # 组合根
 │       ├── SGSApp.h/cpp      # 本地模式（View + ViewModel 直连）
 │       ├── ServerApp.h/cpp   # 网络服务器模式（headless；持有 GameServer，

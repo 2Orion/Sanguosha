@@ -1,5 +1,38 @@
 # Changelog
 
+## [2026-07-17] UI 美化 Step U4：手牌扇形排列 + 绘制层动画
+
+- `CardWidget` 新增**扇形绘制模式**（`setFanMode(enabled, rotationDeg, baseLift)`）：开启后控件外扩 `2*FAN_MARGIN`（10px），牌面居中绘制在中央 80×112 区域并**绕牌面中心旋转**，四周留白容纳旋转四角与上浮溢出。关键：旋转/上浮全为**绘制层**（`QPainter` 旋转+平移），控件几何仍是正立矩形，Qt 事件命中只认几何 → 固定坐标点击测试完全不受影响。裸控件（非扇形）保持 80×112。
+- `CardWidget` 上浮改**动画驱动**：`m_liftAnimation`（`QVariantAnimation`，120ms OutCubic）平滑过渡悬停/选中/扇形基线的上浮量，替换 U3 的静态 `yOffset`；新增 `playEntranceFade(delayMs)`（200ms OutQuad 透明度动画）供入场淡入，几何立即为最终值、仅绘制层淡入。singleShot 以 `this` 为 context，控件销毁自动取消，无悬空。
+- `HandCardAreaWidget::arrangeCards()`：≤6 张走**弧形扇形**（相邻 ±3° 旋转、封顶 ±9°，两端抛物线下沉 `FAN_DIP` 控制在 margin 内），几何按外扩尺寸摆放但牌面中心对齐期望位置；>6 张退回原水平重叠（非扇形、恢复 80×112）。`rebuildWidgets()` 对每张牌错峰 40ms 触发入场淡入。
+- ViewTest 新增 `handCardFanArrangement`：断言 ≤6 张为扇形模式（控件 100×132）、外扩后固定坐标 `QPoint(15,15)` 点击仍命中正确 cardId、>6 张退回水平重叠（控件恢复 80×112、非扇形）、两种模式点击均正确路由。
+- 尺寸常量、鼠标事件、`clicked/doubleClicked` 信号、`cardId<0` 逻辑不变；信号/槽签名零变化，`connection.md` 无需更新；全套件 5/5 通过（ViewTest 含新用例，NetworkTest 真实点击手牌 e2e 连跑 3 次稳定）。
+
+## [2026-07-17] UI 美化 Step U3：CardWidget 牌面重绘
+
+- `Theme.h` 新增卡牌自绘配色常量段（`QColor`，供 `CardWidget` 的 `QPainter` 直接使用，非 QSS）：纸质暖白渐变 `CardPaper*`、双线描边 `CardBorderOuter/Inner`、装备牌青绿边 `CardEquipBorder`、红/黑花色与卡名色、牌背暗红与金纹 `CardBack*`、底部类型徽章底色（基本暗棕/锦囊暗紫/装备暗青绿）与文字色、状态覆盖层绿/蓝/暖光。原先散落在 `CardWidget.cpp` 的硬编码色值全部迁入。
+- `CardWidget::drawCardFront`：纸质暖白竖向渐变底 + 双线描边（外暗棕、内浅金；装备牌外线换青绿加粗）；左上角标改**竖排**（数字在上、花色在下）；居中**大花色水印**（40px 半透明，压在卡名下层）；卡名居中按字数自适应字号；底部类型徽章改**圆角胶囊**（按类型分色 + 金描边 + 居中），保留装备槽位图标（⚔/🛡）与武器攻击范围 `+N`。空占位牌（`cardId<0`）分支保留，改用纸底 + 浅金内描边。
+- `CardWidget::drawCardBack`：暗红纸底渐变 + 裁剪在牌面内的**金色菱形网格纹理** + 双层内嵌金框 + 中央双层金菱徽记，替换旧的四线交叉简纹。
+- `CardWidget::drawStateOverlay`：可打出绿描边加**外扩柔光晕**；选中蓝加白色内高光双描边；悬停暖光罩，均取 Theme 颜色。
+- 尺寸（80×112）、`paintEvent` 的 hover/select 偏移与阴影、鼠标事件与 `clicked/doubleClicked` 信号、`cardId<0` 不发信号逻辑全部不变；ViewTest 基于坐标的点击断言不受影响。信号/槽签名零变化，`connection.md` 无需更新；全套件 5/5 通过。
+
+## [2026-07-17] UI 美化 Step U2：选将页与对话框换肤
+
+- `Theme.h` 扩充选将页/对话框用 QSS 工具：`pageBackground`（objectName 限定的深色页面底，避免级联）、`pageTitle`/`pageSubtitle`、`accentText`/`mutedText`、`charCard`（武将卡片暗木渐变 + 悬停金框，悬停只换 border-color 不换宽度避免几何抖动）、`infoBar`（联网状态/等待提示）、`separator`、`inputField`（深色 QLineEdit/QSpinBox）、`dialogBase`（QDialog 深底 + QLabel 级联）；新增 `P1Accent`（青蓝）/`P2Accent`（赤橙）玩家强调色。
+- `MainWindow`：本地选将页与联网选将页全部深色古风化——页面深色渐变底（`setObjectName` + `WA_StyledBackground`）、金色标题/VS、武将卡片走 `Theme::charCard()`（单选/说明文字由卡片 QSS 级联配色，不再逐控件设置）、开始对战按钮改暗朱红渐变（与对局界面「结束出牌」同色系）、确认选择改暗松绿、创建/加入房间改暗青蓝/暗黛青、联网状态与等待对手提示条走 `Theme::infoBar`。
+- `NetworkConfigDialog`：深色对话框底（`Theme::dialogBase`）、金色标题、深色输入框（`Theme::inputField`，含焦点金框）、取消/连接按钮复用 `Theme::flatButton`/暗松绿 `gradientButton`。
+- 按钮文案（「开始对战」等 ViewTest 依赖的文本）、控件几何、信号/槽签名零变化，`connection.md` 无需更新；全套件 5/5 通过。
+
+## [2026-07-16] UI 美化 Step U1：深色古风主题基础 + 对局界面换肤
+
+用户指定 UI 美化走深色古风牌桌方向（plan2.0.md §3，分步计划见 CLAUDE.md「UI 美化分步计划」）。本步为主题基础：
+
+- 新增 `src/View/Theme.h`：深色古风色板（暗木面板/金色点缀/牌桌深绿）+ QSS 片段工具函数（玩家面板四态、渐变按钮、扁平按钮、徽章、提示条、判定横幅）。仅 View 层使用，无逻辑无状态，跨控件配色统一从这里取值。
+- `GameBoardWidget`：新增 `paintEvent` 自绘牌桌背景（深绿绒面渐变 + 四周 vignette 暗角 + 内侧细金线描边）；日志条与判定横幅样式迁移到 `Theme::hintBar`/`Theme::judgmentBar`（判定生效红/未生效绿的深色变体）；濒死面板样式改走 `Theme::panelDying()`。
+- `PlayerInfoWidget`：面板常态/当前回合/可选目标/濒死四态样式全部迁移到 Theme（金框当前回合、绿光目标态、红光濒死）；头像改暗朱红渐变 + 金描边；文字/徽章（装备/判定/攻击范围/回合指示）换深色变体。**顺带修复**：QWidget 直接子类的 QSS `background`/`border` 需要 `WA_StyledBackground` 属性才会真正绘制，此前的面板边框/底色样式实际未渲染，本次在 `setupUi()` 开启。空心体力由 🖤 改为 🤍（深色面板上黑心不可见）。
+- `ActionPanelWidget`：提示条与 4 个按钮（结束出牌暗朱红/发动技能暗紫/跳过深色扁平/确认弃牌暗松绿）迁移到 Theme 渐变按钮。
+- 按钮文案、控件几何、信号/槽签名零变化，`connection.md` 无需更新；全套件 5/5 通过。
+
 ## [2026-07-17] 合并同事修复并适配本地决斗实现
 
 在本地决斗修复提交上合并 `main` 的无懈可击、吕布无双、主动技能、判定区和延时锦囊改动，解决双方实现之间的路由与分层不一致。

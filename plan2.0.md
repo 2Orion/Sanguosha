@@ -714,6 +714,13 @@ void GameClient::startReconnectTimer()
 
 ## 3. View 模块显示效果优化
 
+> **落地进度（2026-07-16 起，分步计划见 CLAUDE.md「UI 美化分步计划」，主题方向：深色古风牌桌）**：
+> - §3.3 牌局背景美化 ✅ Step U1 完成——实现为 `GameBoardWidget::paintEvent` 自绘深绿渐变 + vignette（未用纹理贴图），并新增 `src/View/Theme.h` 统一色板/QSS 工具，玩家面板阴影暂未用 `QGraphicsDropShadowEffect`（QSS 边框+渐变已达到层次感，必要时后补）。
+> - 选将页/对话框换肤 ✅ Step U2 完成（2026-07-17）——`MainWindow` 本地/联网选将页与 `NetworkConfigDialog` 深色古风化，`Theme.h` 扩充页面底/武将卡片/信息条/输入框/对话框工具（本节原文未单列此项，属主题统一的自然延伸）。
+> - 卡牌美化 ✅ Step U3 完成（2026-07-17）——`CardWidget` 三个 draw 函数重绘：牌面纸质暖白渐变 + 双线描边 + 竖排角标 + 大花色水印 + 圆角类型徽章，牌背金色菱纹网格 + 金菱徽记，状态覆盖层（可打出/选中/悬停）升级；卡牌配色迁入 `Theme.h`（`QColor` 常量段，`QPainter` 直接用）。尺寸 80×112 与交互不变。
+> - §3.1 动画（手牌部分）✅ Step U4 完成（2026-07-17）——`HandCardAreaWidget` ≤6 张弧形扇形排列（±3°/封顶 ±9° 旋转 + 两端下沉），`CardWidget` 扇形绘制模式外扩 margin 防裁剪（纯绘制层旋转/上浮，控件几何正立，点击命中不变）；悬停/选中上浮 `QVariantAnimation` 平滑动画、`setCards` 错峰入场淡入。ViewTest 新增扇形断言。
+> - §3.2 特效 / §3.5 日志：对应 Step U5-U6，**用户 2026-07-16 决定不做**。UI 美化到 U4 收尾（主题换肤 + 卡牌重绘 + 手牌扇形/入场动画），§3.4 布局未单列亦不再推进。
+
 ### 3.1 动画效果
 
 ```cpp

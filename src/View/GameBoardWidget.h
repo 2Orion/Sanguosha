@@ -55,6 +55,9 @@ public slots:
     void onJudgmentPerformed(const CardData& judgeCard, const QString& resultText, bool effective);
     void refreshDisplay();
 
+protected:
+    void paintEvent(QPaintEvent* event) override;   // 自绘深绿牌桌背景
+
 private slots:
     void onCardClicked(int cardId);
     void onCardDoubleClicked(int cardId);

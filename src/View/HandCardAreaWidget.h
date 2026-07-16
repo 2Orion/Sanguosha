@@ -49,6 +49,11 @@ private:
     static constexpr int CARD_OVERLAP = 20;
     static constexpr int MIN_SPACING = 4;
     static constexpr int TOP_PADDING = 8;
+
+    static constexpr int    FAN_MAX      = 6;    // ≤ 此数量走扇形排列
+    static constexpr double FAN_STEP     = 3.0;  // 相邻卡片旋转角步进（度）
+    static constexpr double FAN_MAX_TILT = 9.0;  // 最外侧卡片旋转角封顶（度）
+    static constexpr int    FAN_DIP      = 12;   // 两端相对中心的弧形下沉幅度（px，控制在 margin 内）
 };
 
 #endif // HANDCAREAWIDGET_H

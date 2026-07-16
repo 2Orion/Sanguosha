@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "GameBoardWidget.h"
 #include "NetworkConfigDialog.h"
+#include "Theme.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -60,26 +61,30 @@ void MainWindow::showSelectionPage()
 void MainWindow::setupSelectionPage()
 {
     m_selectionPage = new QWidget(this);
+    m_selectionPage->setObjectName(QStringLiteral("selectionPage"));
+    m_selectionPage->setAttribute(Qt::WA_StyledBackground, true);
+    m_selectionPage->setStyleSheet(Theme::pageBackground("selectionPage"));
     auto* main = new QVBoxLayout(m_selectionPage);
     main->setContentsMargins(24, 16, 24, 16); main->setSpacing(12);
 
     auto* title = new QLabel(QStringLiteral("三国杀 — 双人对战"), m_selectionPage);
     title->setAlignment(Qt::AlignCenter);
-    title->setStyleSheet("font-size: 28px; font-weight: bold; color: #B71C1C; padding: 12px;");
+    title->setStyleSheet(Theme::pageTitle());
     main->addWidget(title);
 
     auto* subtitle = new QLabel(QStringLiteral("本地双人模式 — 请双方各自选择武将"), m_selectionPage);
-    subtitle->setAlignment(Qt::AlignCenter); subtitle->setStyleSheet("font-size: 14px; color: #888; margin-bottom: 8px;");
+    subtitle->setAlignment(Qt::AlignCenter);
+    subtitle->setStyleSheet(Theme::pageSubtitle() + QStringLiteral(" margin-bottom: 8px;"));
     main->addWidget(subtitle);
 
     auto* selLayout = new QHBoxLayout; selLayout->setSpacing(24);
 
     // 玩家 1
-    auto buildColumn = [&](const QString& titleText, const QString& color,
+    auto buildColumn = [&](const QString& titleText, const char* accent,
                              QButtonGroup*& group, QLabel*& selectedLabel) {
         auto* col = new QVBoxLayout;
         auto* t = new QLabel(titleText, m_selectionPage);
-        t->setStyleSheet("font-size: 16px; font-weight: bold; color: " + color + ";");
+        t->setStyleSheet(Theme::accentText(accent, 16));
         col->addWidget(t);
 
         group = new QButtonGroup(this); group->setExclusive(true);
@@ -87,15 +92,10 @@ void MainWindow::setupSelectionPage()
 
         for (int i = 0; i < CHAR_COUNT; ++i) {
             auto* card = new QGroupBox(m_selectionPage);
-            card->setStyleSheet(
-                "QGroupBox { border: 2px solid #E0E0E0; border-radius: 8px;"
-                "  background: #FAFAFA; padding: 8px; }"
-                "QGroupBox:hover { border-color: #90CAF9; background: #E3F2FD; }");
+            card->setStyleSheet(Theme::charCard());
 
             auto* cl = new QVBoxLayout(card); cl->setSpacing(4); cl->setContentsMargins(8, 8, 8, 8);
             auto* radio = new QRadioButton(CHAR_LIST[i].name, card);
-            radio->setStyleSheet("QRadioButton { font-size: 14px; font-weight: bold; color: #333; }"
-                                 "QRadioButton::indicator { width: 16px; height: 16px; }");
             group->addButton(radio, i);
 
             cl->addWidget(radio);
@@ -106,28 +106,25 @@ void MainWindow::setupSelectionPage()
         col->addLayout(grid);
 
         selectedLabel = new QLabel(QStringLiteral("未选择"), m_selectionPage);
-        selectedLabel->setStyleSheet("font-size: 12px; color: #999; font-style: italic;");
+        selectedLabel->setStyleSheet(Theme::mutedText(12, true));
         col->addWidget(selectedLabel);
         return col;
     };
 
-    selLayout->addLayout(buildColumn(QStringLiteral("玩家 1 选择武将"), "#1565C0", m_p1Group, m_p1SelectedLabel));
+    selLayout->addLayout(buildColumn(QStringLiteral("玩家 1 选择武将"), Theme::P1Accent, m_p1Group, m_p1SelectedLabel));
 
     auto* vs = new QLabel(QStringLiteral("VS"), m_selectionPage);
-    vs->setAlignment(Qt::AlignCenter); vs->setStyleSheet("font-size: 24px; font-weight: bold; color: #B71C1C; padding: 0 12px;");
+    vs->setAlignment(Qt::AlignCenter);
+    vs->setStyleSheet(Theme::accentText(Theme::Gold, 24) + QStringLiteral(" padding: 0 12px;"));
     selLayout->addWidget(vs);
 
-    selLayout->addLayout(buildColumn(QStringLiteral("玩家 2 选择武将"), "#E65100", m_p2Group, m_p2SelectedLabel));
+    selLayout->addLayout(buildColumn(QStringLiteral("玩家 2 选择武将"), Theme::P2Accent, m_p2Group, m_p2SelectedLabel));
     main->addLayout(selLayout);
 
     m_startBtn = new QPushButton(QStringLiteral("开始对战"), m_selectionPage);
     m_startBtn->setMinimumHeight(48);
-    m_startBtn->setStyleSheet(
-        "QPushButton { font-size: 18px; font-weight: bold; color: white;"
-        "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #D32F2F, stop:1 #C62828);"
-        "  border: none; border-radius: 8px; padding: 10px 40px; }"
-        "QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #E53935, stop:1 #D32F2F); }"
-        "QPushButton:disabled { background: #BDBDBD; color: #9E9E9E; }");
+    m_startBtn->setStyleSheet(Theme::gradientButton(
+        "#A03A28", "#71271A", "#B84A34", "#8C3020", "#571D12", 18));
     m_startBtn->setEnabled(false);
     connect(m_startBtn, &QPushButton::clicked, this, &MainWindow::onStartClicked);
     main->addWidget(m_startBtn, 0, Qt::AlignCenter);
@@ -147,7 +144,7 @@ void MainWindow::onP1CharChanged(int id)
 {
     if (id >= 0 && id < CHAR_COUNT) {
         m_p1SelectedLabel->setText(QStringLiteral("已选择: %1").arg(CHAR_LIST[id].name));
-        m_p1SelectedLabel->setStyleSheet("font-size: 12px; color: #1565C0; font-weight: bold;");
+        m_p1SelectedLabel->setStyleSheet(Theme::accentText(Theme::P1Accent));
     }
     updateStartButton();
 }
@@ -156,7 +153,7 @@ void MainWindow::onP2CharChanged(int id)
 {
     if (id >= 0 && id < CHAR_COUNT) {
         m_p2SelectedLabel->setText(QStringLiteral("已选择: %1").arg(CHAR_LIST[id].name));
-        m_p2SelectedLabel->setStyleSheet("font-size: 12px; color: #E65100; font-weight: bold;");
+        m_p2SelectedLabel->setStyleSheet(Theme::accentText(Theme::P2Accent));
     }
     updateStartButton();
 }
@@ -198,6 +195,9 @@ void MainWindow::showCharacterSelection(int playerId, const QString& playerName,
     }
 
     auto* page = new QWidget(this);
+    page->setObjectName(QStringLiteral("netSelectionPage"));
+    page->setAttribute(Qt::WA_StyledBackground, true);
+    page->setStyleSheet(Theme::pageBackground("netSelectionPage"));
     auto* main = new QVBoxLayout(page);
     main->setContentsMargins(24, 16, 24, 16);
     main->setSpacing(12);
@@ -205,24 +205,21 @@ void MainWindow::showCharacterSelection(int playerId, const QString& playerName,
     // 标题
     auto* title = new QLabel(QStringLiteral("三国杀 — 联网对战"), page);
     title->setAlignment(Qt::AlignCenter);
-    title->setStyleSheet("font-size: 24px; font-weight: bold; color: #1565C0; padding: 8px;");
+    title->setStyleSheet(Theme::pageTitle(24) + QStringLiteral(" padding: 8px;"));
     main->addWidget(title);
 
     // 状态提示（如本机 IP 地址）
     if (!statusHint.isEmpty()) {
         auto* hintLabel = new QLabel(statusHint, page);
         hintLabel->setAlignment(Qt::AlignCenter);
-        hintLabel->setStyleSheet(
-            "font-size: 13px; color: #1565C0; font-weight: bold;"
-            " background: #E3F2FD; border: 1px solid #90CAF9;"
-            " border-radius: 4px; padding: 8px 12px;");
+        hintLabel->setStyleSheet(Theme::infoBar(Theme::P1Accent, "#16222E", "#3A5A78"));
         main->addWidget(hintLabel);
     }
 
     auto* subtitle = new QLabel(
         QStringLiteral("%1 — 请选择你的武将").arg(playerName), page);
     subtitle->setAlignment(Qt::AlignCenter);
-    subtitle->setStyleSheet("font-size: 14px; color: #666; margin-bottom: 8px;");
+    subtitle->setStyleSheet(Theme::pageSubtitle() + QStringLiteral(" margin-bottom: 8px;"));
     main->addWidget(subtitle);
 
     // 武将卡片网格
@@ -234,19 +231,13 @@ void MainWindow::showCharacterSelection(int playerId, const QString& playerName,
 
     for (int i = 0; i < CHAR_COUNT; ++i) {
         auto* card = new QGroupBox(page);
-        card->setStyleSheet(
-            "QGroupBox { border: 2px solid #E0E0E0; border-radius: 8px;"
-            "  background: #FAFAFA; padding: 8px; }"
-            "QGroupBox:hover { border-color: #90CAF9; background: #E3F2FD; }");
+        card->setStyleSheet(Theme::charCard());
 
         auto* cl = new QVBoxLayout(card);
         cl->setSpacing(4);
         cl->setContentsMargins(8, 8, 8, 8);
 
         auto* radio = new QRadioButton(CHAR_LIST[i].name, card);
-        radio->setStyleSheet(
-            "QRadioButton { font-size: 14px; font-weight: bold; color: #333; }"
-            "QRadioButton::indicator { width: 16px; height: 16px; }");
         group->addButton(radio, i);
 
         cl->addWidget(radio);
@@ -257,17 +248,12 @@ void MainWindow::showCharacterSelection(int playerId, const QString& playerName,
     }
     main->addLayout(grid);
 
-    // 确认选择按钮
+    // 确认选择按钮（暗松绿）
     auto* confirmBtn = new QPushButton(QStringLiteral("确认选择"), page);
     confirmBtn->setMinimumHeight(44);
     confirmBtn->setEnabled(false);
-    confirmBtn->setStyleSheet(
-        "QPushButton { font-size: 16px; font-weight: bold; color: white;"
-        "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #43A047, stop:1 #2E7D32);"
-        "  border: none; border-radius: 6px; padding: 10px 40px; }"
-        "QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0,"
-        "    stop:0 #66BB6A, stop:1 #388E3C); }"
-        "QPushButton:disabled { background: #BDBDBD; color: #9E9E9E; }");
+    confirmBtn->setStyleSheet(Theme::gradientButton(
+        "#3E7A46", "#285230", "#4E9458", "#33663C", "#1D3E24", 16));
 
     connect(group, QOverload<int>::of(&QButtonGroup::idClicked), confirmBtn, [confirmBtn, group](int) {
         confirmBtn->setEnabled(group->checkedId() >= 0);
@@ -300,9 +286,8 @@ void MainWindow::showWaitingForOpponent()
     auto* waitLabel = new QLabel(QStringLiteral("已选择武将，等待对手选择..."), current);
     waitLabel->setAlignment(Qt::AlignCenter);
     waitLabel->setStyleSheet(
-        "font-size: 15px; color: #E65100; font-weight: bold;"
-        " background: #FFF3E0; border: 1px solid #FFB74D;"
-        " border-radius: 6px; padding: 12px 24px;");
+        Theme::infoBar(Theme::P2Accent, "#33220E", "#8C6428", 15)
+        + QStringLiteral(" padding: 12px 24px;"));
     layout->addWidget(waitLabel);
 }
 
@@ -313,7 +298,7 @@ void MainWindow::setupNetworkSection(QVBoxLayout* parent)
     // 分割线
     auto* separator = new QFrame(m_selectionPage);
     separator->setFrameShape(QFrame::HLine);
-    separator->setStyleSheet("QFrame { color: #E0E0E0; max-height: 1px; margin: 8px 0; }");
+    separator->setStyleSheet(Theme::separator());
     parent->addWidget(separator);
 
     auto* netRow = new QHBoxLayout;
@@ -322,32 +307,20 @@ void MainWindow::setupNetworkSection(QVBoxLayout* parent)
 
     // "联网模式"指示标签
     auto* netLabel = new QLabel(QStringLiteral("联网对战"), m_selectionPage);
-    netLabel->setStyleSheet("font-size: 14px; font-weight: bold; color: #1565C0;");
+    netLabel->setStyleSheet(Theme::accentText(Theme::Gold, 14));
     netRow->addWidget(netLabel);
 
-    // 创建房间
+    // 创建房间（暗青蓝）
     m_createRoomBtn = new QPushButton(QStringLiteral("创建房间（房主）"), m_selectionPage);
-    m_createRoomBtn->setStyleSheet(
-        "QPushButton { font-size: 14px; font-weight: bold; color: white;"
-        "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-        "    stop:0 #5C6BC0, stop:1 #3949AB);"
-        "  border: none; border-radius: 6px; padding: 10px 24px; }"
-        "QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-        "    stop:0 #7986CB, stop:1 #5C6BC0); }"
-        "QPushButton:pressed { background: #283593; }");
+    m_createRoomBtn->setStyleSheet(Theme::gradientButton(
+        "#33526E", "#22374C", "#40668A", "#2C4660", "#1A2A3A", 14));
     connect(m_createRoomBtn, &QPushButton::clicked, this, &MainWindow::onCreateRoomClicked);
     netRow->addWidget(m_createRoomBtn);
 
-    // 加入房间
+    // 加入房间（暗黛青）
     m_joinRoomBtn = new QPushButton(QStringLiteral("加入房间"), m_selectionPage);
-    m_joinRoomBtn->setStyleSheet(
-        "QPushButton { font-size: 14px; font-weight: bold; color: white;"
-        "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-        "    stop:0 #26A69A, stop:1 #00897B);"
-        "  border: none; border-radius: 6px; padding: 10px 24px; }"
-        "QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-        "    stop:0 #4DB6AC, stop:1 #26A69A); }"
-        "QPushButton:pressed { background: #00695C; }");
+    m_joinRoomBtn->setStyleSheet(Theme::gradientButton(
+        "#2C5E56", "#1D423C", "#38766C", "#26514A", "#15302B", 14));
     connect(m_joinRoomBtn, &QPushButton::clicked, this, &MainWindow::onJoinRoomClicked);
     netRow->addWidget(m_joinRoomBtn);
 
@@ -368,9 +341,8 @@ void MainWindow::onCreateRoomClicked()
     m_joinRoomBtn->setEnabled(false);
     m_networkStatusLabel->setText(QStringLiteral("正在启动服务器，等待对手加入..."));
     m_networkStatusLabel->setStyleSheet(
-        "font-size: 12px; color: #1565C0; font-weight: bold;"
-        " background: #E3F2FD; border: 1px solid #90CAF9;"
-        " border-radius: 4px; padding: 4px 8px;");
+        Theme::infoBar(Theme::P1Accent, "#16222E", "#3A5A78", 12)
+        + QStringLiteral(" padding: 4px 8px;"));
     m_networkStatusLabel->setVisible(true);
 
     emit createRoomRequested();
@@ -385,9 +357,8 @@ void MainWindow::onJoinRoomClicked()
         m_joinRoomBtn->setEnabled(false);
         m_networkStatusLabel->setText(QStringLiteral("正在连接到 %1:%2...").arg(host).arg(port));
         m_networkStatusLabel->setStyleSheet(
-            "font-size: 12px; color: #00897B; font-weight: bold;"
-            " background: #E0F2F1; border: 1px solid #80CBC4;"
-            " border-radius: 4px; padding: 4px 8px;");
+            Theme::infoBar("#63B8A8", "#12251F", "#2C5E56", 12)
+            + QStringLiteral(" padding: 4px 8px;"));
         m_networkStatusLabel->setVisible(true);
         emit joinRoomRequested(host, port);
     });

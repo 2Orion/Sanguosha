@@ -1,9 +1,10 @@
 #include "PlayerInfoWidget.h"
+#include "Theme.h"
 #include <QFont>
 #include <QMouseEvent>
 
 static const QString FULL_HEART  = QStringLiteral("❤");
-static const QString EMPTY_HEART = QStringLiteral("🖤");
+static const QString EMPTY_HEART = QStringLiteral("🤍");   // 深色面板上黑心不可见，改用白心表示已损失体力
 static const QString WEAPON_ICON = QStringLiteral("⚔");
 static const QString ARMOR_ICON  = QStringLiteral("🛡");
 
@@ -31,7 +32,9 @@ void PlayerInfoWidget::setDisplayData(const PlayerData& data)
     for (int i = data.hp; i < data.maxHp; ++i) hpText += EMPTY_HEART + " ";
     if (data.isDying) hpText += QStringLiteral(" ☠️");
     m_hpLabel->setText(hpText.trimmed());
-    m_hpLabel->setStyleSheet(data.isDying ? "font-size: 14px; color: #D32F2F; font-weight: bold;" : "font-size: 14px;");
+    m_hpLabel->setStyleSheet(data.isDying
+        ? QStringLiteral("font-size: 14px; color: %1; font-weight: bold;").arg(QLatin1String(Theme::DyingRed))
+        : QStringLiteral("font-size: 14px;"));
 
     // 技能
     if (!data.skillName.isEmpty()) {
@@ -43,11 +46,7 @@ void PlayerInfoWidget::setDisplayData(const PlayerData& data)
     }
 
     if (data.isDying) {
-        setStyleSheet(
-            "PlayerInfoWidget {"
-            "  border: 2px solid #D32F2F; border-radius: 8px;"
-            "  background-color: #FFEBEE;"
-            "}");
+        setStyleSheet(Theme::panelDying());
     }
 
     // ===== 装备区 =====
@@ -96,20 +95,15 @@ void PlayerInfoWidget::setCurrentPlayer(bool isCurrent)
 {
     m_isCurrent = isCurrent;
     if (m_turnIndicator) m_turnIndicator->setVisible(isCurrent);
-    setStyleSheet(isCurrent
-        ? "PlayerInfoWidget { border: 2px solid #FFD700; border-radius: 8px; background-color: #FFFDE7; }"
-        : "PlayerInfoWidget { border: 1px solid #CCCCCC; border-radius: 8px; background-color: #FAFAFA; }");
+    setStyleSheet(isCurrent ? Theme::panelCurrent() : Theme::panelNormal());
 }
 
 void PlayerInfoWidget::setTargetable(bool targetable)
 {
     m_targetable = targetable;
     setStyleSheet(targetable
-        ? "PlayerInfoWidget { border: 2px solid #4CAF50; border-radius: 8px; background-color: #E8F5E9; }"
-            "PlayerInfoWidget:hover { background-color: #C8E6C9; cursor: pointer; }"
-        : m_isCurrent
-            ? "PlayerInfoWidget { border: 2px solid #FFD700; border-radius: 8px; background-color: #FFFDE7; }"
-            : "PlayerInfoWidget { border: 1px solid #CCCCCC; border-radius: 8px; background-color: #FAFAFA; }");
+        ? Theme::panelTargetable()
+        : m_isCurrent ? Theme::panelCurrent() : Theme::panelNormal());
 }
 
 void PlayerInfoWidget::mousePressEvent(QMouseEvent* event)
@@ -121,21 +115,29 @@ void PlayerInfoWidget::mousePressEvent(QMouseEvent* event)
 
 void PlayerInfoWidget::setupUi()
 {
+    // QSS 的 background/border 要在 QWidget 直接子类上生效必须开启 WA_StyledBackground
+    setAttribute(Qt::WA_StyledBackground, true);
+
     auto* main = new QHBoxLayout(this);
     main->setContentsMargins(8, 6, 8, 6); main->setSpacing(8);
 
     m_avatarLabel = new QLabel(this);
     m_avatarLabel->setFixedSize(48, 48); m_avatarLabel->setAlignment(Qt::AlignCenter);
     m_avatarLabel->setStyleSheet("QLabel { background: qlineargradient(x1:0,y1:0,x2:1,y2:1,"
-        "stop:0 #5C6BC0, stop:1 #3949AB); color: white; font-size: 20px; font-weight: bold; border-radius: 24px; }");
+        "stop:0 #8C2B22, stop:1 #5A1611); color: #F0E0B8; font-size: 20px; font-weight: bold;"
+        " border: 1px solid #D4AF37; border-radius: 24px; }");
     main->addWidget(m_avatarLabel);
 
     auto* info = new QVBoxLayout; info->setSpacing(2);
     auto* nameRow = new QHBoxLayout; nameRow->setSpacing(6);
 
-    m_nameLabel = new QLabel(this); m_nameLabel->setStyleSheet("font-size: 14px; font-weight: bold; color: #333;");
+    m_nameLabel = new QLabel(this);
+    m_nameLabel->setStyleSheet(QStringLiteral("font-size: 14px; font-weight: bold; color: %1;")
+                                   .arg(QLatin1String(Theme::TextPrimary)));
     nameRow->addWidget(m_nameLabel);
-    m_handCountLabel = new QLabel(this); m_handCountLabel->setStyleSheet("font-size: 12px; color: #888;");
+    m_handCountLabel = new QLabel(this);
+    m_handCountLabel->setStyleSheet(QStringLiteral("font-size: 12px; color: %1;")
+                                        .arg(QLatin1String(Theme::TextMuted)));
     nameRow->addWidget(m_handCountLabel); nameRow->addStretch();
     info->addLayout(nameRow);
 
@@ -144,31 +146,29 @@ void PlayerInfoWidget::setupUi()
     // 装备区
     auto* equipRow = new QHBoxLayout; equipRow->setSpacing(4);
     m_equipLabel = new QLabel(this);
-    m_equipLabel->setStyleSheet("font-size: 11px; color: #5D4037; font-weight: bold;"
-        " background: #EFEBE9; border: 1px solid #D7CCC8; border-radius: 4px; padding: 1px 4px;");
+    m_equipLabel->setStyleSheet(Theme::badge("#D7B98C", "#2A2018", "#5A4632"));
     equipRow->addWidget(m_equipLabel);
     m_attackRangeLabel = new QLabel(this);
-    m_attackRangeLabel->setStyleSheet("font-size: 10px; color: #E65100; font-weight: bold;"
-        " background: #FFF3E0; border: 1px solid #FFB74D; border-radius: 4px; padding: 1px 4px;");
+    m_attackRangeLabel->setStyleSheet(Theme::badge("#FFB74D", "#33220E", "#8C6428", 10));
     equipRow->addWidget(m_attackRangeLabel);
     equipRow->addStretch();
     info->addLayout(equipRow);
 
     // 判定区
     m_judgmentLabel = new QLabel(this);
-    m_judgmentLabel->setStyleSheet("font-size: 11px; color: #6A1B9A; font-weight: bold;"
-        " background: #F3E5F5; border: 1px solid #CE93D8; border-radius: 4px; padding: 1px 4px;");
+    m_judgmentLabel->setStyleSheet(Theme::badge("#CE93D8", "#2A1830", "#6A4A78"));
     m_judgmentLabel->setVisible(false);
     info->addWidget(m_judgmentLabel);
 
-    m_skillLabel = new QLabel(this); m_skillLabel->setWordWrap(true); m_skillLabel->setStyleSheet("font-size: 11px; color: #666;");
+    m_skillLabel = new QLabel(this); m_skillLabel->setWordWrap(true);
+    m_skillLabel->setStyleSheet(QStringLiteral("font-size: 11px; color: %1;")
+                                    .arg(QLatin1String(Theme::TextMuted)));
     info->addWidget(m_skillLabel);
     main->addLayout(info, 1);
 
     m_turnIndicator = new QLabel(QStringLiteral("▶ 当前回合"), this);
-    m_turnIndicator->setStyleSheet("QLabel { color: #E65100; font-size: 11px; font-weight: bold;"
-        " padding: 2px 6px; background: #FFF3E0; border: 1px solid #FFB74D; border-radius: 4px; }");
+    m_turnIndicator->setStyleSheet(Theme::badge("#D4AF37", "#33270F", "#9C7E24"));
     m_turnIndicator->setVisible(false);
     main->addWidget(m_turnIndicator);
-    setStyleSheet("PlayerInfoWidget { border: 1px solid #CCCCCC; border-radius: 8px; background-color: #FAFAFA; }");
+    setStyleSheet(Theme::panelNormal());
 }
