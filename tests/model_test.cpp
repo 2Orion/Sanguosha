@@ -145,27 +145,44 @@ void ModelTest::cardManagerLifecycle()
     QSignalSpy discardedSpy(&manager, &CardManager::cardDiscarded);
 
     manager.initialize();
-    QCOMPARE(manager.totalCardCount(), 48);
-    QCOMPARE(manager.remainingCount(), 48);
+    constexpr int expectedTotal = 101;
+    QCOMPARE(manager.totalCardCount(), expectedTotal);
+    QCOMPARE(manager.remainingCount(), expectedTotal);
 
     std::map<CardType, int> counts;
     for (Card* card : manager.getDrawPile()) {
         QVERIFY(card != nullptr);
         ++counts[card->cardType()];
     }
-    QCOMPARE(counts[CardType::Kill], 15);
-    QCOMPARE(counts[CardType::Dodge], 10);
-    QCOMPARE(counts[CardType::Peach], 6);
-    QCOMPARE(counts[CardType::Wine], 3);
+    QCOMPARE(counts[CardType::Kill], 30);
+    QCOMPARE(counts[CardType::Dodge], 15);
+    QCOMPARE(counts[CardType::Peach], 8);
+    QCOMPARE(counts[CardType::Wine], 5);
     QCOMPARE(counts[CardType::Dismantle], 3);
     QCOMPARE(counts[CardType::Steal], 3);
     QCOMPARE(counts[CardType::Bountiful], 3);
-    QCOMPARE(counts[CardType::BarbarianInvasion], 2);
-    QCOMPARE(counts[CardType::Volley], 2);
+    QCOMPARE(counts[CardType::BarbarianInvasion], 3);
+    QCOMPARE(counts[CardType::Volley], 3);
     QCOMPARE(counts[CardType::PeachGarden], 1);
+    QCOMPARE(counts[CardType::Duel], 3);
+    QCOMPARE(counts[CardType::Borrow], 2);
+    QCOMPARE(counts[CardType::Harvest], 2);
+    QCOMPARE(counts[CardType::Nullify], 3);
+    QCOMPARE(counts[CardType::Happy], 3);
+    QCOMPARE(counts[CardType::Famine], 2);
+    QCOMPARE(counts[CardType::Lightning], 1);
+    QCOMPARE(counts[CardType::Crossbow], 2);
+    QCOMPARE(counts[CardType::QinglongBlade], 1);
+    QCOMPARE(counts[CardType::ZhangbaSnake], 1);
+    QCOMPARE(counts[CardType::KylinBow], 1);
+    QCOMPARE(counts[CardType::QinggangSword], 1);
+    QCOMPARE(counts[CardType::IceSword], 1);
+    QCOMPARE(counts[CardType::DualSword], 1);
+    QCOMPARE(counts[CardType::EightDiagrams], 2);
+    QCOMPARE(counts[CardType::BenevolentShield], 1);
 
-    auto drawn = manager.drawCards(48);
-    QCOMPARE(static_cast<int>(drawn.size()), 48);
+    auto drawn = manager.drawCards(expectedTotal);
+    QCOMPARE(static_cast<int>(drawn.size()), expectedTotal);
     QCOMPARE(manager.remainingCount(), 0);
     QVERIFY(manager.drawCards(1).empty());
     QCOMPARE(emptySpy.count(), 1);
@@ -182,8 +199,8 @@ void ModelTest::cardManagerLifecycle()
     QCOMPARE(reshuffledSpy.count(), 1);
 
     manager.initialize();
-    QCOMPARE(manager.totalCardCount(), 48);
-    QCOMPARE(manager.remainingCount(), 48);
+    QCOMPARE(manager.totalCardCount(), expectedTotal);
+    QCOMPARE(manager.remainingCount(), expectedTotal);
 }
 
 void ModelTest::playerStateAndSignals()
@@ -244,12 +261,13 @@ void ModelTest::playerStateAndSignals()
     QCOMPARE(diedSpy.count(), 1);
 
     player.setHp(2);
-    player.addEquipCard(&card);
+    CrossbowCard equipment(CardSuit::Spade, 1);
+    player.addEquipCard(&equipment);
     player.addJudgmentCard(&card);
     QVERIFY(player.hasEquipCards());
     QVERIFY(player.hasJudgmentCards());
     QCOMPARE(static_cast<int>(player.allSelectableCards().size()), 1);
-    player.removeEquipCard(&card);
+    player.removeEquipCard(&equipment);
     player.removeJudgmentCard(&card);
     QVERIFY(!player.hasEquipCards());
     QVERIFY(!player.hasJudgmentCards());

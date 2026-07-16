@@ -244,7 +244,7 @@ void ViewModelTest::gameViewModelInitialization()
     QCOMPARE(viewModel.currentPlayerId(), 0);
     QCOMPARE(viewModel.gameState()->player(0)->handCardCount(), 4);
     QCOMPARE(viewModel.gameState()->player(1)->handCardCount(), 4);
-    QCOMPARE(viewModel.gameState()->cardManager()->remainingCount(), 40);
+    QCOMPARE(viewModel.gameState()->cardManager()->remainingCount(), 93);
     QCOMPARE(phaseUpdates, 1);
     QCOMPARE(static_cast<int>(playerUpdates.size()), 2);
     QCOMPARE(static_cast<int>(handUpdates.size()), 2);
