@@ -76,11 +76,14 @@ void GameBoardWidget::onPhaseChanged(PhaseType phase)
 
 void GameBoardWidget::onPlayerDataUpdated(int playerId, const PlayerData& data)
 {
-    if (playerId == 0) m_bottomPlayerInfo->setDisplayData(data);
-    else if (playerId == 1) m_topPlayerInfo->setDisplayData(data);
+    // 本地玩家信息在下方，对手在上方
+    if (playerId == m_localPlayerId)
+        m_bottomPlayerInfo->setDisplayData(data);
+    else
+        m_topPlayerInfo->setDisplayData(data);
     if (data.isCurrentPlayer) m_currentPlayerId = playerId;
     if (data.isDying) {
-        auto* w = (playerId == 0) ? m_bottomPlayerInfo : m_topPlayerInfo;
+        auto* w = (playerId == m_localPlayerId) ? m_bottomPlayerInfo : m_topPlayerInfo;
         w->setStyleSheet(
             "PlayerInfoWidget { border: 2px solid #D32F2F; border-radius: 8px; background-color: #FFEBEE; }");
     }
@@ -88,8 +91,8 @@ void GameBoardWidget::onPlayerDataUpdated(int playerId, const PlayerData& data)
 
 void GameBoardWidget::onHandCardsUpdated(int playerId, const CardList& data)
 {
-    // 双人同屏模式，双方手牌均正面朝上
-    if (playerId == m_currentPlayerId)
+    // 本地玩家的手牌在下方，对手手牌在上方
+    if (playerId == m_localPlayerId)
         m_bottomHandArea->setCards(data, true);
     else
         m_topHandArea->setCards(data, true);
@@ -98,8 +101,10 @@ void GameBoardWidget::onHandCardsUpdated(int playerId, const CardList& data)
 void GameBoardWidget::onTargetSelectionStarted(const QVector<int>& targetIds)
 {
     m_state = State::SelectingTarget;
-    m_topPlayerInfo->setTargetable(targetIds.contains(m_topPlayerInfo->playerId()));
-    m_bottomPlayerInfo->setTargetable(targetIds.contains(m_bottomPlayerInfo->playerId()));
+    // 遍历所有玩家，按 playerId 设置目标态（不依赖固定 playerId→widget 映射）
+    for (auto* w : { m_topPlayerInfo, m_bottomPlayerInfo }) {
+        w->setTargetable(targetIds.contains(w->playerId()));
+    }
     m_actionPanel->setHint(QStringLiteral("请选择目标角色"));
 }
 

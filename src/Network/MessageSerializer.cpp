@@ -31,9 +31,7 @@ QDataStream& operator<<(QDataStream& out, const CardData& d)
     writeEnum(out, d.color);
     out << d.isBasic << d.isStrategy << d.suitSymbol << d.numberString
         << d.isSelected << d.isPlayable << d.isHighlighted << qint32(d.ownerId)
-        << d.isEquipment;
-    writeEnum(out, d.equipSlot);
-    out << qint32(d.attackRange);
+        << d.isEquipment << qint32(d.equipSlot) << qint32(d.attackRange);
     return out;
 }
 
@@ -45,11 +43,11 @@ QDataStream& operator>>(QDataStream& in, CardData& d)
     readEnum(in, d.suit);
     in >> number >> d.cardName >> d.description;
     readEnum(in, d.color);
+    qint32 equipSlot = 0;
     in >> d.isBasic >> d.isStrategy >> d.suitSymbol >> d.numberString
        >> d.isSelected >> d.isPlayable >> d.isHighlighted >> ownerId
-       >> d.isEquipment;
-    readEnum(in, d.equipSlot);
-    in >> attackRange;
+       >> d.isEquipment >> equipSlot >> attackRange;
+    d.equipSlot = equipSlot;
     d.cardId = cardId;
     d.number = number;
     d.ownerId = ownerId;
@@ -63,18 +61,19 @@ QDataStream& operator<<(QDataStream& out, const PlayerData& d)
         << d.skillName << d.skillDescription
         << qint32(d.hp) << qint32(d.maxHp) << d.isAlive << d.isDying
         << qint32(d.handCardCount) << qint32(d.handCardLimit) << d.isCurrentPlayer
-        << d.weaponCard << d.armorCard;
+        << qint32(d.attackRange) << d.equipCards;
     return out;
 }
 
 QDataStream& operator>>(QDataStream& in, PlayerData& d)
 {
-    qint32 playerId = 0, hp = 0, maxHp = 0, handCardCount = 0, handCardLimit = 0;
+    qint32 playerId = 0, hp = 0, maxHp = 0, handCardCount = 0, handCardLimit = 0, attackRange = 0;
     in >> playerId >> d.displayName >> d.characterName
        >> d.skillName >> d.skillDescription
        >> hp >> maxHp >> d.isAlive >> d.isDying
        >> handCardCount >> handCardLimit >> d.isCurrentPlayer
-       >> d.weaponCard >> d.armorCard;
+       >> attackRange >> d.equipCards;
+    d.attackRange = attackRange;
     d.playerId = playerId;
     d.hp = hp;
     d.maxHp = maxHp;

@@ -21,6 +21,9 @@ public:
     explicit GameBoardWidget(QWidget* parent = nullptr);
     ~GameBoardWidget() override;
 
+    /// 设置本地玩家 ID（联网模式用；本地双人模式默认 0 = 下方）
+    void setLocalPlayerId(int playerId) { m_localPlayerId = playerId; }
+
 signals:
     // View → ViewModel（命令）
     void playCardRequested(int cardId, int playerId);
@@ -62,6 +65,7 @@ private:
 
     PhaseType m_currentPhase = PhaseType::Prepare;
     int m_currentPlayerId = 0;
+    int m_localPlayerId = 0;     // 本地玩家 ID（0=下方，1=上方）
     int m_responderId = -1;       // 当前需要响应的玩家 ID
     int m_pendingCardId = -1;
     int m_pendingUserId = -1;

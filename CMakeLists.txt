@@ -117,6 +117,7 @@ set(VIEW_SOURCES
     src/View/ActionPanelWidget.cpp
     src/View/GameBoardWidget.cpp
     src/View/MainWindow.cpp
+    src/View/NetworkConfigDialog.cpp
 )
 
 set(VIEW_HEADERS
@@ -126,6 +127,7 @@ set(VIEW_HEADERS
     src/View/ActionPanelWidget.h
     src/View/GameBoardWidget.h
     src/View/MainWindow.h
+    src/View/NetworkConfigDialog.h
 )
 
 # ==================== App 层（组合根） ====================
@@ -166,6 +168,10 @@ add_executable(SanguoshaQt
     ${VIEWMODEL_HEADERS}
     ${APP_SOURCES}
     ${APP_HEADERS}
+    ${SERVER_APP_SOURCES}
+    ${SERVER_APP_HEADERS}
+    ${CLIENT_APP_SOURCES}
+    ${CLIENT_APP_HEADERS}
 )
 
 target_include_directories(SanguoshaQt PRIVATE
@@ -175,11 +181,14 @@ target_include_directories(SanguoshaQt PRIVATE
     ${CMAKE_SOURCE_DIR}/src/ViewModel
     ${CMAKE_SOURCE_DIR}/src/View
     ${CMAKE_SOURCE_DIR}/src/App
+    ${CMAKE_SOURCE_DIR}/src/Network
 )
 
 target_link_libraries(SanguoshaQt PRIVATE
     SanguoshaModel
+    SanguoshaNetwork
     Qt${QT_VERSION_MAJOR}::Widgets
+    Qt${QT_VERSION_MAJOR}::Network
 )
 
 # ==================== Model 层冒烟测试 ====================

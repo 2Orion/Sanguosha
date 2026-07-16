@@ -2,6 +2,32 @@
 
 ## Features
 
+### [2026-07-16] 装备牌系统 + 卡牌拓展 — View 层适配
+
+完成装备牌在 View 层的全面适配，包括：
+
+- **Common 层**：`CommonTypes.h` 新增 `EquipSlot` 枚举 + 补全 7 种新锦囊（决斗/闪电/无懈/借刀/五谷/乐/兵粮）及 9 种装备牌（诸葛连弩/青龙刀/丈八矛/麒麟弓/青釭剑/寒冰剑/雌雄剑/八卦阵/仁王盾）的 `CardType`；`CardData.h` 新增 `equipSlot`(int)/`attackRange` 字段；`PlayerData.h` 新增 `attackRange`/`equipCards` 字段。
+- **PlayerInfoWidget**：HP 下方新增装备区行，显示 ⚔ 武器名(范围) 及 🛡 防具名；攻击距离标签（仅当前回合玩家可见）。
+- **CardWidget**：装备牌特殊青绿边框（普通牌灰色）；底部标签显示 ⚔装备/+%1 或 🛡装备。
+- **MainWindow**：武将选择列表从 4 人扩展到 9 人（新增孙权、周瑜、吕布、大乔、司马懿）。
+- **新增 NetworkConfigDialog**：联网配置对话框（IP/端口输入），纯 UI 不依赖 Network 层类型，通过信号传出 host/port。
+- **MainWindow 联网入口**：选将页面新增「创建房间（房主）」「加入房间」按钮；`createRoomRequested()` / `joinRoomRequested(host, port)` 信号，供 App 层组装网络游戏。零依赖 Network 层类型。
+
+编译通过，4/4 核心测试（ModelSmokeTest/ModelTest/ViewModelTest/ViewTest）全部通过。
+
+### [2026-07-16] 联网模式接线完成 — 同机双人对战可用
+
+完成 `SGSApp` 中联网模式的完整接线，实现同机（localhost）双人联机对战：
+
+- **MainWindow**：新增 `showCharacterSelection(playerId, playerName)` 显示单角色选将页；`showWaitingForOpponent()` 显示等待对手界面。
+- **SGSApp**：`onCreateRoom()` 启动 `ServerApp`（监听 9527）+ 本地 `ClientApp`（连 127.0.0.1）；`onJoinRoom(host, port)` 创建 `ClientApp` 连接远程服务器；`onCharacterConfirmed(charId)` 发送选将；`onClientGameStarted` 切换到游戏页面；`onConnectionError`/`onNetworkGameOver` 错误恢复和游戏结束清理。
+- **CMakeLists**：`SanguoshaQt` 目标加入 `ServerApp`/`ClientApp` 源文件 + 链接 `SanguoshaNetwork` + `Qt::Network`。
+- **MessageSerializer**：`PlayerData` 序列化字段同步更新（`attackRange` + `equipCards`），`CardData.equipSlot` 改为 `int` 序列化。
+
+**使用方式**：启动两个实例 → 实例1点「创建房间」→ 实例2点「加入房间」(127.0.0.1:9527) → 双方各自选将 → 游戏开始。
+
+编译通过，4/4 核心测试全部通过。
+
 ### [2026-07-15] 网络层 Step 9：进程内端到端对局（联调 M1-M3 预演）+ 文档收尾
 
 新增 `NetworkTest::endToEndTwoClientGameHandshakeToGameOver`：单进程内起 `ServerApp`（内含真实

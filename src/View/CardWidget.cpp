@@ -112,7 +112,15 @@ void CardWidget::drawCardFront(QPainter& painter, const QRect& rect, int radius)
     bool isRed = m_data.color == CardColor::Red;
     QColor suitColor = isRed ? QColor(200,30,30) : QColor(30,30,30);
     QPainterPath path; path.addRoundedRect(rect, radius, radius);
-    painter.setPen(QPen(QColor(140,140,140),1)); painter.setBrush(isRed ? QColor(255,245,245) : QColor(248,248,250));
+
+    // 装备牌特殊边框
+    if (m_data.isEquipment) {
+        painter.setPen(QPen(QColor(0,150,136), 2));     // 青绿色边框
+        painter.setBrush(isRed ? QColor(255,248,240) : QColor(248,248,240));
+    } else {
+        painter.setPen(QPen(QColor(140,140,140), 1));
+        painter.setBrush(isRed ? QColor(255,245,245) : QColor(248,248,250));
+    }
     painter.drawPath(path);
 
     QRect topBar(rect.left()+1, rect.top()+1, rect.width()-2, 18);
@@ -142,11 +150,25 @@ void CardWidget::drawCardFront(QPainter& painter, const QRect& rect, int radius)
     painter.drawText(rect.adjusted(0,0,-4,-8), Qt::AlignBottom|Qt::AlignRight, m_data.suitSymbol);
 
     QString typeLabel;
-    if (m_data.isBasic) typeLabel = QStringLiteral("基本");
-    else if (m_data.isStrategy) typeLabel = QStringLiteral("锦囊");
-    else typeLabel = QStringLiteral("装备");
+    QColor typeColor(120, 120, 120);
+    if (m_data.isBasic) {
+        typeLabel = QStringLiteral("基本");
+    } else if (m_data.isStrategy) {
+        typeLabel = QStringLiteral("锦囊");
+    } else if (m_data.isEquipment) {
+        typeLabel = QStringLiteral("装备");
+        typeColor = QColor(0, 150, 136);
+        // 装备牌显示槽位图标
+        if (m_data.equipSlot == 0)  // EquipSlot::Weapon
+            typeLabel = QStringLiteral("⚔ ") + typeLabel;
+        else if (m_data.equipSlot == 1)  // EquipSlot::Armor
+            typeLabel = QStringLiteral("🛡 ") + typeLabel;
+        // 武器显示攻击范围
+        if (m_data.equipSlot == 0 && m_data.attackRange > 0)  // EquipSlot::Weapon
+            typeLabel += QStringLiteral(" +%1").arg(m_data.attackRange);
+    }
     QFont lf(QStringLiteral("Microsoft YaHei"), 7);
-    painter.setFont(lf); painter.setPen(QColor(120,120,120));
+    painter.setFont(lf); painter.setPen(typeColor);
     painter.drawText(QRect(rect.left()+3, rect.bottom()-16, rect.width()-6, 14), Qt::AlignLeft|Qt::AlignBottom, typeLabel);
 }
 

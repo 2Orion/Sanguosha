@@ -42,6 +42,10 @@ private:
     QLabel* m_skillLabel;
     QLabel* m_handCountLabel;
     QLabel* m_turnIndicator;
+
+    // 装备区
+    QLabel* m_equipLabel;
+    QLabel* m_attackRangeLabel;
 };
 
 #endif // PLAYERINFOWIDGET_H

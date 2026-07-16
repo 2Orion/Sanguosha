@@ -18,11 +18,10 @@ struct PlayerData {
     int handCardCount = 0;
     int handCardLimit = 0;
     bool isCurrentPlayer = false;
+    int attackRange = 1;       // 攻击距离（含武器加成）
 
     // ==================== 装备区展示数据 ====================
-    CardData weaponCard;   // 武器（cardId==-1 表示空槽）
-    CardData armorCard;    // 防具
-    // Mount 坐骑槽位预留
+    QVector<CardData> equipCards;  // 已装备的卡牌列表（按槽位顺序，仅非空槽）
 };
 
 #endif // PLAYERDATA_H

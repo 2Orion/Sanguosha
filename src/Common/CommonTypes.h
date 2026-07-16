@@ -28,8 +28,8 @@ enum class CardCategory {
 enum class EquipSlot {
     Weapon,    // 武器
     Armor,     // 防具
-    Mount,     // 马（进攻/防御）
-    Treasure   // 宝物（预留）
+    Mount      // 马（预留）
+    // Treasure  // 宝物（预留）
 };
 
 /// 卡牌类型
@@ -47,29 +47,26 @@ enum class CardType {
     BarbarianInvasion,  // 南蛮入侵
     Volley,             // 万箭齐发
     PeachGarden,        // 桃园结义
+    Duel,               // 决斗
+    Lightning,          // 闪电
+    Nullify,            // 无懈可击
+    Borrow,             // 借刀杀人
+    Harvest,            // 五谷丰登
+    Happy,              // 乐不思蜀
+    Famine,             // 兵粮寸断
 
     // 装备牌 — 武器
     Crossbow,        // 诸葛连弩（♠A）
-    QinglongSaber,   // 青龙偃月刀（♠5）
-    ZhangbaSpear,    // 丈八蛇矛（♠Q）
-    KirinBow,        // 麒麟弓（♥5）
+    QinglongBlade,   // 青龙偃月刀（♠5）
+    ZhangbaSnake,    // 丈八蛇矛（♠Q）
+    KylinBow,        // 麒麟弓（♥5）
     QinggangSword,   // 青釭剑（♠6）
     IceSword,        // 寒冰剑（♠2）
     DualSword,       // 雌雄双股剑（♠2）
 
     // 装备牌 — 防具
-    EightTrigrams,   // 八卦阵（♠2）
-    RenShield,       // 仁王盾（♠2）
-};
-
-// ==================== 装备系统枚举 ====================
-
-/// 装备槽位
-enum class EquipSlot {
-    Weapon,   // 武器
-    Armor,    // 防具
-    Mount,    // 马（预留）
-    // Treasure  // 宝物（预留）
+    EightDiagrams,   // 八卦阵（♠2）
+    BenevolentShield // 仁王盾（♠2）
 };
 
 // ==================== 游戏流程枚举 ====================

@@ -4,6 +4,8 @@
 
 static const QString FULL_HEART  = QStringLiteral("❤");
 static const QString EMPTY_HEART = QStringLiteral("🖤");
+static const QString WEAPON_ICON = QStringLiteral("⚔");
+static const QString ARMOR_ICON  = QStringLiteral("🛡");
 
 PlayerInfoWidget::PlayerInfoWidget(QWidget* parent) : QWidget(parent) { setupUi(); }
 
@@ -46,6 +48,34 @@ void PlayerInfoWidget::setDisplayData(const PlayerData& data)
             "  border: 2px solid #D32F2F; border-radius: 8px;"
             "  background-color: #FFEBEE;"
             "}");
+    }
+
+    // ===== 装备区 =====
+    QString equipStr;
+    for (const CardData& eq : data.equipCards) {
+        if (eq.cardId < 0) continue;
+        if (eq.equipSlot == 0) {  // EquipSlot::Weapon
+            if (!equipStr.isEmpty()) equipStr += QStringLiteral(" | ");
+            equipStr += WEAPON_ICON + QStringLiteral(" ") + eq.cardName;
+            if (data.attackRange > 1)
+                equipStr += QStringLiteral("(范围%1)").arg(data.attackRange);
+        } else if (eq.equipSlot == 1) {  // EquipSlot::Armor
+            if (!equipStr.isEmpty()) equipStr += QStringLiteral(" | ");
+            equipStr += ARMOR_ICON + QStringLiteral(" ") + eq.cardName;
+        }
+    }
+    if (!equipStr.isEmpty()) {
+        m_equipLabel->setText(QStringLiteral("装备: ") + equipStr);
+        m_equipLabel->setVisible(true);
+    } else {
+        m_equipLabel->clear();
+        m_equipLabel->setVisible(false);
+    }
+    if (data.attackRange > 1) {
+        m_attackRangeLabel->setText(QStringLiteral("攻击范围%1").arg(data.attackRange));
+        m_attackRangeLabel->setVisible(data.isCurrentPlayer);
+    } else {
+        m_attackRangeLabel->setVisible(false);
     }
 }
 
@@ -97,6 +127,20 @@ void PlayerInfoWidget::setupUi()
     info->addLayout(nameRow);
 
     m_hpLabel = new QLabel(this); m_hpLabel->setStyleSheet("font-size: 14px;"); info->addWidget(m_hpLabel);
+
+    // 装备区
+    auto* equipRow = new QHBoxLayout; equipRow->setSpacing(4);
+    m_equipLabel = new QLabel(this);
+    m_equipLabel->setStyleSheet("font-size: 11px; color: #5D4037; font-weight: bold;"
+        " background: #EFEBE9; border: 1px solid #D7CCC8; border-radius: 4px; padding: 1px 4px;");
+    equipRow->addWidget(m_equipLabel);
+    m_attackRangeLabel = new QLabel(this);
+    m_attackRangeLabel->setStyleSheet("font-size: 10px; color: #E65100; font-weight: bold;"
+        " background: #FFF3E0; border: 1px solid #FFB74D; border-radius: 4px; padding: 1px 4px;");
+    equipRow->addWidget(m_attackRangeLabel);
+    equipRow->addStretch();
+    info->addLayout(equipRow);
+
     m_skillLabel = new QLabel(this); m_skillLabel->setWordWrap(true); m_skillLabel->setStyleSheet("font-size: 11px; color: #666;");
     info->addWidget(m_skillLabel);
     main->addLayout(info, 1);
