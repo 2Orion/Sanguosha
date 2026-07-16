@@ -395,7 +395,7 @@ bool StrategyCard::canUse(const GameState* state, const Player* user) const
     if (state->currentPhase() != PhaseType::Play) return false;
     if (!user->isAlive()) return false;
 
-    return true;
+    return !getValidTargets(state, user).empty();
 }
 
 // ==================== 锦囊牌：过河拆桥 ====================

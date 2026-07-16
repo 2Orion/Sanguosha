@@ -25,7 +25,9 @@ public:
     ~GameViewModel() override;
 
     // ==================== 游戏生命周期（SGSApp 调用） ====================
-    void startGame(int characterId1, int characterId2);
+    /// 返回 false 表示 characterId1/characterId2 非法（不在已知武将范围内），
+    /// 未真正开局——调用方（ServerApp）据此回滚，不广播开局成功。
+    bool startGame(int characterId1, int characterId2);
     void advancePhase();
     void endPlayPhase();
 
@@ -34,7 +36,16 @@ public:
     GameState* gameState() const;
 
     static QString phaseName(PhaseType phase);
+    /// characterId 是否在 createCharacterById 支持的范围内。供 ServerApp 在
+    /// 广播 GameStarted 之前先校验，避免客户端先收到"游戏已开始"再发现
+    /// 什么后续状态都不会来。与 createCharacterById 的 switch 需保持同步。
+    static bool isValidCharacterId(int id);
     int currentPlayerId() const;
+
+    /// 当前待响应动作应由哪位玩家响应；无待定动作时返回 -1。
+    /// 供 ServerApp 校验 SkipRequested 等命令是否来自真正的响应者
+    /// （网络模式下任意已连接客户端都可能发来这类无身份参数的命令）。
+    int pendingResponderId() const;
 
 signals:
     void phaseChanged(PhaseType phase);

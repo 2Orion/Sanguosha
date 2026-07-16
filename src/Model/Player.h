@@ -41,6 +41,7 @@ public:
     bool isAlive() const;
     bool isDying() const;
     void setDying(bool dying);
+    void markDead();
     bool isFullHp() const;
     double hpRatio() const;
     int handCardLimit() const;
@@ -115,6 +116,7 @@ private:
 
     int m_hp = 0;
     bool m_dying = false;
+    bool m_deathNotified = false;
 
     void rebuildEquipCardsVector() const;
 

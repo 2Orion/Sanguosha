@@ -6,6 +6,15 @@
 #include "Card.h"
 #include "Character.h"
 
+namespace {
+
+Player* pendingResponder(const PendingActionInfo& info)
+{
+    return info.requiredCardType == CardType::Peach ? info.source : info.target;
+}
+
+} // namespace
+
 GameViewModel::GameViewModel(QObject* parent)
     : QObject(parent)
 {
@@ -18,12 +27,17 @@ GameViewModel::GameViewModel(QObject* parent)
 
 GameViewModel::~GameViewModel() = default;
 
-void GameViewModel::startGame(int characterId1, int characterId2)
+bool GameViewModel::startGame(int characterId1, int characterId2)
 {
     Character* char1 = createCharacterById(characterId1);
     Character* char2 = createCharacterById(characterId2);
-    if (!char1 || !char2) return;
+    if (!char1 || !char2) {
+        delete char1;
+        delete char2;
+        return false;
+    }
     initGame(char1, char2);
+    return true;
 }
 
 void GameViewModel::advancePhase()
@@ -33,7 +47,16 @@ void GameViewModel::advancePhase()
     case PhaseType::Prepare: executePhasePrepare(); setNextPhase(PhaseType::Judge); break;
     case PhaseType::Judge:   executePhaseJudge();   setNextPhase(PhaseType::Draw); break;
     case PhaseType::Draw:    executePhaseDraw();    setNextPhase(PhaseType::Play); break;
-    case PhaseType::Play:    setNextPhase(PhaseType::Discard); break;
+    case PhaseType::Play:
+        // 与 endPlayPhase() 保持一致：待定动作（如杀等待闪）尚未结算时
+        // 不能离开 Play 阶段，否则 pendingAction 会悬空、后续响应/跳过会
+        // 针对一个已经"过期"的待定动作生效。本地模式下 AutoAdvanceTimer
+        // 从不在 Play 阶段启动（见 GameBoardWidget::onPhaseChanged），这条
+        // 分支从未被触达；网络模式下当前回合玩家可以在出牌后立刻发
+        // AdvanceRequested，必须在这里补上同样的保护。
+        if (m_state->hasPendingAction()) return;
+        setNextPhase(PhaseType::Discard);
+        break;
     case PhaseType::Discard: setNextPhase(PhaseType::End); break;
     case PhaseType::End:     executePhaseEnd(); break;
     }
@@ -123,6 +146,11 @@ Character* GameViewModel::createCharacterById(int id)
     case 8: return new SiMaYi(this);
     default: return nullptr;
     }
+}
+
+bool GameViewModel::isValidCharacterId(int id)
+{
+    return id >= 0 && id <= 3;
 }
 
 // ==================== 阶段执行 ====================
@@ -318,10 +346,14 @@ void GameViewModel::onModelPendingActionCreated(const PendingActionInfo& info)
     for (Player* p : info.remainingTargets)
         if (p) vm.remainingTargetIds.push_back(p->playerId());
 
-    // 自动跳过：目标玩家没有可用响应牌
-    auto responseCards = m_actionVM->getResponseCardIds(vm.targetId, vm.requiredCardType);
+    // 普通响应由 target 负责，濒死救援由 source（当前救援者）负责。
+    Player* responder = pendingResponder(info);
+    int responderId = responder ? responder->playerId() : -1;
+
+    // 自动跳过：当前响应者没有可用响应牌
+    auto responseCards = m_actionVM->getResponseCardIds(responderId, vm.requiredCardType);
     if (responseCards.empty()) {
-        m_actionVM->skipResponse(vm.targetId, true);
+        m_actionVM->skipResponse(responderId, true);
         return;
     }
 
@@ -358,7 +390,12 @@ void GameViewModel::onModelPlayerDied(int playerId)
 void GameViewModel::onDiscardCardRequested(int cardId, int playerId)
 {
     m_actionVM->discardCard(cardId, playerId);
-    if (m_actionVM->getDiscardCount(playerId) <= 0)
+    // 只有"当前回合玩家"的弃牌才能推进阶段——本地模式下 playerId 恒等于
+    // currentPlayerId()（View 只在该玩家的弃牌阶段允许操作其手牌区），
+    // 但网络模式下任意已连接玩家都可能发来这条命令；若不加这层校验，
+    // 对方随手发一条自己的（无效）弃牌请求就会让 getDiscardCount(playerId)
+    // 恰好 <= 0，从而提前结束当前玩家本该进行的弃牌阶段。
+    if (playerId == currentPlayerId() && m_actionVM->getDiscardCount(playerId) <= 0)
         advancePhase();
 }
 
@@ -369,13 +406,23 @@ void GameViewModel::onAdvanceRequested() { advancePhase(); }
 void GameViewModel::onSkipRequested()
 {
     if (!m_state || !m_state->hasPendingAction()) return;
-    int responderId = m_state->pendingActionInfo().target->playerId();
+    Player* responder = pendingResponder(m_state->pendingActionInfo());
+    if (!responder) return;
+    int responderId = responder->playerId();
     m_actionVM->skipResponse(responderId, true);
 }
 
 // ==================== 内部 ====================
 
 int GameViewModel::currentPlayerId() const { auto* p = currentPlayer(); return p ? p->playerId() : -1; }
+
+int GameViewModel::pendingResponderId() const
+{
+    if (!m_state || !m_state->hasPendingAction()) return -1;
+    Player* responder = pendingResponder(m_state->pendingActionInfo());
+    return responder ? responder->playerId() : -1;
+}
+
 Player* GameViewModel::currentPlayer() const { return m_state->currentPlayer(); }
 Player* GameViewModel::opponentPlayer() const { auto* c = currentPlayer(); if (!c) return nullptr; for (auto* p : m_state->allPlayers()) { if (p && p != c && p->isAlive()) return p; } return nullptr; }
 Player* GameViewModel::playerByIndex(int idx) const { return m_state->player(idx); }

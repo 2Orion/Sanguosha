@@ -5,6 +5,35 @@
 #include "Player.h"
 #include "Card.h"
 #include "Character.h"
+#include <algorithm>
+
+namespace {
+
+bool isResponseType(const Card* card, const Player* player, CardType requiredType)
+{
+    if (!card) return false;
+    if (card->cardType() == requiredType) return true;
+    if (requiredType == CardType::Peach && card->cardType() == CardType::Wine) return true;
+
+    return player && player->character() &&
+           player->character()->skillTransformCard(card) == requiredType;
+}
+
+bool requiresExplicitTarget(const Card* card)
+{
+    if (!card) return false;
+
+    switch (card->cardType()) {
+    case CardType::Kill:
+    case CardType::Dismantle:
+    case CardType::Steal:
+        return true;
+    default:
+        return false;
+    }
+}
+
+} // namespace
 
 ActionViewModel::ActionViewModel(QObject* parent)
     : QObject(parent)
@@ -49,7 +78,7 @@ std::vector<int> ActionViewModel::getValidTargetIds(int cardId, int playerId) co
 {
     Card* card = findCard(cardId);
     Player* user = findPlayer(playerId);
-    if (!m_state || !card || !user) return {};
+    if (!m_state || !card || !user || !isOwnCard(cardId, playerId)) return {};
 
     // 技能转化为【杀】使用时，目标规则按杀处理（除自己外的存活角色）
     if (playsAsKill(card, user)) {
@@ -82,9 +111,24 @@ bool ActionViewModel::canPlayCard(int cardId, int playerId) const
 {
     Card* card = findCard(cardId);
     Player* player = findPlayer(playerId);
-    if (!m_state || !card || !player) return false;
-    if (card->canUse(m_state, player) && GameRule::canPlayCard(m_state, player, card)) return true;
-    return playsAsKill(card, player);
+    if (!m_state || !card || !player || !isOwnCard(cardId, playerId)) return false;
+
+    // 出牌只能是当前回合玩家：card->canUse() 各子类只查全局 currentPhase()，
+    // 不查 player 是不是 currentPlayer()，本地模式靠 View 只让当前玩家手牌
+    // 可交互侥幸掩盖，网络模式下非当前回合玩家会用自己真实身份出牌。
+    if (player != m_state->currentPlayer()) return false;
+
+    // 待定响应（如杀等待闪、南蛮/万箭链）尚未结算时不能再出牌：GameState::
+    // setPendingAction 无重入保护，第二张主动牌会通过 executeKill 等静默
+    // 覆盖第一个待定动作，原响应永久悬空。
+    if (m_state->hasPendingAction()) return false;
+
+    bool playable = (card->canUse(m_state, player) &&
+                     GameRule::canPlayCard(m_state, player, card)) ||
+                    playsAsKill(card, player);
+    if (!playable) return false;
+
+    return !getValidTargetIds(cardId, playerId).empty();
 }
 
 ActionResult ActionViewModel::playCard(int cardId, int playerId,
@@ -92,12 +136,25 @@ ActionResult ActionViewModel::playCard(int cardId, int playerId,
 {
     Card* card = findCard(cardId);
     Player* user = findPlayer(playerId);
-    if (!m_state || !card || !user) return ActionResult::Completed;
+    if (!m_state || !card || !user || !isOwnCard(cardId, playerId) ||
+        !canPlayCard(cardId, playerId)) {
+        return ActionResult::Completed;
+    }
+
+    const std::vector<int> validTargetIds = getValidTargetIds(cardId, playerId);
+    if (targetIds.size() > 1) return ActionResult::Completed;
+    for (int targetId : targetIds) {
+        if (std::find(validTargetIds.begin(), validTargetIds.end(), targetId) == validTargetIds.end()) {
+            return ActionResult::Completed;
+        }
+    }
+    if (targetIds.empty() && requiresExplicitTarget(card)) return ActionResult::Completed;
 
     std::vector<Player*> targets;
     for (int tid : targetIds) {
         Player* t = findPlayer(tid);
-        if (t) targets.push_back(t);
+        if (!t) return ActionResult::Completed;
+        targets.push_back(t);
     }
 
     // 技能转化为【杀】使用：不执行原牌效果，走杀的结算（关羽武圣 / 赵云龙胆）
@@ -166,14 +223,7 @@ std::vector<int> ActionViewModel::getResponseCardIds(int playerId, CardType requ
 
     for (Card* card : player->handCards()) {
         if (!card) continue;
-        if (card->cardType() == requiredType) {
-            result.push_back(card->id());
-            continue;
-        }
-        if (player->character()) {
-            CardType transformed = player->character()->skillTransformCard(card);
-            if (transformed == requiredType) result.push_back(card->id());
-        }
+        if (isResponseType(card, player, requiredType)) result.push_back(card->id());
     }
     return result;
 }
@@ -195,7 +245,14 @@ void ActionViewModel::respondCard(int cardId, int playerId)
     Player* responder = findPlayer(playerId);
     if (!m_state || !card || !responder || !m_state->hasPendingAction()) return;
 
-    const PendingActionInfo& info = m_state->pendingActionInfo();
+    const PendingActionInfo info = m_state->pendingActionInfo();
+    Player* expectedResponder = (info.requiredCardType == CardType::Peach)
+            ? info.source : info.target;
+    if (expectedResponder != responder ||
+        (info.requiredCardType == CardType::Peach && !info.target) ||
+        !isValidResponseCard(cardId, playerId, info.requiredCardType)) {
+        return;
+    }
 
     switch (info.requiredCardType) {
     case CardType::Dodge:
@@ -238,7 +295,11 @@ void ActionViewModel::skipResponse(int playerId, bool forceNoCard)
     Player* responder = findPlayer(playerId);
     if (!m_state || !responder || !m_state->hasPendingAction()) return;
 
-    const PendingActionInfo& info = m_state->pendingActionInfo();
+    const PendingActionInfo info = m_state->pendingActionInfo();
+    Player* expectedResponder = (info.requiredCardType == CardType::Peach)
+            ? info.source : info.target;
+    if (expectedResponder != responder ||
+        (info.requiredCardType == CardType::Peach && !info.target)) return;
     if (!forceNoCard && !info.canSkip) return;
 
     switch (info.requiredCardType) {
@@ -278,7 +339,10 @@ void ActionViewModel::discardCard(int cardId, int playerId)
 {
     Card* card = findCard(cardId);
     Player* player = findPlayer(playerId);
-    if (!m_state || !card || !player) return;
+    if (!m_state || !card || !player ||
+        m_state->currentPhase() != PhaseType::Discard ||
+        player != m_state->currentPlayer() ||
+        !isOwnCard(cardId, playerId)) return;
 
     player->removeHandCard(card);
     if (m_state->cardManager()) m_state->cardManager()->discard(card);
@@ -300,12 +364,7 @@ std::vector<Card*> ActionViewModel::getPlayableCards(Player* player) const
     if (!m_state || !player) return result;
     for (Card* card : player->handCards()) {
         if (!card) continue;
-        if (card->canUse(m_state, player) && GameRule::canPlayCard(m_state, player, card)) {
-            result.push_back(card);
-            continue;
-        }
-        // 本体不可用，但武将技能可将其当【杀】主动使用
-        if (playsAsKill(card, player)) result.push_back(card);
+        if (canPlayCard(card->id(), player->playerId())) result.push_back(card);
     }
     return result;
 }
@@ -332,6 +391,7 @@ void ActionViewModel::emitLog(const QString& msg)
 
 void ActionViewModel::onPlayCardRequested(int cardId, int playerId)
 {
+    if (m_pendingCardId >= 0) return;
     if (!isOwnCard(cardId, playerId)) return;
     if (!canPlayCard(cardId, playerId)) return;
 
@@ -344,22 +404,30 @@ void ActionViewModel::onPlayCardRequested(int cardId, int playerId)
         m_pendingCardId = cardId;
         m_pendingUserId = playerId;
         m_pendingTargetIds = QVector<int>(targets.begin(), targets.end());
-        playCard(cardId, playerId, {targets[0]});
+        emit targetSelectionStarted(m_pendingTargetIds);
     }
 }
 
 void ActionViewModel::onTargetSelected(int playerIndex)
 {
     if (m_pendingCardId >= 0 && !m_pendingTargetIds.isEmpty()) {
+        bool validTarget = false;
         for (int t : m_pendingTargetIds) {
             if (t == playerIndex) {
-                playCard(m_pendingCardId, m_pendingUserId, {playerIndex});
+                validTarget = true;
                 break;
             }
         }
+
+        if (!validTarget) return;
+
+        const int cardId = m_pendingCardId;
+        const int userId = m_pendingUserId;
         m_pendingCardId = -1;
         m_pendingUserId = -1;
         m_pendingTargetIds.clear();
+        emit targetSelectionFinished();
+        playCard(cardId, userId, {playerIndex});
     }
 }
 

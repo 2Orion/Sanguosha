@@ -21,6 +21,16 @@ SGSApp::SGSApp(QObject* parent)
 
 void SGSApp::startLocalGame(int charId1, int charId2)
 {
+    // 允许从选将页重复开始时，先释放上一局的完整对象图。
+    if (m_board) {
+        m_board->deleteLater();
+        m_board = nullptr;
+    }
+    if (m_gvm) {
+        m_gvm->deleteLater();
+        m_gvm = nullptr;
+    }
+
     // 创建游戏对象
     m_gvm = new GameViewModel(this);
     m_board = new GameBoardWidget();
@@ -50,6 +60,10 @@ void SGSApp::startLocalGame(int charId1, int charId2)
             m_board, &GameBoardWidget::onPlayerDataUpdated);
     connect(m_gvm, &GameViewModel::handCardsUpdated,
             m_board, &GameBoardWidget::onHandCardsUpdated);
+    connect(avm, &ActionViewModel::targetSelectionStarted,
+            m_board, &GameBoardWidget::onTargetSelectionStarted);
+    connect(avm, &ActionViewModel::targetSelectionFinished,
+            m_board, &GameBoardWidget::onTargetSelectionFinished);
     connect(m_gvm, &GameViewModel::pendingActionCreated,
             m_board, &GameBoardWidget::onPendingActionCreated);
     connect(m_gvm, &GameViewModel::pendingActionCleared,
@@ -71,7 +85,10 @@ void SGSApp::startLocalGame(int charId1, int charId2)
 
 void SGSApp::onGameFinished()
 {
-    m_gvm = nullptr;
+    if (m_gvm) {
+        m_gvm->deleteLater();
+        m_gvm = nullptr;
+    }
     if (m_board) {
         m_board->deleteLater();
         m_board = nullptr;

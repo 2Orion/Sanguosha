@@ -4,6 +4,7 @@
 #include <QWidget>
 #include <QLabel>
 #include <QTimer>
+#include <QVector>
 #include "CommonTypes.h"
 #include "CardData.h"
 #include "PlayerData.h"
@@ -37,6 +38,8 @@ public slots:
     void onPhaseChanged(PhaseType phase);
     void onPlayerDataUpdated(int playerId, const PlayerData& data);
     void onHandCardsUpdated(int playerId, const CardList& data);
+    void onTargetSelectionStarted(const QVector<int>& targetIds);
+    void onTargetSelectionFinished();
     void onPendingActionCreated(const PendingActionData& info);
     void onPendingActionCleared();
     void onGameOver(int winnerId);

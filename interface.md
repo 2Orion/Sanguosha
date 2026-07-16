@@ -146,6 +146,9 @@ struct PendingActionInfo {
     std::string description;
     bool canSkip = false;
     std::vector<Player*> remainingTargets;
+    Player* continuationSource = nullptr;
+    CardType continuationCardType = CardType::Kill;
+    std::vector<Player*> continuationTargets;
 };
 ~~~
 
@@ -153,13 +156,16 @@ struct PendingActionInfo {
 
 | 字段 | 含义 |
 |------|------|
-| source | 动作来源玩家 |
-| target | 当前需要响应的玩家或动作目标 |
+| source | 动作来源玩家；濒死动作中是当前救援者/响应者 |
+| target | 普通响应动作中的响应目标；濒死动作中是濒死玩家 |
 | sourceCard | 触发动作的卡牌，可为空 |
 | requiredCardType | 当前要求的响应牌类型 |
 | description | Model 内部使用的 UTF-8 文本 |
 | canSkip | 当前响应是否允许跳过 |
 | remainingTargets | AOE 动作中尚未处理的目标 |
+| continuationSource | AOE 目标濒死获救后恢复响应链的来源玩家 |
+| continuationCardType | 续接 AOE 所需的响应牌类型 |
+| continuationTargets | AOE 目标濒死获救后仍待处理的目标 |
 
 ### 2.2 公共接口
 
@@ -445,7 +451,7 @@ public:
 | DodgeCard | canUse 始终返回 false | 只通过响应流程处理 |
 | PeachCard | 出牌阶段可对自己使用，且自己未满体力 | 调用 executePeach，回复 1 点体力，返回 Completed |
 | WineCard | 出牌阶段、玩家存活且当前未处于酒强化状态 | 调用 executeWine，强化下一次杀，返回 Completed |
-| StrategyCard | 仅出牌阶段且玩家存活 | 作为锦囊牌基类 |
+| StrategyCard | 仅出牌阶段、玩家存活且至少存在一个合法目标 | 作为锦囊牌基类；无合法目标时不可使用 |
 | DismantleCard | 目标是其他存活且有手牌或装备的玩家 | 弃置目标一张牌 |
 | StealCard | 目标条件同过河拆桥 | 将目标一张手牌或装备牌移给使用者 |
 | BountifulCard | 合法目标列表为使用者自己 | 摸两张牌 |
@@ -592,6 +598,7 @@ public:
     bool isAlive() const;
     bool isDying() const;
     void setDying(bool dying);
+    void markDead();
     bool isFullHp() const;
     double hpRatio() const;
     int handCardLimit() const;
@@ -648,7 +655,7 @@ signals:
 - allSelectableCards() 返回手牌和装备区的合并列表，不包含判定区。
 - setDying(true) 发出 dying(playerId)；从濒死状态恢复时发出 revived(playerId)。
 - handCardAdded、handCardRemoved 的参数是卡牌 ID，不是 Card*。
-- 当前 Player.cpp 会发出 dying、revived 和手牌变化信号；died(int) 已声明，但当前实现没有在 Player 内部主动发出该信号。
+- `markDead()` 负责一次性发出 died(playerId)；GameRule::checkDeath 在最终死亡时调用它，避免濒死阶段提前发出死亡信号。
 - setCharacter、手牌变化和体力变化会触发对应的状态信号；装备区和判定区变化通过 stateChanged() 通知。
 
 ---
@@ -803,10 +810,10 @@ namespace GameRule {
 - executeKill 会设置攻击者本回合已使用杀，并在 GameState 中创建要求出闪的待定动作。
 - handleKillResponse 传入有效卡牌时会移除并弃置该牌；传入 nullptr 时对响应者造成伤害。攻击者有酒强化时伤害为 2，随后消耗强化状态。
 - executeBarbarianInvasion 和 executeVolley 会按存活目标顺序创建响应链。
-- AOE 响应处理完成当前目标后，会根据 remainingTargets 创建下一个待定动作。
+- AOE 响应处理完成当前目标后，会根据 remainingTargets 创建下一个待定动作；目标濒死获救时使用 continuationTargets 恢复响应链。
 - dealDamage 会触发受伤武将技能；目标体力不大于 0 且尚未濒死时，会进入 startDyingProcess。
 - hasPeachToSave 当前将桃和酒都视为可用于濒死救援的牌。
-- handleDyingPeach 的调用方应先确认卡牌确实是桃或酒；函数成功救回目标时返回 true 并清除待定动作。
+- handleDyingPeach 会校验当前待定动作、救援者、濒死者、牌主和牌型；桃或酒成功救回目标时返回 true 并清除待定动作。
 - 所有存活玩家都跳过濒死救援后，checkDeath 会清除濒死状态并调用 checkGameOver。
 - 仅剩一名存活玩家时，该玩家获胜；没有存活玩家时，游戏以 nullptr 获胜者结束。
 
@@ -840,7 +847,7 @@ GameRule 和 Model
 | GameState::gameOver(int) | 转换并转发为 ViewModel 的 gameOver(int) |
 | Player::handCardsChanged() | 读取卡牌对象，生成 CardList（QVector\<CardData\>） |
 | Player::stateChanged() | 生成 PlayerData |
-| Player::died(int) | 由 ViewModel 接收并记录死亡日志；当前 Model 实现尚未主动发出该信号 |
+| Player::died(int) | 由 `GameRule::checkDeath()` 通过 `Player::markDead()` 发出，ViewModel 接收并记录死亡日志 |
 
 ### 8.2 跨 View 边界的值类型
 
