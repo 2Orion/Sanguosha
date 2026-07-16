@@ -268,9 +268,15 @@ void ActionViewModel::respondCard(int cardId, int playerId)
         break;
 
     case CardType::Kill:
-        GameRule::handleAoeKillResponse(m_state, responder, card);
-        emitLog(responder->displayName() + QStringLiteral(" 打出【") +
-                QString::fromStdString(card->cardName()) + QStringLiteral("】响应南蛮入侵"));
+        if (info.isDuel) {
+            GameRule::handleDuelKillResponse(m_state, responder, card);
+            emitLog(responder->displayName() + QStringLiteral(" 打出【") +
+                    QString::fromStdString(card->cardName()) + QStringLiteral("】响应决斗"));
+        } else {
+            GameRule::handleAoeKillResponse(m_state, responder, card);
+            emitLog(responder->displayName() + QStringLiteral(" 打出【") +
+                    QString::fromStdString(card->cardName()) + QStringLiteral("】响应南蛮入侵"));
+        }
         break;
 
     case CardType::Peach: {
@@ -282,6 +288,12 @@ void ActionViewModel::respondCard(int cardId, int playerId)
                 (saved ? QStringLiteral("，救回！") : QStringLiteral("，仍需继续救援")));
         break;
     }
+
+    case CardType::Nullify:
+        GameRule::handleNullifyResponse(m_state, responder, card, true);
+        emitLog(responder->displayName() + QStringLiteral(" 使用【") +
+                QString::fromStdString(card->cardName()) + QStringLiteral("】抵消锦囊"));
+        break;
 
     default:
         break;
@@ -314,8 +326,13 @@ void ActionViewModel::skipResponse(int playerId, bool forceNoCard)
         break;
 
     case CardType::Kill:
-        GameRule::handleAoeSkipResponse(m_state, responder);
-        emitLog(responder->displayName() + QStringLiteral(" 放弃了响应"));
+        if (info.isDuel) {
+            GameRule::handleDuelSkipResponse(m_state, responder);
+            emitLog(responder->displayName() + QStringLiteral(" 放弃出【杀】，受到1点伤害"));
+        } else {
+            GameRule::handleAoeSkipResponse(m_state, responder);
+            emitLog(responder->displayName() + QStringLiteral(" 放弃了响应"));
+        }
         break;
 
     case CardType::Peach: {
@@ -323,6 +340,12 @@ void ActionViewModel::skipResponse(int playerId, bool forceNoCard)
         GameRule::skipDyingResponse(m_state, dyingPlayer);
         emitLog(responder->displayName() + QStringLiteral(" 放弃救助 ") +
                 dyingPlayer->displayName());
+        break;
+    }
+
+    case CardType::Nullify: {
+        GameRule::handleNullifyResponse(m_state, responder, nullptr, false);
+        emitLog(responder->displayName() + QStringLiteral(" 放弃使用【无懈可击】，锦囊生效"));
         break;
     }
 

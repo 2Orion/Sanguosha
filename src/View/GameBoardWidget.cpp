@@ -24,6 +24,7 @@ GameBoardWidget::GameBoardWidget(QWidget* parent) : QWidget(parent)
     connect(m_actionPanel, &ActionPanelWidget::playPhaseEnded, this, &GameBoardWidget::onPlayPhaseEnded);
     connect(m_actionPanel, &ActionPanelWidget::respondSkipped, this, &GameBoardWidget::onResponseSkipped);
     connect(m_actionPanel, &ActionPanelWidget::discardConfirmed, this, &GameBoardWidget::onDiscardConfirmed);
+    connect(m_actionPanel, &ActionPanelWidget::skillRequested, this, &GameBoardWidget::onSkillClicked);
 }
 
 GameBoardWidget::~GameBoardWidget() = default;
@@ -149,8 +150,39 @@ void GameBoardWidget::onGameOver(int winnerId)
     emit gameFinished();
 }
 
+void GameBoardWidget::onSkillClicked()
+{
+    emit skillRequested();
+}
+
 void GameBoardWidget::onLogMessage(const QString& msg) { m_logLabel->setText(msg); }
+
+void GameBoardWidget::onJudgmentPerformed(const CardData& judgeCard, const QString& resultText, bool effective)
+{
+    // 在日志区域显示判定结果，格式如: "判定牌: ♠7  结果: 【乐不思蜀】判定: 非♥，跳过出牌阶段"
+    QString display = QStringLiteral("判定牌: ") + judgeCard.suitSymbol + judgeCard.numberString
+                    + QStringLiteral("  ") + judgeCard.cardName
+                    + QStringLiteral("  →  ") + resultText;
+    m_logLabel->setText(display);
+
+    // 生效时高亮日志区域（红色），否则灰色
+    if (effective) {
+        m_logLabel->setStyleSheet("QLabel { font-size: 13px; color: #D32F2F; font-weight: bold;"
+            " padding: 8px 12px; background: #FFEBEE; border: 2px solid #EF9A9A; border-radius: 6px; }");
+    } else {
+        m_logLabel->setStyleSheet("QLabel { font-size: 13px; color: #2E7D32; font-weight: bold;"
+            " padding: 8px 12px; background: #E8F5E9; border: 2px solid #A5D6A7; border-radius: 6px; }");
+    }
+}
+
 void GameBoardWidget::refreshDisplay() {}
+
+// ==================== 手牌区定位 ====================
+
+HandCardAreaWidget* GameBoardWidget::handAreaForPlayer(int playerId) const
+{
+    return (playerId == m_localPlayerId) ? m_bottomHandArea : m_topHandArea;
+}
 
 // ==================== 交互 ====================
 
@@ -165,7 +197,7 @@ void GameBoardWidget::onCardClicked(int cardId)
             emit respondCardRequested(cardId, m_responderId);
         break;
     case State::Discarding:
-        m_bottomHandArea->setSelection(cardId, true);
+        handAreaForPlayer(m_currentPlayerId)->setSelection(cardId, true);
         break;
     case State::SelectingTarget:
         break;
@@ -193,10 +225,11 @@ void GameBoardWidget::onResponseSkipped()
 void GameBoardWidget::onDiscardConfirmed()
 {
     if (m_state == State::Discarding) {
-        int selId = m_bottomHandArea->selectedCardId();
+        auto* area = handAreaForPlayer(m_currentPlayerId);
+        int selId = area->selectedCardId();
         if (selId >= 0) {
             emit discardCardRequested(selId, m_currentPlayerId);
-            m_bottomHandArea->clearSelection();
+            area->clearSelection();
         }
     }
 }

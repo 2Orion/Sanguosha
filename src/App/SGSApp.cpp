@@ -8,6 +8,8 @@
 #include "GameClient.h"
 #include "GameState.h"
 #include "Player.h"
+#include "Character.h"
+#include "CardManager.h"
 #include <QMessageBox>
 #include <QNetworkInterface>
 
@@ -78,10 +80,47 @@ void SGSApp::startLocalGame(int charId1, int charId2)
             m_board, &GameBoardWidget::onGameOver);
     connect(m_gvm, &GameViewModel::logMessage,
             m_board, &GameBoardWidget::onLogMessage);
+    connect(m_gvm, &GameViewModel::judgmentPerformed,
+            m_board, &GameBoardWidget::onJudgmentPerformed);
 
     // 生命周期
     connect(m_board, &GameBoardWidget::gameFinished,
             this, &SGSApp::onGameFinished);
+
+    // 技能按钮
+    connect(m_board, &GameBoardWidget::skillRequested, this, [this]() {
+        if (!m_gvm) return;
+        auto* state = m_gvm->gameState();
+        auto* player = state ? state->currentPlayer() : nullptr;
+        if (!player || !player->character()) return;
+
+        // 孙权制衡：弃所有手牌，摸等量张牌
+        if (player->character()->canDiscardAndDraw()) {
+            int count = player->handCardCount();
+            if (count <= 0) return;
+
+            // 弃全部手牌
+            std::vector<Card*> hand = player->handCards();
+            for (Card* c : hand) player->removeHandCard(c);
+            if (auto* cm = state->cardManager()) cm->discardMultiple(hand);
+
+            // 摸等量牌
+            auto newCards = state->cardManager()->drawCards(count);
+            for (Card* c : newCards) if (c) player->addHandCard(c);
+
+            // 日志和推送
+            auto* mainWin = static_cast<MainWindow*>(m_mainWindow);
+            if (mainWin && mainWin->findChild<GameBoardWidget*>())
+                emit m_gvm->logMessage(
+                    player->displayName() + QStringLiteral(" 发动【制衡】，弃 %1 张牌摸 %2 张牌")
+                        .arg(count).arg(static_cast<int>(newCards.size())));
+
+            emit m_gvm->stateChanged();
+            return;
+        }
+
+        emit m_gvm->logMessage(player->displayName() + QStringLiteral(" 使用了技能"));
+    });
 
     m_gvm->startGame(charId1, charId2);
     static_cast<MainWindow*>(m_mainWindow)->showGamePage(m_board);

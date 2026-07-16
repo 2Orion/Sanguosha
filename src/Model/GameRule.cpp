@@ -111,6 +111,11 @@ void executeKill(GameState* state, Player* user, Player* target)
     info.description = (user->displayName() + " 对 " + target->displayName() + " 使用了【杀】，请打出【闪】").toStdString();
     info.canSkip = false;
 
+    // 吕布无双：需要两张闪
+    if (user->character() && user->character()->requireExtraDodge()) {
+        info.requiredDodgeTotal = 2;
+    }
+
     state->setPendingAction(info);
 }
 
@@ -135,6 +140,18 @@ void handleKillResponse(GameState* state, Player* responder, Card* dodgeCard)
         if (state->cardManager()) {
             state->cardManager()->discard(dodgeCard);
         }
+
+        // 吕布无双：需要多张闪，检查是否还需继续出闪
+        if (info.requiredDodgeTotal > 1 && info.dodgeProgress < info.requiredDodgeTotal - 1) {
+            PendingActionInfo next = info;
+            next.dodgeProgress = info.dodgeProgress + 1;
+            next.description = (QStringLiteral("【吕布无双】还需 %1 张【闪】— ")
+                                .arg(info.requiredDodgeTotal - next.dodgeProgress)
+                                + responder->displayName()).toStdString();
+            state->setPendingAction(next);
+            return;
+        }
+
         state->clearPendingAction();
     } else {
         int damageValue = 1;
@@ -641,9 +658,55 @@ void executeDuel(GameState* state, Player* user, Player* target)
     info.requiredCardType = CardType::Kill;
     info.description = (user->displayName() + " 对 " + target->displayName()
                        + " 使用了【决斗】，请打出【杀】").toStdString();
-    info.canSkip = false;
+    info.canSkip = true;
+    info.isDuel = true;
 
     state->setPendingAction(info);
+}
+
+/// 处理决斗回合中的出杀响应
+void handleDuelKillResponse(GameState* state, Player* responder, Card* killCard)
+{
+    if (!state || !responder || !killCard) return;
+
+    responder->removeHandCard(killCard);
+    if (state->cardManager()) {
+        state->cardManager()->discard(killCard);
+    }
+    if (!state->hasPendingAction()) return;
+
+    const PendingActionInfo& prev = state->pendingActionInfo();
+
+    // 判断下一位出杀者：当前是谁出的杀，对面的那位就是下一位
+    Player* nextResponder = (responder == prev.target) ? prev.source : prev.target;
+
+    state->clearPendingAction();
+
+    PendingActionInfo next;
+    next.source = prev.source;
+    next.target = prev.target;
+    next.requiredCardType = CardType::Kill;
+    next.description = (QStringLiteral("【决斗】轮到你出【杀】— ") +
+                        nextResponder->displayName()).toStdString();
+    next.canSkip = true;
+    next.isDuel = true;
+
+    state->setPendingAction(next);
+}
+
+/// 处理决斗回合中放弃出杀（受到 1 点伤害）
+void handleDuelSkipResponse(GameState* state, Player* responder)
+{
+    if (!state || !responder) return;
+    if (!state->hasPendingAction()) return;
+
+    const PendingActionInfo& prev = state->pendingActionInfo();
+
+    // 伤害来源是对方玩家
+    Player* damager = (responder == prev.target) ? prev.source : prev.target;
+
+    state->clearPendingAction();
+    dealDamage(state, responder, 1, damager);
 }
 
 void executeLightning(GameState* state, Player* user, Player* target)
@@ -663,6 +726,68 @@ void executeNullify(GameState* state, Player* user)
     (void)user;
 }
 
+bool hasNullifyToRespond(const Player* player)
+{
+    if (!player || !player->isAlive()) return false;
+    for (Card* card : player->handCards()) {
+        if (!card) continue;
+        if (card->cardType() == CardType::Nullify ||
+            (player->character() &&
+             player->character()->skillTransformCard(card) == CardType::Nullify)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool checkNullifyBeforeEffect(GameState* state, Card* strategyCard,
+                               Player* target, Player* source,
+                               std::function<void()> onSkip)
+{
+    if (!state || !strategyCard || !target || !source) return false;
+    if (!hasNullifyToRespond(target)) return false;
+
+    PendingActionInfo info;
+    info.source = source;
+    info.target = target;
+    info.sourceCard = strategyCard;
+    info.requiredCardType = CardType::Nullify;
+    info.description = (target->displayName() + " 可以使用【无懈可击】抵消 "
+                        + source->displayName() + " 的【"
+                        + QString::fromStdString(strategyCard->cardName()) + "】").toStdString();
+    info.canSkip = true;
+    info.onNullifySkipped = std::move(onSkip);
+
+    state->setPendingAction(info);
+    return true;
+}
+
+void handleNullifyResponse(GameState* state, Player* responder,
+                            Card* nullifyCard, bool usedNullify)
+{
+    if (!state || !responder) return;
+    if (!state->hasPendingAction()) return;
+
+    PendingActionInfo info = state->pendingActionInfo();
+
+    if (usedNullify && nullifyCard) {
+        // 使用了无懈可击：消除锦囊效果，无懈可击进弃牌堆
+        responder->removeHandCard(nullifyCard);
+        if (state->cardManager()) {
+            state->cardManager()->discard(nullifyCard);
+        }
+        state->clearPendingAction();
+
+        // TODO: 实现连锁——锦囊来源方也可使用无懈反无懈
+    } else {
+        // 放弃使用无懈可击：执行被延迟的锦囊效果
+        state->clearPendingAction();
+        if (info.onNullifySkipped) {
+            info.onNullifySkipped();
+        }
+    }
+}
+
 bool checkNullifyChain(GameState* state, Card* targetCard,
                         Player* targetPlayer, Player* sourcePlayer)
 {
@@ -670,7 +795,8 @@ bool checkNullifyChain(GameState* state, Card* targetCard,
     (void)targetCard;
     (void)targetPlayer;
     (void)sourcePlayer;
-    // TODO: 完整实现无懈可击的连锁询问
+    // checkNullifyBeforeEffect 已在各锦囊 execute 中直接调用
+    // 此函数保留作为扩展点（如 multiple target AOE 的集中判定）
     return false;
 }
 

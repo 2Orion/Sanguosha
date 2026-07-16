@@ -22,6 +22,9 @@ struct PlayerData {
 
     // ==================== 装备区展示数据 ====================
     QVector<CardData> equipCards;  // 已装备的卡牌列表（按槽位顺序，仅非空槽）
+
+    // ==================== 判定区展示数据 ====================
+    QVector<CardData> judgmentCards;  // 判定区延时锦囊（乐不思蜀/兵粮寸断/闪电）
 };
 
 #endif // PLAYERDATA_H

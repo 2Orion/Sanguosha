@@ -35,6 +35,7 @@ signals:
     void skipRequested();          // 跳过响应
     void confirmDiscardRequested();
     void gameFinished();
+    void skillRequested();
 
 public slots:
     // ViewModel → View（状态推送）
@@ -47,6 +48,7 @@ public slots:
     void onPendingActionCleared();
     void onGameOver(int winnerId);
     void onLogMessage(const QString& msg);
+    void onJudgmentPerformed(const CardData& judgeCard, const QString& resultText, bool effective);
     void refreshDisplay();
 
 private slots:
@@ -56,9 +58,11 @@ private slots:
     void onPlayPhaseEnded();
     void onResponseSkipped();
     void onDiscardConfirmed();
+    void onSkillClicked();
 
 private:
     void setupLayout();
+    HandCardAreaWidget* handAreaForPlayer(int playerId) const;
 
     enum class State { Idle, SelectingTarget, Responding, Discarding };
     State m_state = State::Idle;

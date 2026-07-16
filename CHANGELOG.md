@@ -1,5 +1,135 @@
 # Changelog
 
+## Bug Fixes
+
+### [2026-07-16] 无懈可击（Nullify）无法响应锦囊牌
+
+**现象**：对手使用锦囊牌（过河拆桥、顺手牵羊、决斗、乐不思蜀等）时，目标玩家无法使用无懈可击抵消。
+
+**根因**：
+- `checkNullifyChain` 和 `executeNullify` 均为空实现（stub），整个无懈可击机制未接入游戏逻辑
+- `NullifyCard::getValidTargets` 返回空列表，无懈可击永远无法主动使用
+- 各锦囊牌的 `execute` 方法中没有任何无懈可击检查
+
+**修复**：
+- `PendingActionInfo` 新增 `onNullifySkipped` 回调字段（`std::function<void()>`），用于在用户放弃无懈时恢复执行被延迟的锦囊效果
+- `GameRule` 新增 `hasNullifyToRespond()`、`checkNullifyBeforeEffect()`、`handleNullifyResponse()` 三个函数
+- 修改过河拆桥、顺手牵羊、决斗、借刀杀人、乐不思蜀、兵粮寸断六个单目标锦囊的 `execute()`，执行前先调用 `checkNullifyBeforeEffect`
+- `ActionViewModel::respondCard` 和 `skipResponse` 分别添加 `CardType::Nullify` 分支处理无懈响应/跳过
+- `NullifyCard::execute` 改为空实现（无懈不会主动使用，只通过 pending action 系统响应）
+
+**流程**：
+```
+锦囊 → execute() → checkNullifyBeforeEffect → 目标有用无懈？
+  ├─ 否 → 锦囊直接结算
+  └─ 是 → 创建 pending action (Nullify) → 展示给目标玩家
+           ├─ 使用无懈 → handleNullifyResponse(used) → 无懈进弃牌堆，锦囊被抵消
+           └─ 跳过   → handleNullifyResponse(skipped) → 执行 onNullifySkipped 回调 → 锦囊结算
+```
+
+编译通过，4/4 核心测试全部通过。
+
+### [2026-07-16] 决斗（Duel）结算逻辑修复
+
+**现象**：使用决斗后，对方打出一张杀，决斗直接结束，没有交替出杀过程。
+
+**根因**：`executeDuel` 创建了一个 `canSkip=false` 的 `CardType::Kill` 待定动作，但在 `ActionViewModel::respondCard` 和 `skipResponse` 中，`CardType::Kill` 的路由统一走 `handleAoeKillResponse`/`handleAoeSkipResponse`（南蛮入侵的 AOE 逻辑），没有为决斗做区分——对方打出一张杀后 AOE 逻辑判定"已响应，下一位"，但因为只有两名玩家，下一位不存在，流程终止。
+
+**修复**：
+- `PendingActionInfo` 新增 `bool isDuel` 标记
+- `executeDuel` 设置 `isDuel = true`，`canSkip = true`（可放弃出杀承担伤害）
+- 新增 `handleDuelKillResponse`：消耗当前出杀者一张杀，翻转决斗轮到对方出杀，交替直到一方放弃
+- 新增 `handleDuelSkipResponse`：放弃出杀者受到 1 点伤害，决斗结束
+- `ActionViewModel` 中 Kill 响应/跳过分支按 `isDuel` 路由到决斗专用处理函数
+
+**正确流程**：
+```
+A 使用决斗 → B 需出杀 → B 出杀 → A 需出杀 → A 出杀 → B 需出杀 → B 放弃 → B 受 1 点伤害
+                                                                             或 A 放弃 → A 受 1 点伤害
+```
+
+编译通过，4/4 核心测试全部通过。
+
+### [2026-07-16] 吕布无双（requireExtraDodge）修复 + 主动技能按钮
+
+**现象 1**：吕布的【杀】仅需一张【闪】即可抵消，不符合"需两张闪"的技能描述。
+
+**根因**：`LvBu::requireExtraDodge()` 返回 `true`，但没有任何代码检查这个返回值——`executeKill` 和 `handleKillResponse` 完全无视了多闪需求。
+
+**修复**：
+- `PendingActionInfo` 新增 `requiredDodgeTotal` 和 `dodgeProgress`（默认 1/0）
+- `executeKill` 中检测 `user->character()->requireExtraDodge()` 时设 `requiredDodgeTotal = 2`
+- `handleKillResponse` 中闪计数 < requiredDodgeTotal 时，不结束待定动作，更新描述继续要求出闪
+- 全闪抵消则杀被挡；任一环节放弃则受伤害
+
+**现象 2**：孙权等武将的主动技能（制衡）无法使用，缺少触发按钮。
+
+**修复**：
+- `ActionPanelWidget` 新增紫色"发动技能"按钮，出牌阶段默认显示
+- `HandCardAreaWidget` 新增多选模式（`setMultiSelectMode(true)` + `selectedCardIds()`），支持制衡等需要选择多张牌的技能
+- `GameBoardWidget` 新增 `skillRequested()` 信号
+- `SGSApp` 连接信号：当前武将为孙权时，执行【制衡】——弃所有手牌并摸等量张牌
+
+编译通过，4/4 核心测试全部通过。
+
+### [2026-07-16] 玩家2弃牌阶段无反应修复
+
+**现象**：玩家2（playerId=1）弃牌阶段，选择手牌后点击"确认弃牌"无反应。
+
+**根因**：`GameBoardWidget::onCardClicked`（Discarding 状态）和 `onDiscardConfirmed` 均硬编码 `m_bottomHandArea`，但 player 1 的弃牌手牌位于 `m_topHandArea`。选择牌时在 `m_bottomHandArea`（实际是 player 0 的手牌区）中查找 cardId 永远找不到，`selectedCardId()` 恒返回 -1，弃牌被静默跳过。
+
+**修复**：
+- 新增 `handAreaForPlayer(int playerId)` 辅助方法，根据 playerId 返回对应手牌区
+- `onCardClicked`（Discarding 分支）、`onDiscardConfirmed` 改用 `handAreaForPlayer(m_currentPlayerId)`
+
+编译通过，4/4 核心测试全部通过。
+
+### [2026-07-16] 判定区显示 + 延时锦囊实际进入判定区
+
+**现象**：乐不思蜀、兵粮寸断、闪电等延时锦囊牌没有判定显示，使用后无任何视觉反馈。
+
+**修复**：
+- **Card.cpp**：`LightningCard::execute` 不再调用空实现 `GameRule::executeLightning`，改为 `user->addJudgmentCard(this)`；`HappyCard::execute` 和 `FamineCard::execute` 则在无懈判定后将牌放入目标的判定区
+- **ActionViewModel::playCard**：延时锦囊（Happy/Famine/Lightning）使用后不进弃牌堆（已放入判定区）
+- **PlayerData**：新增 `judgmentCards`（`QVector<CardData>`）
+- **GameViewModel::pushPlayerData**：从 `Player::judgmentCards()` 读取并填充判定区数据
+- **PlayerInfoWidget**：技能标签上方新增紫色"判定: 🔮 乐不思蜀 | 🔮 兵粮寸断"显示区域
+
+**判定区界面布局**：
+```
+[头像] [姓名 手牌×5]
+       [❤ ❤ ❤ 🖤]
+       [装备: ⚔ 青龙偃月刀(范围3)] [攻击范围3]
+       [判定: 🔮 乐不思蜀 | 🔮 兵粮寸断]  ← 新增
+       [技能: 制衡: 出牌阶段可弃任意张牌并摸等量的牌]
+```
+
+编译通过，4/4 核心测试全部通过。
+
+### [2026-07-16] 判定阶段完整实现（闪电/乐不思蜀/兵粮寸断）
+
+**现象**：延时锦囊无判定效果、乐不思蜀/兵粮寸断不消失、闪电不移位。
+
+**实现**：
+- **GameViewModel**：`executePhaseJudge` 为当前玩家判定区的每张牌执行判定：
+  - 从牌堆顶摸判定牌 → 展示结果1.5s → 处理效果 → 移除/移动判定牌
+  - **乐不思蜀**：判定♥则通过（无效），否则跳过出牌阶段
+  - **兵粮寸断**：判定♣则通过（无效），否则跳过摸牌阶段
+  - **闪电**：判定♠2-9则3点伤害，否则移至下家
+  - 新增 `m_skipDrawPhase`/`m_skipPlayPhase` 标记，`setNextPhase` 检测后自动跳过相应阶段
+  - `onJudgeTimerFired` 1.5s 后自动推进到下一阶段
+- **GameBoardWidget**：新增 `onJudgmentPerformed` 显示判定牌花色点数 + 结果文本；生效红色高亮 / 无效绿色高亮
+- **SGSApp**：连接 `judgmentPerformed` 信号
+
+**判定展示效果**：
+```
+判定牌: ♠7   →  【乐不思蜀】判定: 非♥，跳过出牌阶段  ← 红色高亮
+或
+判定牌: ♥3 桃  →  【兵粮寸断】判定: ♣，判定通过    ← 绿色高亮
+```
+
+编译通过，4/4 核心测试全部通过。
+
 ## Features
 
 ### [2026-07-16] 装备牌系统 + 卡牌拓展 — View 层适配
