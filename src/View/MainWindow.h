@@ -24,7 +24,9 @@ public:
     void showSelectionPage();
 
     /// 联网模式：显示单角色选将页面
-    void showCharacterSelection(int playerId, const QString& playerName);
+    /// statusHint 可选的状态提示（如本机 IP），显示在页面顶部
+    void showCharacterSelection(int playerId, const QString& playerName,
+                                const QString& statusHint = QString());
 
     /// 联网模式：显示等待对手界面
     void showWaitingForOpponent();

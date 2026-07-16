@@ -185,7 +185,8 @@ void MainWindow::onStartClicked()
 
 // ==================== 联网模式：选将页面 ====================
 
-void MainWindow::showCharacterSelection(int playerId, const QString& playerName)
+void MainWindow::showCharacterSelection(int playerId, const QString& playerName,
+                                         const QString& statusHint)
 {
     // 移除旧的网络页面（如果存在）
     for (int i = m_centralStack->count() - 1; i > 0; --i) {
@@ -206,6 +207,17 @@ void MainWindow::showCharacterSelection(int playerId, const QString& playerName)
     title->setAlignment(Qt::AlignCenter);
     title->setStyleSheet("font-size: 24px; font-weight: bold; color: #1565C0; padding: 8px;");
     main->addWidget(title);
+
+    // 状态提示（如本机 IP 地址）
+    if (!statusHint.isEmpty()) {
+        auto* hintLabel = new QLabel(statusHint, page);
+        hintLabel->setAlignment(Qt::AlignCenter);
+        hintLabel->setStyleSheet(
+            "font-size: 13px; color: #1565C0; font-weight: bold;"
+            " background: #E3F2FD; border: 1px solid #90CAF9;"
+            " border-radius: 4px; padding: 8px 12px;");
+        main->addWidget(hintLabel);
+    }
 
     auto* subtitle = new QLabel(
         QStringLiteral("%1 — 请选择你的武将").arg(playerName), page);
