@@ -137,6 +137,14 @@ cmake -B build -G "MinGW Makefiles" `
 cmake --build build -j
 ```
 
+首次构建（或 `build/` 被删除重建）后，需将 Qt DLL 部署到 exe 同目录：
+
+```powershell
+D:\QT\6.11.1\mingw_64\bin\windeployqt.exe build\SanguoshaQt.exe
+```
+
+（仅需跑一次；后续增量编译无需重跑。）
+
 运行/测试前需把 Qt DLL 和配套 MinGW 运行库加入 PATH（每个新终端执行一次）：
 
 ```powershell
@@ -154,10 +162,17 @@ $env:PATH = "D:\QT\6.11.1\mingw_64\bin;D:\QT\Tools\mingw1310_64\bin;$env:PATH"
 
 ## 运行
 
+### 终端运行（需先设 PATH）
+
 ```powershell
 cd build
-.\SanguoshaQt.exe   # 终端运行需先将 Qt 与 MinGW 的 bin 目录加入 PATH
+$env:PATH = "D:\QT\6.11.1\mingw_64\bin;D:\QT\Tools\mingw1310_64\bin;$env:PATH"
+.\SanguoshaQt.exe
 ```
+
+### 双击运行（免设 PATH，需先跑一次 windeployqt）
+
+首次构建后执行 `D:\QT\6.11.1\mingw_64\bin\windeployqt.exe build\SanguoshaQt.exe`，把 Qt DLL 部署到 exe 同目录。之后即可直接双击 `build\SanguoshaQt.exe`，无需每次设 PATH。
 
 主界面可直接选择本地双人对战，或通过「创建房间」/「加入房间」使用默认端口 `9527` 进行局域网对战。
 
