@@ -217,9 +217,16 @@ void GameBoardWidget::onGameOver(int winnerId)
     m_autoAdvanceTimer->stop();
     clearLogQueue();
     m_state = State::Idle;
-    QString msg = (winnerId >= 0)
-        ? QStringLiteral("游戏结束！获胜！")
-        : QStringLiteral("游戏结束！平局！");
+    QString msg;
+    if (winnerId < 0) {
+        msg = QStringLiteral("游戏结束！平局！");
+    } else if (m_restrictToLocalPlayer) {
+        msg = (winnerId == m_localPlayerId)
+            ? QStringLiteral("游戏结束！你获胜！")
+            : QStringLiteral("游戏结束！你失败了。");
+    } else {
+        msg = QStringLiteral("游戏结束！玩家%1获胜！").arg(winnerId + 1);
+    }
     m_logLabel->setText(msg);
     m_actionPanel->setHint(msg);
     QMessageBox::information(this, QStringLiteral("游戏结束"), msg);

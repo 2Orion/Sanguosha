@@ -1,7 +1,9 @@
 #include <QtTest>
 
 #include <QButtonGroup>
+#include <QApplication>
 #include <QLabel>
+#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPointer>
 #include <QPushButton>
@@ -12,6 +14,7 @@
 
 #include "ActionPanelWidget.h"
 #include "CardWidget.h"
+#include "ClientApp.h"
 #include "GameBoardWidget.h"
 #include "GameViewModel.h"
 #include "HandCardAreaWidget.h"
@@ -76,6 +79,8 @@ private slots:
     void logQueueClearedOnPhaseChange();
     void gameBoardSkillSelection();
     void targetSelectionState();
+    void gameBoardGameOverResult();
+    void clientAppBoardOwnership();
     void mainWindowAndAppComposition();
 };
 
@@ -617,6 +622,61 @@ void ViewTest::targetSelectionState()
     board.onTargetSelectionFinished();
     QVERIFY(!topInfo->isTargetable());
     QVERIFY(!bottomInfo->isTargetable());
+}
+
+void ViewTest::gameBoardGameOverResult()
+{
+    auto closeMessageBox = []() {
+        QTimer::singleShot(0, []() {
+            for (QWidget* widget : QApplication::topLevelWidgets()) {
+                if (auto* box = qobject_cast<QMessageBox*>(widget)) {
+                    box->accept();
+                }
+            }
+        });
+    };
+
+    GameBoardWidget networkBoard;
+    networkBoard.setLocalPlayerId(0);
+    QLabel* networkLog = networkBoard.findChild<QLabel*>(QStringLiteral("logLabel"));
+    QVERIFY(networkLog != nullptr);
+
+    closeMessageBox();
+    networkBoard.onGameOver(0);
+    QCOMPARE(networkLog->text(), QStringLiteral("游戏结束！你获胜！"));
+
+    closeMessageBox();
+    networkBoard.onGameOver(1);
+    QCOMPARE(networkLog->text(), QStringLiteral("游戏结束！你失败了。"));
+
+    closeMessageBox();
+    networkBoard.onGameOver(-1);
+    QCOMPARE(networkLog->text(), QStringLiteral("游戏结束！平局！"));
+
+    GameBoardWidget localBoard;
+    QLabel* localLog = localBoard.findChild<QLabel*>(QStringLiteral("logLabel"));
+    QVERIFY(localLog != nullptr);
+    closeMessageBox();
+    localBoard.onGameOver(1);
+    QCOMPARE(localLog->text(), QStringLiteral("游戏结束！玩家2获胜！"));
+}
+
+void ViewTest::clientAppBoardOwnership()
+{
+    auto* unadoptedApp = new ClientApp;
+    QPointer<GameBoardWidget> unadoptedBoard = unadoptedApp->boardWidget();
+    QVERIFY(!unadoptedBoard.isNull());
+    QVERIFY(unadoptedBoard->parent() == nullptr);
+    delete unadoptedApp;
+    QVERIFY(unadoptedBoard.isNull());
+
+    QWidget owner;
+    auto* adoptedApp = new ClientApp;
+    QPointer<GameBoardWidget> adoptedBoard = adoptedApp->boardWidget();
+    adoptedBoard->setParent(&owner);
+    delete adoptedApp;
+    QVERIFY(!adoptedBoard.isNull());
+    QCOMPARE(adoptedBoard->parentWidget(), &owner);
 }
 
 void ViewTest::mainWindowAndAppComposition()

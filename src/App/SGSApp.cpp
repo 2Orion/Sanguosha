@@ -216,12 +216,11 @@ void SGSApp::onConnectionError(const QString& error)
 
 void SGSApp::onNetworkGameOver(int winnerId)
 {
-    if (m_clientApp) {
-        // 断开连接（但保留 board 以便玩家看到结局画面）
-        m_clientApp->gameClient()->disconnectFromServer();
-    }
+    Q_UNUSED(winnerId);
 
-    // 清理网络对象
+    // GameBoardWidget::onGameOver 已先展示结局对话框。随后统一清理网络
+    // 对象；releaseClient() 会先断开 GameClient → SGSApp 的生命周期信号，
+    // 因此这里的主动断开不会再被误报成“连接错误”。
     releaseNetworkGame();
 
     auto* mainWin = static_cast<MainWindow*>(m_mainWindow);
@@ -240,8 +239,12 @@ void SGSApp::releaseNetworkGame()
 void SGSApp::releaseClient()
 {
     if (m_clientApp) {
-        // 断开网络连接
-        m_clientApp->gameClient()->disconnectFromServer();
+        GameClient* client = m_clientApp->gameClient();
+        // 主动清理前先切断 GameClient → SGSApp 的所有连接，避免
+        // disconnectFromServer() 随后发出的 disconnected/errorOccurred
+        // 再次进入 onConnectionError()。ClientApp 内部连接不受影响。
+        QObject::disconnect(client, nullptr, this, nullptr);
+        client->disconnectFromServer();
         m_clientApp->deleteLater();
         m_clientApp = nullptr;
     }

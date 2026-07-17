@@ -1,5 +1,26 @@
 # Changelog
 
+## [2026-07-17] 联网胜负提示 + 主动断开清理 + ClientApp 棋盘生命周期
+
+修复联网对局结束与连接失败路径中的三项 View/App 生命周期问题。
+
+**View：按本地玩家身份显示正确胜负**
+- 问题：`GameBoardWidget::onGameOver` 只判断 `winnerId >= 0`，因此联网胜方和败方都会显示「游戏结束！获胜！」。
+- 修复：联网模式下比较 `winnerId` 与 `m_localPlayerId`，分别显示「你获胜」或「你失败了」；平局保持原提示。本地同屏模式改为显示具体的「玩家 N 获胜」，避免含糊的第一人称文案。
+
+**App：正常 GameOver 主动断开不再误报连接错误**
+- 问题：收到 GameOver 后主动调用 `disconnectFromServer()`，仍会触发已连接到 `SGSApp::onConnectionError` 的 `disconnected`/`errorOccurred`，可能在正常结局后再次弹出「与服务器断开连接」。异常连接路径也可能因 error + disconnected 连续到达而重复处理。
+- 修复：`releaseClient()` 在主动断开前先移除 `GameClient → SGSApp` 的生命周期信号连接，再统一断开 socket 和延迟销毁 `ClientApp`；`onNetworkGameOver()` 只走这一条清理路径，避免重复断开与错误弹窗。`GameClient ↔ GameBoardWidget` 的内部连接不受影响。
+
+**ClientApp：释放未被主窗口接管的 GameBoardWidget**
+- 问题：`ClientApp` 创建的 `GameBoardWidget` 初始没有 QWidget 父对象；连接失败、版本拒绝或房间已满时不会进入 `MainWindow::showGamePage()`，删除 `ClientApp` 也不会自动删除 board，反复重试会泄漏整棵控件树及其定时器。
+- 修复：新增 `ClientApp` 析构函数。board 仍无父对象时由 `ClientApp` 删除；若已被 `QStackedWidget` 接管，则继续由主窗口负责。监听 board 的 `destroyed` 信号同步清空内部指针，避免外部提前销毁后的悬空引用。
+
+**测试**
+- `ViewTest` 新增 `gameBoardGameOverResult`：覆盖联网胜/负/平局和本地同屏获胜文案。
+- `ViewTest` 新增 `clientAppBoardOwnership`：覆盖未接管 board 随 `ClientApp` 释放，以及已接管 board 不被重复删除。
+- `SanguoshaQt`、`ViewTest`、`NetworkTest` 重新编译通过；完整 `ViewTest` 与 `NetworkTest` 直接运行均返回 0。
+
 ## [2026-07-17] log 顺序播放 + 借刀路由 + 判定定时器兜底
 
 三项修复，全套件 5/5 通过（新增 borrowCardResponse / logQueueSequentialPlayback / logQueueClearedOnPhaseChange / judgeTimerMaxRetriesProtection 用例）。

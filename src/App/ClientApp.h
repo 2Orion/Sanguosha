@@ -15,6 +15,7 @@ class ClientApp : public QObject {
     Q_OBJECT
 public:
     explicit ClientApp(QObject* parent = nullptr);
+    ~ClientApp() override;
 
     /// 游戏桌面（供调用方嵌入到自己的窗口容器里；ClientApp 不创建 MainWindow）
     GameBoardWidget* boardWidget() const { return m_board; }
