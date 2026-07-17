@@ -17,11 +17,12 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # 2. 安装并配置 MinGW 编译器环境（重要：确保 gcc/g++ 和 make 可用）
-    - name: Set up MinGW
-      uses: egor-tensin/setup-mingw@v2
-      with:
-        platform: x64
+    # 2. 配置 MinGW 编译器环境（重要：确保 gcc/g++ 和 make 可用）
+    - name: Set up MinGW (Use Pre-installed)
+      shell: bash
+      run: |
+        # 将 Git 预装的 MinGW 路径加入到系统环境变量中
+        echo "C:/Program Files/Git/mingw64/bin" >> $GITHUB_PATH
 
     # 3. 安装 Qt 6.11.1 (针对 MinGW 架构)
     - name: Install Qt
