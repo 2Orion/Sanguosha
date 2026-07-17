@@ -17,34 +17,30 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # 2. 安装 Qt 和官方匹配的 MinGW 编译器（一键完成，无需手动配置 MinGW）
+    # 2. 安装 Qt 和官方匹配的 MinGW 编译器（内含兼容的 GCC 13+）
     - name: Install Qt and Compatible MinGW
       uses: jurplel/install-qt-action@v4
       with:
-        version: '6.8.2'       # 如果使用 6.11.1，请加 aqtsource: 'git+https://github.com/miurahr/aqtinstall.git'
+        version: '6.8.2'  # 使用极其稳定的 6.8 LTS 版本
         host: 'windows'
         target: 'desktop'
         arch: 'win64_mingw'
-        tools: 'tools_mingw'   # 核心：自动下载并配置与当前 Qt 版本完全兼容的官方 MinGW 工具链
+        tools: 'tools_mingw'   # 自动下载并配置官方 MinGW
 
-    # 3. 配置 CMake (此时 CMake 会自动识别上一步安装的官方 MinGW)
+    # 3. 配置 CMake 
+    # （移除了 shell: bash，使其在默认的 pwsh 下安全运行）
     - name: Configure CMake
-      shell: bash
       run: |
-        cmake -S . -B build \
-              -G "MinGW Makefiles" \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}"
+        cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=${{ env.QT_ROOT_DIR }}"
 
     # 4. 执行编译
     - name: Build Project
       run: cmake --build build --config Release --parallel
 
-    # 5. 运行测试（解决 GUI 崩溃与动态库查找问题）
+    # 5. 运行测试
+    # （移除了 shell: bash，并在本地环境中运行 ctest）
     - name: Run Tests
-      shell: bash
       env:
-        # 核心：强制 Qt 在虚拟的“离屏”状态下运行，防止在无显示器的 CI 上发生 GUI 初始化崩溃
         QT_QPA_PLATFORM: offscreen
       run: |
         cd build
