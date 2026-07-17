@@ -17,40 +17,43 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # 2. 配置 MinGW 编译器环境（重要：确保 gcc/g++ 和 make 可用）
-    - name: Set up MinGW (Use Pre-installed)
-      shell: bash
-      run: |
-        # 将 Git 预装的 MinGW 路径加入到系统环境变量中
-        echo "C:/Program Files/Git/mingw64/bin" >> $GITHUB_PATH
+    # 2. 安装 MSYS2 MinGW（与 Qt win64_mingw 的 ABI 一致）
+    - name: Set up MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >-
+          mingw-w64-x86_64-gcc
+          mingw-w64-x86_64-cmake
+          mingw-w64-x86_64-make
 
-    # 3. 安装 Qt 6.11.1 (针对 MinGW 架构)
+    # 3. 安装 Qt 6.8.2 (针对 MinGW 架构)
     - name: Install Qt
       uses: jurplel/install-qt-action@v4
       with:
-        version: '6.8.2'  # 改为极其稳定的 6.8 LTS 版本
+        version: '6.8.2'
         host: 'windows'
         target: 'desktop'
         arch: 'win64_mingw'
 
-    # 4. 配置 CMake (对应您的 cmake .. -G "MinGW Makefiles")
-    # 使用由 install-qt-action 自动设置的 QT_ROOT_DIR 环境变量来定位 Qt
+    # 4. 配置 CMake（使用 MSYS2 的 MinGW 编译器）
     - name: Configure CMake
-      shell: bash
+      shell: msys2 {0}
       run: |
         cmake -S . -B build \
-              -G "MinGW Makefiles" \
+              -G "MSYS Makefiles" \
               -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}"
+              -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
 
-    # 5. 执行编译 (对应您的 make -j)
-    # 推荐使用 CMake 统一的构建命令，它在 Windows 下会自动调用 mingw32-make 并在多核下并行编译
+    # 5. 执行编译
     - name: Build Project
-      run: cmake --build build --config Release --parallel
+      shell: msys2 {0}
+      run: cmake --build build --parallel
 
-    # 6. 运行测试（可选，如果您有测试用例）
+    # 6. 运行测试
     - name: Run Tests
-      shell: bash
+      shell: msys2 {0}
       run: |
         cd build
         ctest --output-on-failure
