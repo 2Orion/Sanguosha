@@ -17,27 +17,27 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # 2. 安装 Qt 和官方匹配的 MinGW 编译器
+    # 2. 安装 Qt 6.8.2 并下载官方配套的 GCC 13.1.0 编译器
     - name: Install Qt and Compatible MinGW
       uses: jurplel/install-qt-action@v4
       with:
-        version: '6.8.2'  # 使用极其稳定的 6.8 LTS 版本
+        version: '6.8.2'  # 使用稳定的 6.8 LTS 版本
         host: 'windows'
         target: 'desktop'
         arch: 'win64_mingw'
-        tools: 'tools_mingw'   # 自动下载官方配套的 MinGW
+        # 核心修复：指定下载针对 Qt6 配套的 GCC 13.1.0 编译器，而非古老的旧版 tools_mingw
+        tools: 'tools_mingw1310'   
 
-    # 3. 核心修复：动态寻找官方配套 MinGW 并将其强制置于 PATH 最前端
+    # 3. 动态寻找官方配套 MinGW 并将其强制置于 PATH 最前端
     - name: Prioritize Qt MinGW in PATH
       run: |
-        # 寻找 Qt/Tools 目录下的 MinGW 编译器路径
+        # 寻找 Qt/Tools 目录下的 MinGW 13.1.0 编译器路径并追加到系统环境变量中
         $mingwPath = Get-ChildItem -Path "${{ env.QT_ROOT_DIR }}\..\..\Tools" -Filter "mingw*" | Select-Object -ExpandProperty FullName
         $mingwBin = "${mingwPath}\bin"
         Write-Host "Prioritizing Qt MinGW Bin Path: $mingwBin"
-        # 写入 GITHUB_PATH 会使其在后续所有步骤中处于最高优先级
         echo "$mingwBin" >> $env:GITHUB_PATH
 
-    # 4. 配置 CMake（此时 CMake 能够 100% 优先找到 Qt 官方最新的 GCC 13+ 编译器）
+    # 4. 配置 CMake（此时系统将 100% 优先并成功调用最新的 GCC 13.1.0 编译器）
     - name: Configure CMake
       run: |
         cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=${{ env.QT_ROOT_DIR }}"
