@@ -2355,6 +2355,13 @@ private slots:
             if (card && (card->cardType() == CardType::Peach || card->cardType() == CardType::Wine))
                 p0->removeHandCard(card);
         }
+        // 玩家 1（濒死者本人）在濒死链中排第一位（dyingSaviors 先给自救机会，
+        // 桃/酒均可），随机起手里若有桃/酒，濒死 pending 就不会命中自动跳过，
+        // 而本用例此后无人响应它 → gameOver 永远不来。同样清掉。
+        for (Card* card : std::vector<Card*>(p1->handCards())) {
+            if (card && (card->cardType() == CardType::Peach || card->cardType() == CardType::Wine))
+                p1->removeHandCard(card);
+        }
         // 给玩家 1 一张确定的闪，确保 Dodge 待定动作不会被自动跳过分支吞掉
         // （否则若随机发牌里玩家 1 恰好没有闪，pendingActionCreated 永远不会
         // 广播到网络，pending1 会一直是空的，等价于把响应阶段整个跳过）。

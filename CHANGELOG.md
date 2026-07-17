@@ -13,9 +13,15 @@
 - `ActionViewModel::playCard` 中装备牌打出不再发「使用了【xx】」日志（装备区变化本身可见，按要求排除装备牌）。
 
 **测试**
-- `ViewModelTest::actionLogForwardingAndEquipSilence`：验证出杀/无闪跳过的日志经 `GameViewModel::logMessage` 可见，装备牌打出无日志。
+- `ViewModelTest::actionLogForwardingAndEquipSilence`：验证出杀且对面无闪时「使用了【杀】」「没有【闪】」两条日志均经 `GameViewModel::logMessage` 可见，装备牌打出无日志。
 - `ViewTest::logRevertsToPendingDescriptionWhileResponding`：验证响应期间收到结算 log 后，播完回退到响应提示而非阶段提示；pending 清除后才回退阶段提示。
 - 全套件 5/5 通过。
+
+**随手修复的两处测试随机性 flaky（根因相同：`startGame` 随机发牌 + GameViewModel 自动跳过）**
+- `GameViewModel::onModelPendingActionCreated` 会在响应者无可用响应牌时**同步** `skipResponse`（pending 在 `setPendingAction` 信号链内即被清除，`playCard` 返回 `Completed` 而非 `RequiresDodge`）。凡经 GameViewModel 建 pending 的测试都必须控制响应者手牌，否则结果取决于随机起手（约五五开）。
+- `ViewModelTest::actionLogForwardingAndEquipSilence`：原写法假设出杀必返回 `RequiresDodge`，对手随机起手无闪时即失败（单独跑亦 ~40% 失败）。改为清空对手手牌，确定性走「无闪自动跳过」路径断言直接扣血 + 两条日志；「有闪 → RequiresDodge」路径由 `gameViewModelPendingDto` 覆盖（它显式给对手塞闪）。
+- `NetworkTest::endToEndTwoClientGameHandshakeToGameOver`：濒死链先问濒死者本人（`dyingSaviors` 自救排首位，桃/酒均可）。用例只清了 p0（救援者）的桃/酒，p1 随机起手若有桃/酒，濒死 pending 不自动跳过且无人响应 → gameOver 超时（~40% 失败）。补清 p1 的桃/酒。
+- 修复后 `ViewModelTest` 单独 30/30、e2e 10/10、完整 ctest 连续 4 次 5/5。
 
 ## [2026-07-17] 濒死/酒/判定区规则 + 武圣选择 + 奸雄伤害牌
 

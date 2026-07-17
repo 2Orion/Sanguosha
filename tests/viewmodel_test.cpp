@@ -498,25 +498,30 @@ void ViewModelTest::actionLogForwardingAndEquipSilence()
     Player* current = viewModel.gameState()->player(0);
     Player* opponent = viewModel.gameState()->player(1);
 
-    // 出杀：应有「使用了【杀】」日志
+    // 清空对手随机起手牌，确定性触发「无闪自动跳过」：
+    // onModelPendingActionCreated 检测响应者无可用响应牌时，会在
+    // setPendingAction 信号链内同步 skipResponse 结算伤害并清除 pending，
+    // 因此 playCard 返回 Completed。「有闪 → RequiresDodge」路径由
+    // gameViewModelPendingDto 覆盖（它显式给对手塞了一张闪）。
+    const auto oppHand = opponent->handCards();
+    for (Card* c : oppHand) opponent->removeHandCard(c);
+
+    // 出杀且对面无闪：直接扣血，「使用了【杀】」「没有【闪】」两条日志都必须到达
     KillCard kill(CardSuit::Spade, 7);
     current->addHandCard(&kill);
     logs.clear();
-    QCOMPARE(viewModel.actionVM()->playCard(kill.id(), 0, {1}),
-             ActionResult::RequiresDodge);
-    bool sawKillLog = false;
-    for (const QString& l : logs)
-        if (l.contains(QStringLiteral("使用了【杀】"))) sawKillLog = true;
-    QVERIFY(sawKillLog);
-
-    // 无闪跳过：应有「没有【闪】，受到伤害」日志
-    logs.clear();
     const int hpBefore = opponent->hp();
-    viewModel.actionVM()->skipResponse(1, true);
+    QCOMPARE(viewModel.actionVM()->playCard(kill.id(), 0, {1}),
+             ActionResult::Completed);
+    QVERIFY(!viewModel.gameState()->hasPendingAction());
     QCOMPARE(opponent->hp(), hpBefore - 1);
+    bool sawKillLog = false;
     bool sawDamageLog = false;
-    for (const QString& l : logs)
+    for (const QString& l : logs) {
+        if (l.contains(QStringLiteral("使用了【杀】"))) sawKillLog = true;
         if (l.contains(QStringLiteral("没有【闪】"))) sawDamageLog = true;
+    }
+    QVERIFY(sawKillLog);
     QVERIFY(sawDamageLog);
 
     // 装备牌：打出时不发「使用了」日志
