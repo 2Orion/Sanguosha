@@ -287,9 +287,6 @@ target_link_libraries(ViewTest PRIVATE
 )
 
 add_test(NAME ViewTest COMMAND ViewTest)
-set_tests_properties(ViewTest PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
-)
 
 # ==================== Network 层测试 ====================
 
@@ -324,6 +321,12 @@ target_link_libraries(NetworkTest PRIVATE
 )
 
 add_test(NAME NetworkTest COMMAND NetworkTest)
-set_tests_properties(NetworkTest PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
-)
+
+# Linux headless environments need the offscreen QPA plugin. On Windows,
+# forcing offscreen can hang QWidget tests under Qt 6.11, so use the native
+# platform plugin selected by Qt instead.
+if(UNIX AND NOT APPLE)
+    set_tests_properties(ViewTest NetworkTest PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
+endif()

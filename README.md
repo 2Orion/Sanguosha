@@ -185,15 +185,15 @@ cmake --build build --parallel 4
 ctest --test-dir build --output-on-failure
 ```
 
-当前注册 5 个测试：`ModelSmokeTest`、`ModelTest`、`ViewModelTest`、`ViewTest` 和 `NetworkTest`。`ViewTest` 和 `NetworkTest` 通过 CTest 自动使用 `QT_QPA_PLATFORM=offscreen`，不需要桌面显示服务器（`NetworkTest` 自 Step 7 起会创建真实 `GameBoardWidget`，因此也需要 offscreen 平台插件）。
+当前注册 5 个测试：`ModelSmokeTest`、`ModelTest`、`ViewModelTest`、`ViewTest` 和 `NetworkTest`。`ViewTest` 和 `NetworkTest` 会创建真实 QWidget；Windows 使用 Qt 默认的原生平台插件，Linux 非 macOS 环境通过 CTest 自动使用 `QT_QPA_PLATFORM=offscreen`，以支持无桌面显示服务器的测试环境。
 
 直接运行单个 Qt Test 时，可以使用对应的构建产物：
 
 ```powershell
 .\build\ModelTest.exe
 .\build\ViewModelTest.exe
-$env:QT_QPA_PLATFORM = "offscreen"; .\build\ViewTest.exe
-$env:QT_QPA_PLATFORM = "offscreen"; .\build\NetworkTest.exe
+.\build\ViewTest.exe
+.\build\NetworkTest.exe
 ```
 
 当前完整套件包含 5 个测试目标；`NetworkTest -functions` 当前列出 63 个测试函数。覆盖基本卡牌规则、
