@@ -16,6 +16,10 @@ GameBoardWidget::GameBoardWidget(QWidget* parent) : QWidget(parent)
     m_autoAdvanceTimer->setSingleShot(true);
     connect(m_autoAdvanceTimer, &QTimer::timeout, this, &GameBoardWidget::advanceRequested);
 
+    m_logRevertTimer = new QTimer(this);
+    m_logRevertTimer->setSingleShot(true);
+    connect(m_logRevertTimer, &QTimer::timeout, this, &GameBoardWidget::revertLogToPhase);
+
     setupLayout();
 
     // 子控件信号
@@ -87,6 +91,16 @@ void GameBoardWidget::onPhaseChanged(PhaseType phase)
     exitSkillSelection();
     m_currentPhase = phase;
     m_actionPanel->updateForPhase(phase, false);
+
+    // 阶段切换：取消结算 log 回退，直接显示阶段提示
+    m_logRevertTimer->stop();
+    m_logLabel->setStyleSheet(Theme::hintBar(12));
+    m_logLabel->setText(phaseLogText(phase));
+
+    // 先停掉上阶段的自动推进定时器，再按需重启。
+    // 若 Draw 的 300ms 定时器在 Play 到达后仍触发，会把 Play 误推进到 Discard，
+    // 网络 e2e 测试里表现为"点击杀无响应/手牌未移除"。
+    m_autoAdvanceTimer->stop();
 
     switch (phase) {
     case PhaseType::Prepare:
@@ -167,7 +181,11 @@ void GameBoardWidget::onPendingActionCreated(const PendingActionData& info)
     m_responderId = (info.requiredCardType == CardType::Peach)
             ? info.sourceId : info.targetId;
     m_actionPanel->updateForPendingAction(info);
-    onLogMessage(info.description);
+    // 响应提示常驻，直到有结算 log 或阶段切换
+    m_logRevertTimer->stop();
+    m_autoAdvanceTimer->stop();  // 响应中禁止自动推进
+    m_logLabel->setStyleSheet(Theme::hintBar(12));
+    m_logLabel->setText(info.description);
 }
 
 void GameBoardWidget::onPendingActionCleared()
@@ -181,12 +199,17 @@ void GameBoardWidget::onPendingActionCleared()
         m_actionPanel->setSkillAvailable(
             m_skillAvailable && canControlPlayer(m_currentPlayerId));
     }
+    // 若没有后续结算 log 覆盖，2s 后回退到阶段提示
+    if (!m_logRevertTimer->isActive()) {
+        m_logRevertTimer->start(2000);
+    }
 }
 
 void GameBoardWidget::onGameOver(int winnerId)
 {
     exitSkillSelection();
     m_autoAdvanceTimer->stop();
+    m_logRevertTimer->stop();
     m_state = State::Idle;
     QString msg = (winnerId >= 0)
         ? QStringLiteral("游戏结束！获胜！")
@@ -228,7 +251,13 @@ void GameBoardWidget::onSkillClicked()
     emit skillRequested(selectedIds, playerId);
 }
 
-void GameBoardWidget::onLogMessage(const QString& msg) { m_logLabel->setText(msg); }
+void GameBoardWidget::onLogMessage(const QString& msg)
+{
+    m_logLabel->setStyleSheet(Theme::hintBar(12));
+    m_logLabel->setText(msg);
+    // 结算类 log 停留约 2 秒后切回阶段提示
+    m_logRevertTimer->start(2000);
+}
 
 void GameBoardWidget::onJudgmentPerformed(const CardData& judgeCard, const QString& resultText, bool effective)
 {
@@ -240,6 +269,32 @@ void GameBoardWidget::onJudgmentPerformed(const CardData& judgeCard, const QStri
 
     // 生效时高亮日志区域（红色），否则绿色（深色主题变体）
     m_logLabel->setStyleSheet(Theme::judgmentBar(effective));
+    m_logRevertTimer->start(2000);
+}
+
+void GameBoardWidget::revertLogToPhase()
+{
+    m_logLabel->setStyleSheet(Theme::hintBar(12));
+    m_logLabel->setText(phaseLogText(m_currentPhase));
+}
+
+QString GameBoardWidget::phaseLogText(PhaseType phase)
+{
+    switch (phase) {
+    case PhaseType::Prepare:
+        return QStringLiteral("准备阶段");
+    case PhaseType::Judge:
+        return QStringLiteral("判定阶段");
+    case PhaseType::Draw:
+        return QStringLiteral("摸牌阶段");
+    case PhaseType::Play:
+        return QStringLiteral("出牌阶段");
+    case PhaseType::Discard:
+        return QStringLiteral("弃牌阶段");
+    case PhaseType::End:
+        return QStringLiteral("结束阶段");
+    }
+    return QStringLiteral("准备中...");
 }
 
 void GameBoardWidget::refreshDisplay() {}

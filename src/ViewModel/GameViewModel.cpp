@@ -49,6 +49,8 @@ bool GameViewModel::startGame(int characterId1, int characterId2)
 void GameViewModel::advancePhase()
 {
     if (m_state->isGameOver()) return;
+    // 判定展示期间禁止外部推进，避免与 m_judgeTimer 竞态把阶段打乱
+    if (m_judgePending) return;
     switch (m_state->currentPhase()) {
     case PhaseType::Prepare: executePhasePrepare(); setNextPhase(PhaseType::Judge); break;
     case PhaseType::Judge:

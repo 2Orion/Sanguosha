@@ -97,11 +97,22 @@ bool hasPeachToSave(const Player* player, const Player* dyingPlayer)
 
 // ==================== 卡牌执行 ====================
 
-void executeKill(GameState* state, Player* user, Player* target)
+void executeKill(GameState* state, Player* user, Player* target, Card* killCard)
 {
     if (!state || !user || !target) return;
 
     user->setUsedKillThisTurn(true);
+
+    // 青釭剑：无视防具；否则做防具判定（仁王盾挡黑杀）
+    bool ignoreArmor = false;
+    if (EquipmentCard* weapon = user->equippedAt(EquipSlot::Weapon)) {
+        if (weapon->ignoreArmor())
+            ignoreArmor = true;
+    }
+    if (!ignoreArmor && killCard && armorEffectCheck(state, target, killCard)) {
+        // 防具生效，杀直接无效，不进入出闪流程
+        return;
+    }
 
     // 大乔流离：可以将杀转移给其他角色
     if (target->character() && target->character()->canRedirectKill()) {
@@ -110,7 +121,7 @@ void executeKill(GameState* state, Player* user, Player* target)
             PendingActionInfo info;
             info.source = user;
             info.target = redirectTarget;
-            info.sourceCard = nullptr;
+            info.sourceCard = killCard;
             info.requiredCardType = CardType::Dodge;
             info.description = (user->displayName() + " 对 " + target->displayName()
                             + " 使用了【杀】，被【流离】转移至 " + redirectTarget->displayName()
@@ -126,7 +137,7 @@ void executeKill(GameState* state, Player* user, Player* target)
     PendingActionInfo info;
     info.source = user;
     info.target = target;
-    info.sourceCard = nullptr;
+    info.sourceCard = killCard;
     info.requiredCardType = CardType::Dodge;
     info.description = (user->displayName() + " 对 " + target->displayName() + " 使用了【杀】，请打出【闪】").toStdString();
     info.canSkip = false;

@@ -174,7 +174,8 @@ ActionResult ActionViewModel::playCard(int cardId, int playerId,
     // 技能转化为【杀】使用：不执行原牌效果，走杀的结算（关羽武圣 / 赵云龙胆）
     if (playsAsKill(card, user)) {
         if (targets.empty()) return ActionResult::Completed;
-        GameRule::executeKill(m_state, user, targets.front());
+        // 转化杀用原牌判花色（武圣红牌当杀 → 红色，仁王盾挡不住）
+        GameRule::executeKill(m_state, user, targets.front(), card);
         user->removeHandCard(card);
         if (m_state->cardManager()) m_state->cardManager()->discard(card);
 
@@ -184,8 +185,14 @@ ActionResult ActionViewModel::playCard(int cardId, int playerId,
                 QStringLiteral("】，将【") + QString::fromStdString(card->cardName()) +
                 QStringLiteral("】当【杀】使用 → ") + targets.front()->displayName());
 
+        if (!m_state->hasPendingAction()) {
+            emitLog(QStringLiteral("【仁王盾】生效，【杀】对 ") +
+                    targets.front()->displayName() + QStringLiteral(" 无效"));
+        }
+
         emit actionCompleted();
-        return ActionResult::RequiresDodge;
+        return m_state->hasPendingAction() ? ActionResult::RequiresDodge
+                                           : ActionResult::Completed;
     }
 
     // 装备牌：execute 内部已处理装备逻辑，不从手牌移除（由 equipCard 内部处理），
@@ -226,6 +233,15 @@ ActionResult ActionViewModel::playCard(int cardId, int playerId,
     emitLog(user->displayName() + QStringLiteral(" 使用了【") +
             QString::fromStdString(card->cardName()) + QStringLiteral("】") +
             (targetStr.isEmpty() ? QString() : QStringLiteral(" → ") + targetStr));
+
+    // 杀被防具直接抵消（仁王盾挡黑杀）时补充提示
+    if (card->cardType() == CardType::Kill &&
+        result == ActionResult::Completed &&
+        !m_state->hasPendingAction() &&
+        !targets.empty()) {
+        emitLog(QStringLiteral("【仁王盾】生效，【杀】对 ") +
+                targets.front()->displayName() + QStringLiteral(" 无效"));
+    }
 
     emit actionCompleted();
     return result;
@@ -408,22 +424,7 @@ bool ActionViewModel::canUseActiveSkill(int playerId) const
         return false;
     }
     if (m_pendingCardId >= 0 || player->hasUsedActiveSkillThisTurn()) return false;
-
-    // 孙权制衡：手中有牌即可发动
-    if (player->character()->canDiscardAndDraw() && player->hasHandCards())
-        return true;
-
-    // 关羽武圣：有红色牌可转化为杀
-    if (player->character()->hasActiveSkill()) {
-        for (Card* card : player->handCards()) {
-            if (!card) continue;
-            auto t = player->character()->skillTransformCard(card);
-            if (t == CardType::Kill && card->isRed() && GameRule::canPlayKill(m_state, player))
-                return true;
-        }
-    }
-
-    return false;
+    return player->character()->canDiscardAndDraw() && player->hasHandCards();
 }
 
 bool ActionViewModel::useActiveSkill(int playerId, const std::vector<int>& cardIds)
@@ -442,34 +443,6 @@ bool ActionViewModel::useActiveSkill(int playerId, const std::vector<int>& cardI
     }
 
     player->setUsedActiveSkillThisTurn(true);
-
-    // 关羽武圣：将红色牌当【杀】使用
-    if (cards.size() == 1 && player->handCards().size() == 1 &&
-        player->character()->skillTransformCard(cards.front()) == CardType::Kill) {
-        Card* card = cards.front();
-        QString skillName = QString::fromStdString(player->character()->skillName());
-        emitLog(player->displayName() + QStringLiteral(" 发动【") + skillName +
-                QStringLiteral("】，将【") + QString::fromStdString(card->cardName()) +
-                QStringLiteral("】当【杀】使用"));
-
-        // 用 playsAsKill 路径执行（选择目标后走杀的结算流程）
-        player->removeHandCard(card);
-        std::vector<Player*> targets;
-        for (Player* p : m_state->alivePlayers()) {
-            if (p && p != player && p->isAlive())
-                targets.push_back(p);
-        }
-        if (targets.empty()) {
-            if (m_state->cardManager()) m_state->cardManager()->discard(card);
-            emit actionCompleted();
-            return true;
-        }
-        // 选择第一个活着的玩家作为目标并执行杀
-        GameRule::executeKill(m_state, player, targets.front());
-        if (m_state->cardManager()) m_state->cardManager()->discard(card);
-        emit actionCompleted();
-        return true;
-    }
 
     // 孙权制衡：弃牌摸牌
     for (Card* card : cards) player->removeHandCard(card);

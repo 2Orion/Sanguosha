@@ -23,8 +23,6 @@ public:
     std::string skillDescription() const;
 
     virtual bool hasSkill() const;
-    /// 是否有可通过技能按钮主动发动的技能（如制衡、武圣、流离）
-    virtual bool hasActiveSkill() const;
     virtual bool triggerCondition(GameEvent event, const GameState* state, const Player* self) const;
     virtual void triggerSkill(GameState* state, Player* self);
     virtual CardType skillTransformCard(const Card* card) const;
@@ -65,7 +63,6 @@ class GuanYu : public Character {
 public:
     GuanYu(QObject* parent = nullptr);
     bool hasSkill() const override;
-    bool hasActiveSkill() const override;
     CardType skillTransformCard(const Card* card) const override;
 };
 
@@ -94,7 +91,6 @@ class SunQuan : public Character {
 public:
     SunQuan(QObject* parent = nullptr);
     bool hasSkill() const override;
-    bool hasActiveSkill() const override;
     bool canDiscardAndDraw() const override;
 };
 
@@ -122,7 +118,6 @@ class DaQiao : public Character {
 public:
     DaQiao(QObject* parent = nullptr);
     bool hasSkill() const override;
-    bool hasActiveSkill() const override;
     bool canRedirectKill() const override;
     Player* getRedirectTarget(GameState* state, Player* self, Player* attacker) const override;
 };

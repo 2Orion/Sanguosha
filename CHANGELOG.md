@@ -1,5 +1,31 @@
 # Changelog
 
+## [2026-07-17] tobefixed 修复：装备/武圣/大乔/结算 log + NetworkTest 竞态
+
+处理 `tobefixed.md` 剩余项（同伴 `dd9433d` 已解决扣血❌心、移除五谷/八卦/麒麟弓/丈八、删本机 IP），并修掉网络 e2e flaky。
+
+**规则 / Model**
+- `GameRule::executeKill` 增加可选 `Card* killCard`：出杀前做防具判定。仁王盾对**黑色杀**直接无效（不进入出闪）；攻击方装备青釭剑（`ignoreArmor()`）时跳过防具。`KillCard::execute` / 武圣转化出杀均传入原牌判花色。
+- 牌堆总数 **101→95**（同伴已从牌堆移除五谷×2、丈八、麒麟弓、八卦×2；类与逻辑保留）。
+- 装备 hover 文案已在构造函数 `setDescription` 中齐全（仁王盾/青釭剑等），`CardWidget` tooltip 直通，无需额外 UI 改动。
+
+**武将**
+- 关羽武圣：回退同伴「发动技能按钮→当杀」实现（该路径有 `skillTransformCard(nullptr)` 误判、只能打第一活人等硬伤）。恢复出牌转化路径——出牌阶段直接点红牌当杀，走 `playsAsKill`/`playCard`，受出杀次数限制（非张飞/连弩一回合一次）。主动技能按钮仅孙权制衡使用。
+- 大乔流离：两人局无第三人可转移，选将页 `CHAR_LIST` 加 `hidden` 字段暂时隐藏大乔（**不删** charId=7 / `DaQiao` 类 / `executeKill` 流离分支，索引与 `createCharacterById` 对齐）。
+
+**View：结算 log 停留后回退**
+- `GameBoardWidget` 新增 `m_logRevertTimer`（2s single-shot）：`onLogMessage` / 判定展示后停留约 2 秒，再切回当前阶段文案（出牌阶段/弃牌阶段等）；`onPhaseChanged` / 新 pending 到来时取消回退。View 零依赖 VM，阶段文案由 `phaseLogText(m_currentPhase)` 本地生成。
+- `onPhaseChanged` **先 stop 再按需 start** `m_autoAdvanceTimer`，避免 Draw 的 300ms 定时器在进入 Play 后仍触发，把 Play 误推进到 Discard。
+
+**网络 / 竞态**
+- `ServerApp`：`AdvanceRequested` 在 **Discard** 阶段拒绝（弃牌须走确认）；Play 仍允许作为 endPlay 等价物（与 `advancePhase` 的 pending 保护一致）。
+- `GameViewModel::advancePhase`：`m_judgePending` 时拒绝外部推进，消除与判定定时器竞态。
+- `NetworkTest::clientAppWiresBoardToGameClientWithZeroBoardChanges` 改为轮询推进阶段 + 监听 `playCardRequested` + 服务端兜底，降低 loopback 时序敏感；全套件连跑稳定 5/5。
+
+**测试**
+- ModelSmoke/ModelTest：牌堆 95、仁王盾挡黑杀 / 红杀正常 / 青釭剑无视防具用例。
+- NetworkTest 函数数随既有用例约 65；CTest 5/5 连续多次通过。
+
 ## [2026-07-17] UI 美化 Step U4：手牌扇形排列 + 绘制层动画
 
 - `CardWidget` 新增**扇形绘制模式**（`setFanMode(enabled, rotationDeg, baseLift)`）：开启后控件外扩 `2*FAN_MARGIN`（10px），牌面居中绘制在中央 80×112 区域并**绕牌面中心旋转**，四周留白容纳旋转四角与上浮溢出。关键：旋转/上浮全为**绘制层**（`QPainter` 旋转+平移），控件几何仍是正立矩形，Qt 事件命中只认几何 → 固定坐标点击测试完全不受影响。裸控件（非扇形）保持 80×112。

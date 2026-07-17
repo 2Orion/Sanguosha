@@ -219,8 +219,21 @@ void ServerApp::onClientCommandReceived(int playerId, MessageType type,
         // 同上——且 ClientApp（Step 7）实现后每个客户端会各自持有一份
         // GameBoardWidget 的 AutoAdvanceTimer，非当前玩家一侧的计时器
         // 触发的 AdvanceRequested 必须被这里挡住，否则会越权驱动阶段推进。
-        if (playerId == m_gvm->currentPlayerId())
-            m_gvm->onAdvanceRequested();
+        //
+        // AutoAdvance 只应用于自动阶段（Prepare/Judge/Draw/End）。
+        // Play 阶段允许显式 AdvanceRequested 作为 endPlay 的等价物
+        // （advancePhase 在无 pending 时 Play→Discard），但 Discard 阶段
+        // 不接受 Advance（须走弃牌确认）。迟到的 AutoAdvance 若在 Play
+        // 仍可能误推进——这是可接受的显式命令语义，由 GameViewModel 的
+        // hasPendingAction 保护。
+        if (playerId == m_gvm->currentPlayerId()) {
+            const PhaseType phase = m_gvm->gameState()
+                    ? m_gvm->gameState()->currentPhase()
+                    : PhaseType::Prepare;
+            if (phase != PhaseType::Discard) {
+                m_gvm->onAdvanceRequested();
+            }
+        }
         break;
     case MessageType::SkipRequested:
         // GameViewModel::onSkipRequested 内部用 pendingResponder() 从游戏
