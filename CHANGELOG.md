@@ -1,5 +1,23 @@
 # Changelog
 
+## [2026-07-17] log 顺序播放 + 借刀路由 + 判定定时器兜底
+
+三项修复，全套件 5/5 通过（新增 borrowCardResponse / logQueueSequentialPlayback / logQueueClearedOnPhaseChange / judgeTimerMaxRetriesProtection 用例）。
+
+**View：结算 log 队列顺序播放**
+- 问题：一次出牌结算在同一调用栈内连续 `emit logMessage`（如「A 使用【杀】」→「B 打出【闪】」→伤害提示），`GameBoardWidget::onLogMessage` 每次直接 `setText` 覆盖 `m_logLabel`，玩家只看到最后一条。
+- 改造：新增 `struct LogEntry { QString text; QString style; }` + `QQueue<LogEntry> m_logQueue` + `m_logPlayTimer`（single-shot 1200ms）。`onLogMessage` / `onJudgmentPerformed` 改为入队；`onPlayNextLog` 从队首取一条显示、停留约 1.2s 再播下一条，队列播完启动 `m_logRevertTimer`（2s）回退到当前阶段提示。判定 log 携带 `Theme::judgmentBar(effective)` 样式随队保留颜色。
+- `onPhaseChanged` / `onPendingActionCreated` / `onPendingActionCleared` / `onGameOver` 统一走 `clearLogQueue()`（清空队列 + 停止播放/回退定时器），阶段切换与新 pending 时立即显示对应文案，不残留旧结算 log。
+- 顺带去掉 `GameViewModel::executePhaseJudge` 中紧随 `emit judgmentPerformed` 的重复 `emitLog(resultText)`（文本相同），改队列后不再显示两次，并修好判定色被普通 log 覆盖的旧问题。
+- View 仍零依赖 VM；`m_logLabel` 加 `objectName("logLabel")` 供测试 `findChild` 定位。
+
+**Model / ViewModel：借刀杀人响应路由（确认 bug）**
+- 问题：`GameRule::executeBorrow` 建 `requiredCardType=Kill, isDuel=false` 的 pending，`ActionViewModel::respondCard`/`skipResponse` 的 Kill 分支非决斗即走 `handleAoeKillResponse`（南蛮语义）。后果：被借刀者出杀被当「响应南蛮」弃掉不伤人；不出杀反而 `dealDamage(responder,...)` 自己掉血，与借刀规则完全相反。
+- 修复：`PendingActionInfo` 增 `bool isBorrow`；`executeBorrow` 置位；新增 `GameRule::handleBorrowResponse` —— 出杀→伤害使用者（`info.source`）；不出杀→被借刀者武器移交使用者。`respondCard`/`skipResponse` Kill 分支增加 `isBorrow` 路由（两人局简化诠释：无第三方，目标对使用者结算）。
+
+**ViewModel：判定定时器无限重挂兜底**
+- `GameViewModel::onJudgeTimerFired` 原在 `hasPendingAction()` 时无上限地 `start(100)` 重挂。加 `JUDGE_TIMER_MAX_RETRIES=10` 上限：超限则记诊断 log 并强制 `clearPendingAction()` 后继续推进，正常路径重置计数器。实测濒死流程 pending 必被清除、不会死锁，此为防御性兜底。
+
 ## [2026-07-17] tobefixed 修复：装备/武圣/大乔/结算 log + NetworkTest 竞态
 
 处理 `tobefixed.md` 剩余项（同伴 `dd9433d` 已解决扣血❌心、移除五谷/八卦/麒麟弓/丈八、删本机 IP），并修掉网络 e2e flaky。

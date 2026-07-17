@@ -116,6 +116,10 @@ private:
     bool m_judgePending = false;
     bool m_skipDrawPhase = false;
     bool m_skipPlayPhase = false;
+
+    // 判定展示定时器在 pending 未清时以 100ms 重挂,此计数器兜底防止无限重挂
+    int m_judgeTimerRetries = 0;
+    static constexpr int JUDGE_TIMER_MAX_RETRIES = 10;
 };
 
 #endif // GAMEVIEWMODEL_H

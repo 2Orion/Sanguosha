@@ -5,6 +5,8 @@
 #include <QLabel>
 #include <QTimer>
 #include <QVector>
+#include <QQueue>
+#include <QString>
 #include "CommonTypes.h"
 #include "CardData.h"
 #include "PlayerData.h"
@@ -67,6 +69,7 @@ private slots:
     void onDiscardConfirmed();
     void onSkillClicked();
     void revertLogToPhase();
+    void onPlayNextLog();      // 队列播放：显示下一条结算 log
 
 private:
     void setupLayout();
@@ -74,6 +77,11 @@ private:
     void exitSkillSelection();
     bool canControlPlayer(int playerId) const;
     static QString phaseLogText(PhaseType phase);
+
+    /// 队列中的一条 log：text 为文案，style 为空则用普通 hintBar，否则用该样式（判定色）
+    struct LogEntry { QString text; QString style; };
+    void enqueueLog(const LogEntry& entry);   // 入队 + 按需启动播放
+    void clearLogQueue();                      // 清空队列并停止播放/回退定时器
 
     enum class State { Idle, SelectingTarget, SelectingSkill, Responding, Discarding };
     State m_state = State::Idle;
@@ -97,6 +105,9 @@ private:
     QLabel*             m_logLabel;
     QTimer*             m_autoAdvanceTimer;
     QTimer*             m_logRevertTimer;
+    QTimer*             m_logPlayTimer;        // 队列播放间隔定时器（每条约 1.2s）
+    QQueue<LogEntry>    m_logQueue;            // 待顺序播放的结算 log
+    bool                m_logPlaying = false;  // 当前是否有 log 正在停留展示
 };
 
 #endif // GAMEBOARDWIDGET_H

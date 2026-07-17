@@ -95,6 +95,7 @@ private slots:
     void lvBuRequiresTwoDodges();
     void areaOfEffectAndDying();
     void armorBlocksBlackKillAndQinggangIgnores();
+    void borrowCardResponse();
 };
 
 void ModelTest::cardMetadata()
@@ -718,6 +719,50 @@ void ModelTest::armorBlocksBlackKillAndQinggangIgnores()
         QVERIFY(GameRule::armorEffectCheck(&fixture.state, &fixture.player2, &black));
         QVERIFY(!GameRule::armorEffectCheck(&fixture.state, &fixture.player2, &red));
         QVERIFY(!GameRule::armorEffectCheck(&fixture.state, &fixture.player1, &black));
+    }
+}
+
+void ModelTest::borrowCardResponse()
+{
+    // 出杀路径：被借刀者（player2）对借刀使用者（player1）出杀，伤害落在使用者身上
+    {
+        DuelFixture fixture;
+        KillCard borrowKill(CardSuit::Club, 8);
+        fixture.player2.addHandCard(&borrowKill);
+
+        GameRule::executeBorrow(&fixture.state, &fixture.player1, &fixture.player2);
+        QVERIFY(fixture.state.hasPendingAction());
+        QVERIFY(fixture.state.pendingActionInfo().isBorrow);
+        QCOMPARE(fixture.state.pendingActionInfo().requiredCardType, CardType::Kill);
+        QCOMPARE(fixture.state.pendingActionInfo().source, &fixture.player1);
+        QCOMPARE(fixture.state.pendingActionInfo().target, &fixture.player2);
+
+        const int sourceHpBefore = fixture.player1.hp();
+        GameRule::handleBorrowResponse(&fixture.state, &fixture.player2, &borrowKill);
+        QVERIFY(!fixture.state.hasPendingAction());
+        QVERIFY(!fixture.player2.hasCard(&borrowKill));       // 杀已打出
+        QCOMPARE(fixture.player1.hp(), sourceHpBefore - 1);   // 使用者掉血
+        QCOMPARE(fixture.player2.hp(), fixture.player2.maxHp());
+    }
+
+    // 不出杀路径：被借刀者交出武器给使用者
+    {
+        DuelFixture fixture;
+        QinglongBladeCard weapon(CardSuit::Spade, 5);
+        fixture.player2.equipCard(&weapon);
+        QCOMPARE(fixture.player2.equippedAt(EquipSlot::Weapon),
+                 static_cast<EquipmentCard*>(&weapon));
+
+        GameRule::executeBorrow(&fixture.state, &fixture.player1, &fixture.player2);
+        QVERIFY(fixture.state.hasPendingAction());
+
+        const int sourceHpBefore = fixture.player1.hp();
+        GameRule::handleBorrowResponse(&fixture.state, &fixture.player2, nullptr);
+        QVERIFY(!fixture.state.hasPendingAction());
+        QCOMPARE(fixture.player2.equippedAt(EquipSlot::Weapon), nullptr);  // 武器已交出
+        QCOMPARE(fixture.player1.equippedAt(EquipSlot::Weapon),
+                 static_cast<EquipmentCard*>(&weapon));                    // 移交给使用者
+        QCOMPARE(fixture.player1.hp(), sourceHpBefore);                    // 无人掉血
     }
 }
 

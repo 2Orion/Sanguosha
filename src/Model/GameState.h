@@ -33,6 +33,9 @@ struct PendingActionInfo {
     /// 是否为决斗的轮次（决斗双方交替出杀，不能走 AOE 的分支）
     bool isDuel = false;
 
+    /// 是否为借刀杀人的响应（被借刀者出杀/交武器，不能走 AOE 或决斗分支）
+    bool isBorrow = false;
+
     /// 闪响应计数（吕布无双需 2 张闪，默认 1）
     int requiredDodgeTotal = 1;
     int dodgeProgress = 0;

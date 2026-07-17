@@ -838,7 +838,7 @@ void executeBorrow(GameState* state, Player* user, Player* target)
     if (!state || !user || !target) return;
 
     // 令目标对一名角色使用杀（若目标有武器）
-    // 简化实现：目标必须对使用者之外的另一名角色出杀
+    // 简化实现（双人）：目标需对借刀使用者出杀，否则将武器交给使用者
     PendingActionInfo info;
     info.source = user;
     info.target = target;
@@ -847,8 +847,51 @@ void executeBorrow(GameState* state, Player* user, Player* target)
     info.description = (user->displayName() + " 对 " + target->displayName()
                        + " 使用了【借刀杀人】，请使用【杀】").toStdString();
     info.canSkip = true;
+    info.isBorrow = true;
 
     state->setPendingAction(info);
+}
+
+void handleBorrowResponse(GameState* state, Player* responder, Card* killCard)
+{
+    if (!state || !responder || !state->hasPendingAction()) return;
+
+    // 复制一份，避免 clearPendingAction() 后引用失效
+    PendingActionInfo info = state->pendingActionInfo();
+    if (!info.isBorrow || info.requiredCardType != CardType::Kill ||
+        info.target != responder || !info.source) {
+        return;
+    }
+    if (killCard && (!responder->hasCard(killCard) ||
+                     (killCard->cardType() != CardType::Kill &&
+                      (!responder->character() ||
+                       responder->character()->skillTransformCard(killCard) != CardType::Kill)))) {
+        return;
+    }
+
+    state->clearPendingAction();
+
+    if (killCard) {
+        // 出杀：双人下杀作用于借刀使用者
+        responder->removeHandCard(killCard);
+        if (state->cardManager()) {
+            state->cardManager()->discard(killCard);
+        }
+        dealDamage(state, info.source, 1, responder);
+    } else {
+        // 不出杀：将武器交给借刀使用者（无武器则无事发生）
+        EquipmentCard* weapon = responder->equippedAt(EquipSlot::Weapon);
+        if (weapon) {
+            responder->unequipSlot(EquipSlot::Weapon);
+            // 使用者原武器（若有）进弃牌堆，再装上移交的武器
+            EquipmentCard* oldWeapon = info.source->equippedAt(EquipSlot::Weapon);
+            if (oldWeapon && state->cardManager()) {
+                info.source->unequipSlot(EquipSlot::Weapon);
+                state->cardManager()->discard(oldWeapon);
+            }
+            info.source->equipCard(weapon);
+        }
+    }
 }
 
 void executeHarvest(GameState* state, Player* user)

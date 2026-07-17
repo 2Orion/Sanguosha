@@ -306,6 +306,10 @@ void ActionViewModel::respondCard(int cardId, int playerId)
             GameRule::handleDuelResponse(m_state, responder, card);
             emitLog(responder->displayName() + QStringLiteral(" 打出【") +
                     QString::fromStdString(card->cardName()) + QStringLiteral("】响应决斗"));
+        } else if (info.isBorrow) {
+            GameRule::handleBorrowResponse(m_state, responder, card);
+            emitLog(responder->displayName() + QStringLiteral(" 被【借刀杀人】驱使，打出【") +
+                    QString::fromStdString(card->cardName()) + QStringLiteral("】"));
         } else {
             GameRule::handleAoeKillResponse(m_state, responder, card);
             emitLog(responder->displayName() + QStringLiteral(" 打出【") +
@@ -363,6 +367,9 @@ void ActionViewModel::skipResponse(int playerId, bool forceNoCard)
         if (isDuelResponse(info)) {
             GameRule::handleDuelResponse(m_state, responder, nullptr);
             emitLog(responder->displayName() + QStringLiteral(" 未在决斗中打出【杀】，受到伤害"));
+        } else if (info.isBorrow) {
+            GameRule::handleBorrowResponse(m_state, responder, nullptr);
+            emitLog(responder->displayName() + QStringLiteral(" 拒绝【借刀杀人】，交出武器"));
         } else {
             GameRule::handleAoeSkipResponse(m_state, responder);
             emitLog(responder->displayName() + QStringLiteral(" 放弃了响应"));
