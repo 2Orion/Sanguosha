@@ -1,0 +1,65 @@
+name: Sanguosha CI/CD
+
+# 触发条件
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "v*" ]  # 当推送类似 v1.0.0 的标签时触发 CD 流程
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest  # 使用 Windows 最新环境
+
+    steps:
+    # 1. 拉取代码
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # 2. 安装并配置 MinGW 编译器环境（重要：确保 gcc/g++ 和 make 可用）
+    - name: Set up MinGW
+      uses: egor-tensin/setup-mingw@v2
+      with:
+        platform: x64
+
+    # 3. 安装 Qt 6.11.1 (针对 MinGW 架构)
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.11.1'
+        host: 'windows'
+        target: 'desktop'
+        arch: 'win64_mingw'  # 修改为 win64_mingw，以匹配您的 MinGW 编译器
+
+    # 4. 配置 CMake (对应您的 cmake .. -G "MinGW Makefiles")
+    # 使用由 install-qt-action 自动设置的 QT_ROOT_DIR 环境变量来定位 Qt
+    - name: Configure CMake
+      shell: bash
+      run: |
+        cmake -S . -B build \
+              -G "MinGW Makefiles" \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}"
+
+    # 5. 执行编译 (对应您的 make -j)
+    # 推荐使用 CMake 统一的构建命令，它在 Windows 下会自动调用 mingw32-make 并在多核下并行编译
+    - name: Build Project
+      run: cmake --build build --config Release --parallel
+
+    # 6. 运行测试（可选，如果您有测试用例）
+    - name: Run Tests
+      shell: bash
+      run: |
+        cd build
+        ctest --output-on-failure
+
+    # 7. 收集并上传构建产物（仅在推送 Tag 时触发）
+    - name: Upload Artifacts
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-binary-mingw
+        # 注意：使用 MinGW 生成的 Release 程序，通常直接在 build 文件夹根目录下，
+        # 而不是像 MSVC 那样生成在 build/Release 目录下。
+        path: build/your_executable_name.exe
