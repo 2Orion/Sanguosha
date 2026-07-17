@@ -92,6 +92,7 @@ private:
     bool m_restrictToLocalPlayer = false;
     bool m_skillAvailable = false;
     int m_responderId = -1;       // 当前需要响应的玩家 ID
+    QString m_pendingDescription; // 当前待响应提示文案（响应期间 log 播完后恢复显示）
     bool m_pendingSkillChoice = false;
     int m_pendingSourceCardId = -1;
     int m_pendingCardId = -1;

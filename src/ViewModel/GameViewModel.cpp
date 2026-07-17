@@ -26,6 +26,11 @@ GameViewModel::GameViewModel(QObject* parent)
     m_state->setCardManager(m_cardManager.get());
     m_actionVM->setGameState(m_state.get());
 
+    // 出牌/响应/弃牌等结算日志由 ActionViewModel 发出，统一转发到本类的
+    // logMessage，组合根（SGSApp/ServerApp）只需连接 GameViewModel 一处。
+    connect(m_actionVM.get(), &ActionViewModel::logMessage,
+            this, &GameViewModel::logMessage);
+
     // 判定展示定时器（1.5s 后自动推进）
     m_judgeTimer = new QTimer(this);
     m_judgeTimer->setSingleShot(true);

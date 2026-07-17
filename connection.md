@@ -67,7 +67,9 @@ void GameBoardWidget::onHandCardsUpdated(int playerId, const CardList& cards) { 
 | `ActionViewModel::targetSelectionStarted(QVector<int>)` | `onTargetSelectionStarted` | 合法目标 ID |
 | `ActionViewModel::targetSelectionFinished()` | `onTargetSelectionFinished` | 无参数 |
 
-> **View 层 log 回退（2026-07-17）**：`GameBoardWidget::onLogMessage` / `onJudgmentPerformed` 显示文案后启动 2s `m_logRevertTimer`，超时切回 `phaseLogText(m_currentPhase)`（出牌阶段/弃牌阶段等）。`onPhaseChanged` 与新 `pendingActionCreated` 会 stop 定时器。不回查 ViewModel，符合 View 零依赖约束。信号签名未变，上表连接关系不变。
+> **`GameViewModel::logMessage` 汇总两路日志（2026-07-17）**：出牌/响应/弃牌等结算日志由 `ActionViewModel::logMessage` 发出，判定/阶段类日志由 `GameViewModel` 自己 `emitLog`。`GameViewModel` 构造时内部 `connect(m_actionVM.get(), &ActionViewModel::logMessage, this, &GameViewModel::logMessage)` 转发前者，组合根（SGSApp/ServerApp）只需连接 `GameViewModel::logMessage` 一处即可收到全部日志；此前只连了 `GameViewModel` 自身信号，出牌/响应类日志（如"没有【闪】，受到伤害"）从未到达 View，是一个已修复的确认 bug。信号对外签名不变，上表连接关系不变。
+>
+> **View 层 log 队列 + 响应态回退（2026-07-17）**：`GameBoardWidget::onLogMessage` / `onJudgmentPerformed` 把结算文案入队（`QQueue<LogEntry>`），每条停留约 1.2s（`m_logPlayTimer`）顺序播放；队列播完后 2s（`m_logRevertTimer`）回退。回退目标不再固定是阶段提示：若此时仍处于响应态（`onPendingActionCreated` 尚未被 `onPendingActionCleared` 清除），回退到常驻的待响应提示文案（`m_pendingDescription`），否则回退到 `phaseLogText(m_currentPhase)`。`onPhaseChanged`/新 `pendingActionCreated`/`onGameOver` 会清空队列并停止两个定时器。不回查 ViewModel，符合 View 零依赖约束。
 
 原来由 App 层拦截槽（`onPhaseFromVM`/`onPendingActionFromVM`）承担的"自动跳过"判断，现在在信号发出**之前**就已在 GameViewModel 内部完成（见第 3 节），所以 View 收到的信号都是"确实需要 UI 呈现"的。
 

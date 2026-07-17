@@ -72,6 +72,7 @@ private slots:
     void gameViewModelInitialization();
     void gameViewModelActiveSkillData();
     void gameViewModelJudgmentResolution();
+    void actionLogForwardingAndEquipSilence();
     void delayedJudgmentUsesReversePlacementOrder();
     void gameViewModelPhaseProgression();
     void gameViewModelPendingDto();
@@ -475,6 +476,58 @@ void ViewModelTest::gameViewModelJudgmentResolution()
     QCOMPARE(effectiveResults.front(), expectedEffective);
     QVERIFY(!current->hasJudgmentCards());
     QCOMPARE(viewModel.gameState()->cardManager()->discardPileCount(), 2);
+}
+
+void ViewModelTest::actionLogForwardingAndEquipSilence()
+{
+    // ActionViewModel 的出牌/响应日志必须经 GameViewModel::logMessage 对外可见
+    //（组合根只连接 GameViewModel 一处）；装备牌打出不发使用日志。
+    GameViewModel viewModel;
+    QVERIFY(viewModel.startGame(0, 1));
+
+    QStringList logs;
+    connect(&viewModel, &GameViewModel::logMessage, this,
+            [&](const QString& msg) { logs.append(msg); });
+
+    // 推进到出牌阶段
+    viewModel.advancePhase(); // Prepare -> Judge
+    viewModel.advancePhase(); // Judge -> Draw
+    viewModel.advancePhase(); // Draw -> Play
+    QCOMPARE(viewModel.gameState()->currentPhase(), PhaseType::Play);
+
+    Player* current = viewModel.gameState()->player(0);
+    Player* opponent = viewModel.gameState()->player(1);
+
+    // 出杀：应有「使用了【杀】」日志
+    KillCard kill(CardSuit::Spade, 7);
+    current->addHandCard(&kill);
+    logs.clear();
+    QCOMPARE(viewModel.actionVM()->playCard(kill.id(), 0, {1}),
+             ActionResult::RequiresDodge);
+    bool sawKillLog = false;
+    for (const QString& l : logs)
+        if (l.contains(QStringLiteral("使用了【杀】"))) sawKillLog = true;
+    QVERIFY(sawKillLog);
+
+    // 无闪跳过：应有「没有【闪】，受到伤害」日志
+    logs.clear();
+    const int hpBefore = opponent->hp();
+    viewModel.actionVM()->skipResponse(1, true);
+    QCOMPARE(opponent->hp(), hpBefore - 1);
+    bool sawDamageLog = false;
+    for (const QString& l : logs)
+        if (l.contains(QStringLiteral("没有【闪】"))) sawDamageLog = true;
+    QVERIFY(sawDamageLog);
+
+    // 装备牌：打出时不发「使用了」日志
+    QinglongBladeCard weapon(CardSuit::Spade, 5);
+    current->addHandCard(&weapon);
+    logs.clear();
+    viewModel.actionVM()->playCard(weapon.id(), 0, {});
+    QCOMPARE(current->equippedAt(EquipSlot::Weapon),
+             static_cast<EquipmentCard*>(&weapon));
+    for (const QString& l : logs)
+        QVERIFY(!l.contains(QStringLiteral("使用了")));
 }
 
 void ViewModelTest::delayedJudgmentUsesReversePlacementOrder()

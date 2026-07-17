@@ -223,14 +223,17 @@ ActionResult ActionViewModel::playCard(int cardId, int playerId,
         if (m_state->cardManager()) m_state->cardManager()->discard(card);
     }
 
-    QString targetStr;
-    for (size_t i = 0; i < targets.size(); ++i) {
-        if (i > 0) targetStr += QStringLiteral("、");
-        targetStr += targets[i]->displayName();
+    // 装备牌不发结算 log（装备区变化本身可见）；其余牌的打出都有日志
+    if (!isEquip) {
+        QString targetStr;
+        for (size_t i = 0; i < targets.size(); ++i) {
+            if (i > 0) targetStr += QStringLiteral("、");
+            targetStr += targets[i]->displayName();
+        }
+        emitLog(user->displayName() + QStringLiteral(" 使用了【") +
+                QString::fromStdString(card->cardName()) + QStringLiteral("】") +
+                (targetStr.isEmpty() ? QString() : QStringLiteral(" → ") + targetStr));
     }
-    emitLog(user->displayName() + QStringLiteral(" 使用了【") +
-            QString::fromStdString(card->cardName()) + QStringLiteral("】") +
-            (targetStr.isEmpty() ? QString() : QStringLiteral(" → ") + targetStr));
 
     // 杀被防具直接抵消（仁王盾挡黑杀）时补充提示
     if (card->cardType() == CardType::Kill &&

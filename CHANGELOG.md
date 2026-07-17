@@ -1,5 +1,22 @@
 # Changelog
 
+## [2026-07-17] 修复出牌/响应日志从未到达界面的问题（确认 bug）
+
+用户反馈：出杀后对面没有闪会直接掉血，全程无日志提示。核实后发现是比"log 队列播放"更深的问题——**出牌/响应类日志的信号根本没有连接到界面**。
+
+**根因**
+- `ActionViewModel::logMessage`（出牌"使用了【杀】"、响应"打出【闪】"、无闪"受到伤害"、弃牌等约 20 处 `emitLog`）从未被任何组合根连接。`SGSApp`/`ServerApp` 只连接了 `GameViewModel::logMessage`（判定结果、阶段类日志），出牌/响应链路的日志全部发进了空气，玩家只能看到最后的伤害结果，没有过程提示。
+
+**修复**
+- `GameViewModel` 构造函数内新增 `connect(m_actionVM.get(), &ActionViewModel::logMessage, this, &GameViewModel::logMessage)`，把子 VM 的日志转发到自身同名信号。组合根不变，仍只连接 `GameViewModel::logMessage` 一处即可收齐全部日志（本地和网络模式同时修复，`ServerApp` 无需改动）。
+- `GameBoardWidget` 新增 `m_pendingDescription` 记住当前待响应提示；`revertLogToPhase()` 若仍处于 `Responding` 状态则恢复该提示而非阶段提示——满足"等待响应的提示应一直保持，直到得到响应"的要求，避免结算 log 播完后错误切回"出牌阶段"盖掉尚未完成的响应提示。
+- `ActionViewModel::playCard` 中装备牌打出不再发「使用了【xx】」日志（装备区变化本身可见，按要求排除装备牌）。
+
+**测试**
+- `ViewModelTest::actionLogForwardingAndEquipSilence`：验证出杀/无闪跳过的日志经 `GameViewModel::logMessage` 可见，装备牌打出无日志。
+- `ViewTest::logRevertsToPendingDescriptionWhileResponding`：验证响应期间收到结算 log 后，播完回退到响应提示而非阶段提示；pending 清除后才回退阶段提示。
+- 全套件 5/5 通过。
+
 ## [2026-07-17] 濒死/酒/判定区规则 + 武圣选择 + 奸雄伤害牌
 
 除保留双人简化规则“吕布【无双】不作用于【决斗】”和“【过河拆桥】不选择判定区牌”外，修复本轮确认的其余规则问题。

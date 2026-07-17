@@ -189,7 +189,10 @@ void GameBoardWidget::onPendingActionCreated(const PendingActionData& info)
     m_pendingSkillChoice = info.isSkillChoice;
     m_pendingSourceCardId = info.sourceCardId;
     m_actionPanel->updateForPendingAction(info);
-    // 响应提示常驻，直到有结算 log 或阶段切换：清空残留结算 log 队列，立即显示响应提示
+    // 记住响应提示：响应期间结算 log 播完后恢复显示它（而非阶段提示），
+    // 直到 pendingActionCleared —— 玩家始终能看到"该我响应什么"
+    m_pendingDescription = info.description;
+    // 清空残留结算 log 队列，立即显示响应提示
     clearLogQueue();
     m_autoAdvanceTimer->stop();  // 响应中禁止自动推进
     m_logLabel->setStyleSheet(Theme::hintBar(12));
@@ -203,6 +206,7 @@ void GameBoardWidget::onPendingActionCleared()
     m_responderId = -1;
     m_pendingSkillChoice = false;
     m_pendingSourceCardId = -1;
+    m_pendingDescription.clear();
     // 恢复操作面板到当前阶段应有的按钮状态
     m_actionPanel->updateForPhase(m_currentPhase, false);
     if (m_currentPhase == PhaseType::Play) {
@@ -328,7 +332,12 @@ void GameBoardWidget::clearLogQueue()
 void GameBoardWidget::revertLogToPhase()
 {
     m_logLabel->setStyleSheet(Theme::hintBar(12));
-    m_logLabel->setText(phaseLogText(m_currentPhase));
+    // 响应期间回退到待响应提示（常驻直到 pendingActionCleared），否则回阶段提示
+    if (m_state == State::Responding && !m_pendingDescription.isEmpty()) {
+        m_logLabel->setText(m_pendingDescription);
+    } else {
+        m_logLabel->setText(phaseLogText(m_currentPhase));
+    }
 }
 
 QString GameBoardWidget::phaseLogText(PhaseType phase)
