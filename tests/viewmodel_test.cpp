@@ -72,6 +72,7 @@ private slots:
     void gameViewModelInitialization();
     void gameViewModelActiveSkillData();
     void gameViewModelJudgmentResolution();
+    void delayedJudgmentUsesReversePlacementOrder();
     void gameViewModelPhaseProgression();
     void gameViewModelPendingDto();
     void dyingResponseRouting();
@@ -152,10 +153,17 @@ void ViewModelTest::responseValidation()
     QVERIFY(wrongOwner.player1.hasCard(&cardOwnedByAttacker));
 
     ActionFixture dyingResponse;
+    dyingResponse.player2.setHp(1);
     WineCard rescueWine(CardSuit::Heart, 11);
+    WineCard otherWine(CardSuit::Diamond, 10);
     dyingResponse.player2.addHandCard(&rescueWine);
+    dyingResponse.player1.addHandCard(&otherWine);
+    GameRule::dealDamage(&dyingResponse.state, &dyingResponse.player2, 1,
+                         &dyingResponse.player1);
     const auto peachResponses = dyingResponse.actionVM.getResponseCardIds(1, CardType::Peach);
     QVERIFY(containsId(peachResponses, rescueWine.id()));
+    const auto otherPeachResponses = dyingResponse.actionVM.getResponseCardIds(0, CardType::Peach);
+    QVERIFY(!containsId(otherPeachResponses, otherWine.id()));
 
     ActionFixture dyingAction;
     dyingAction.player2.setHp(1);
@@ -164,6 +172,8 @@ void ViewModelTest::responseValidation()
     GameRule::dealDamage(&dyingAction.state, &dyingAction.player2, 1,
                          &dyingAction.player1);
     QVERIFY(dyingAction.state.hasPendingAction());
+    QCOMPARE(dyingAction.state.pendingActionInfo().source, &dyingAction.player2);
+    dyingAction.actionVM.skipResponse(dyingAction.player2.playerId(), true);
     QCOMPARE(dyingAction.state.pendingActionInfo().source, &dyingAction.player1);
     dyingAction.actionVM.respondCard(rescuePeach.id(), dyingAction.player1.playerId());
     QCOMPARE(dyingAction.player2.hp(), 1);
@@ -222,6 +232,13 @@ void ViewModelTest::delayedStrategyAndNullifyZones()
     QVERIFY(direct.player2.hasJudgmentCards());
     QCOMPARE(direct.player2.judgmentCards().front(), &happy);
     QCOMPARE(direct.cardManager.discardPileCount(), 0);
+
+    HappyCard duplicateHappy(CardSuit::Spade, 6);
+    direct.player1.addHandCard(&duplicateHappy);
+    const auto duplicateTargets = direct.actionVM.getValidTargetIds(duplicateHappy.id(), 0);
+    QVERIFY(!containsId(duplicateTargets, 1));
+    QVERIFY(containsId(duplicateTargets, 2));
+    QCOMPARE(direct.player2.judgmentCards().size(), static_cast<size_t>(1));
 
     ActionFixture cancelled;
     HappyCard nullifiedHappy(CardSuit::Spade, 6);
@@ -285,6 +302,24 @@ void ViewModelTest::activeSkillValidation()
 
     fixture.state.setCurrentPhase(PhaseType::Discard);
     QVERIFY(!fixture.actionVM.canUseActiveSkill(0));
+
+    // 可正常使用的红色牌也可以明确选择发动武圣当杀。
+    ActionFixture wusheng;
+    GuanYu guanYu;
+    wusheng.player1.setCharacter(&guanYu);
+    wusheng.player1.damage(1);
+    PeachCard redPeach(CardSuit::Heart, 7);
+    wusheng.player1.addHandCard(&redPeach);
+    QVERIFY(redPeach.canUse(&wusheng.state, &wusheng.player1));
+    QVERIFY(wusheng.actionVM.canUseActiveSkill(0));
+    QSignalSpy targetSpy(&wusheng.actionVM, &ActionViewModel::targetSelectionStarted);
+    QVERIFY(wusheng.actionVM.useActiveSkill(0, {redPeach.id()}));
+    QCOMPARE(targetSpy.count(), 1);
+    wusheng.actionVM.onTargetSelected(1);
+    QVERIFY(!wusheng.player1.hasCard(&redPeach));
+    QCOMPARE(wusheng.player1.hp(), 3);
+    QVERIFY(wusheng.state.hasPendingAction());
+    QCOMPARE(wusheng.state.pendingActionInfo().requiredCardType, CardType::Dodge);
 }
 
 void ViewModelTest::discardAndTargetValidation()
@@ -440,6 +475,28 @@ void ViewModelTest::gameViewModelJudgmentResolution()
     QCOMPARE(effectiveResults.front(), expectedEffective);
     QVERIFY(!current->hasJudgmentCards());
     QCOMPARE(viewModel.gameState()->cardManager()->discardPileCount(), 2);
+}
+
+void ViewModelTest::delayedJudgmentUsesReversePlacementOrder()
+{
+    GameViewModel viewModel;
+    QVERIFY(viewModel.startGame(0, 1));
+    Player* current = viewModel.gameState()->player(0);
+    HappyCard happy(CardSuit::Heart, 6);
+    FamineCard famine(CardSuit::Club, 10);
+    current->addJudgmentCard(&happy);
+    current->addJudgmentCard(&famine);
+
+    QVector<QString> results;
+    connect(&viewModel, &GameViewModel::judgmentPerformed, this,
+            [&](const CardData&, const QString& text, bool) { results.append(text); });
+
+    viewModel.advancePhase(); // Prepare -> Judge
+    viewModel.advancePhase(); // 后置入的兵粮寸断先判定
+    QCOMPARE(results.size(), 1);
+    QVERIFY(results.front().contains(QStringLiteral("兵粮寸断")));
+    QCOMPARE(current->judgmentCards().size(), static_cast<size_t>(1));
+    QCOMPARE(current->judgmentCards().front(), static_cast<Card*>(&happy));
 }
 
 void ViewModelTest::judgeTimerMaxRetriesProtection()

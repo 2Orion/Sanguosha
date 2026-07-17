@@ -94,6 +94,7 @@ private slots:
     void duelNullifyValidation();
     void lvBuRequiresTwoDodges();
     void areaOfEffectAndDying();
+    void coreRuleRegressions();
     void armorBlocksBlackKillAndQinggangIgnores();
     void borrowCardResponse();
 };
@@ -279,10 +280,12 @@ void ModelTest::playerStateAndSignals()
     player.setUsedKillThisTurn(true);
     player.setUsedActiveSkillThisTurn(true);
     player.setWineEnhanced(true);
+    player.setUsedWineThisTurn(true);
     player.resetTurnState();
     QVERIFY(!player.hasUsedKillThisTurn());
     QVERIFY(!player.hasUsedActiveSkillThisTurn());
     QVERIFY(!player.isWineEnhanced());
+    QVERIFY(!player.hasUsedWineThisTurn());
 }
 
 void ModelTest::gameStateSignals()
@@ -378,9 +381,12 @@ void ModelTest::characterSkills()
 
     player.setCharacter(&caoCao);
     QSignalSpy skillSpy(&caoCao, &Character::skillTriggered);
-    int before = player.handCardCount();
-    caoCao.triggerSkill(&state, &player);
-    QCOMPARE(player.handCardCount(), before + 1);
+    manager.discard(&redKill);
+    caoCao.triggerSkill(&state, &player, &redKill, nullptr);
+    QVERIFY(state.hasPendingAction());
+    QVERIFY(state.pendingActionInfo().isSkillChoice);
+    QVERIFY(GameRule::handleSkillChoice(&state, &player, true));
+    QVERIFY(player.hasCard(&redKill));
     QCOMPARE(skillSpy.count(), 1);
 
     player.setCharacter(&zhangFei);
@@ -421,10 +427,12 @@ void ModelTest::cardRulesAndEffects()
     QVERIFY(wine.canUse(&wineFixture.state, &wineFixture.player1));
     QCOMPARE(wine.execute(&wineFixture.state, &wineFixture.player1, {}), ActionResult::Completed);
     QVERIFY(wineFixture.player1.isWineEnhanced());
+    QVERIFY(wineFixture.player1.hasUsedWineThisTurn());
     GameRule::executeKill(&wineFixture.state, &wineFixture.player1, &wineFixture.player2);
     GameRule::handleKillResponse(&wineFixture.state, &wineFixture.player2, nullptr);
     QCOMPARE(wineFixture.player2.hp(), 2);
     QVERIFY(!wineFixture.player1.isWineEnhanced());
+    QVERIFY(!wine.canUse(&wineFixture.state, &wineFixture.player1));
 
     DuelFixture strategyFixture;
     KillCard victimCard(CardSuit::Spade, 2);
@@ -616,6 +624,8 @@ void ModelTest::areaOfEffectAndDying()
     QVERIFY(fatalAoe.state.hasPendingAction());
     QCOMPARE(fatalAoe.state.pendingActionInfo().requiredCardType, CardType::Peach);
     QCOMPARE(fatalAoe.state.pendingActionInfo().continuationTargets.size(), 1);
+    QCOMPARE(fatalAoe.state.pendingActionInfo().source, &fatalAoe.player2);
+    GameRule::skipDyingResponse(&fatalAoe.state, &fatalAoe.player2);
     QVERIFY(GameRule::handleDyingPeach(&fatalAoe.state, &fatalAoe.player2,
                                        &fatalAoe.player1, &rescueAoe));
     QVERIFY(!fatalAoe.player2.isDying());
@@ -633,9 +643,10 @@ void ModelTest::areaOfEffectAndDying()
     QVERIFY(dyingFixture.player2.isDying());
     QCOMPARE(dyingSpy.count(), 1);
     QVERIFY(dyingFixture.state.hasPendingAction());
-    QCOMPARE(dyingFixture.state.pendingActionInfo().source, &dyingFixture.player1);
+    QCOMPARE(dyingFixture.state.pendingActionInfo().source, &dyingFixture.player2);
     QCOMPARE(dyingFixture.state.pendingActionInfo().target, &dyingFixture.player2);
     QVERIFY(GameRule::hasPeachToSave(&dyingFixture.player1, &dyingFixture.player2));
+    GameRule::skipDyingResponse(&dyingFixture.state, &dyingFixture.player2);
     QVERIFY(GameRule::handleDyingPeach(&dyingFixture.state, &dyingFixture.player2,
                                        &dyingFixture.player1, &saveCard));
     QVERIFY(!dyingFixture.player2.isDying());
@@ -656,6 +667,67 @@ void ModelTest::areaOfEffectAndDying()
                           &fatalFixture.player2);
     GameRule::handleKillResponse(&fatalFixture.state, &fatalFixture.player2, nullptr);
     QVERIFY(fatalFixture.state.hasPendingAction());
+}
+
+void ModelTest::coreRuleRegressions()
+{
+    // 负体力按实际伤害保留，濒死者可连续使用足量桃自救。
+    DuelFixture dying;
+    dying.player2.setHp(1);
+    PeachCard peach1(CardSuit::Heart, 2);
+    PeachCard peach2(CardSuit::Heart, 3);
+    WineCard selfWine(CardSuit::Diamond, 4);
+    dying.player2.addHandCard(&peach1);
+    dying.player2.addHandCard(&peach2);
+    dying.player2.addHandCard(&selfWine);
+
+    GameRule::dealDamage(&dying.state, &dying.player2, 3, &dying.player1);
+    QCOMPARE(dying.player2.hp(), -2);
+    QCOMPARE(dying.state.pendingActionInfo().source, &dying.player2);
+    QVERIFY(GameRule::hasPeachToSave(&dying.player2, &dying.player2));
+    QVERIFY(!GameRule::handleDyingPeach(&dying.state, &dying.player2,
+                                        &dying.player2, &peach1));
+    QCOMPARE(dying.player2.hp(), -1);
+    QVERIFY(!GameRule::handleDyingPeach(&dying.state, &dying.player2,
+                                        &dying.player2, &peach2));
+    QCOMPARE(dying.player2.hp(), 0);
+    QVERIFY(GameRule::handleDyingPeach(&dying.state, &dying.player2,
+                                       &dying.player2, &selfWine));
+    QCOMPARE(dying.player2.hp(), 1);
+
+    // 其他角色不能用酒救人。
+    DuelFixture otherWine;
+    otherWine.player2.setHp(1);
+    WineCard invalidWine(CardSuit::Heart, 5);
+    otherWine.player1.addHandCard(&invalidWine);
+    GameRule::dealDamage(&otherWine.state, &otherWine.player2, 1,
+                         &otherWine.player1);
+    GameRule::skipDyingResponse(&otherWine.state, &otherWine.player2);
+    QVERIFY(!GameRule::hasPeachToSave(&otherWine.player1, &otherWine.player2));
+    QVERIFY(!GameRule::handleDyingPeach(&otherWine.state, &otherWine.player2,
+                                        &otherWine.player1, &invalidWine));
+    QVERIFY(otherWine.player1.hasCard(&invalidWine));
+
+    // 酒每个出牌阶段限一次，且下一张杀被闪后也会消费强化。
+    DuelFixture wine;
+    WineCard firstWine(CardSuit::Club, 6);
+    WineCard secondWine(CardSuit::Diamond, 7);
+    DodgeCard dodge(CardSuit::Heart, 8);
+    QCOMPARE(firstWine.execute(&wine.state, &wine.player1, {}), ActionResult::Completed);
+    QVERIFY(!secondWine.canUse(&wine.state, &wine.player1));
+    wine.player2.addHandCard(&dodge);
+    GameRule::executeKill(&wine.state, &wine.player1, &wine.player2);
+    GameRule::handleKillResponse(&wine.state, &wine.player2, &dodge);
+    QVERIFY(!wine.player1.isWineEnhanced());
+    QVERIFY(!secondWine.canUse(&wine.state, &wine.player1));
+
+    // 判定区禁止同名延时锦囊共存。
+    HappyCard happy1(CardSuit::Heart, 6);
+    HappyCard happy2(CardSuit::Spade, 6);
+    wine.player2.addJudgmentCard(&happy1);
+    wine.player2.addJudgmentCard(&happy2);
+    QCOMPARE(wine.player2.judgmentCards().size(), static_cast<size_t>(1));
+    QVERIFY(!happy2.canTarget(&wine.state, &wine.player1, &wine.player2));
 }
 
 void ModelTest::armorBlocksBlackKillAndQinggangIgnores()

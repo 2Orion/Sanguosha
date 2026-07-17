@@ -97,7 +97,12 @@ void ActionPanelWidget::updateForPendingAction(const PendingActionData& info)
 
     m_hintLabel->setText(info.description);
 
-    // 始终显示跳过按钮：玩家可选择打出牌或承担后果
+    if (info.isSkillChoice) {
+        m_skillBtn->setText(QStringLiteral("发动奸雄"));
+        m_skillBtn->setVisible(true);
+    }
+
+    // 始终显示跳过按钮：玩家可选择打出牌、发动技能或承担后果
     // canSkip=true 表示"无惩罚跳过"（如 AOE 跳过直接扣血）
     // canSkip=false 表示"不能跳过"（如杀→闪），
     // 但我们仍然显示跳过按钮让玩家选择不响应直接扣血
@@ -129,4 +134,5 @@ void ActionPanelWidget::hideAllButtons()
     m_skipResponseBtn->setVisible(false);
     m_confirmDiscardBtn->setVisible(false);
     m_skillBtn->setVisible(false);
+    m_skillBtn->setText(QStringLiteral("发动技能"));
 }

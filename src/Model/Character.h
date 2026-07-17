@@ -24,7 +24,8 @@ public:
 
     virtual bool hasSkill() const;
     virtual bool triggerCondition(GameEvent event, const GameState* state, const Player* self) const;
-    virtual void triggerSkill(GameState* state, Player* self);
+    virtual void triggerSkill(GameState* state, Player* self,
+                              Card* eventCard = nullptr, Player* eventSource = nullptr);
     virtual CardType skillTransformCard(const Card* card) const;
 
     /// 摸牌阶段额外摸牌数（周瑜英姿）
@@ -55,7 +56,8 @@ public:
     CaoCao(QObject* parent = nullptr);
     bool hasSkill() const override;
     bool triggerCondition(GameEvent event, const GameState* state, const Player* self) const override;
-    void triggerSkill(GameState* state, Player* self) override;
+    void triggerSkill(GameState* state, Player* self,
+                      Card* eventCard = nullptr, Player* eventSource = nullptr) override;
 };
 
 class GuanYu : public Character {
@@ -72,7 +74,8 @@ public:
     ZhangFei(QObject* parent = nullptr);
     bool hasSkill() const override;
     bool triggerCondition(GameEvent event, const GameState* state, const Player* self) const override;
-    void triggerSkill(GameState* state, Player* self) override;
+    void triggerSkill(GameState* state, Player* self,
+                      Card* eventCard = nullptr, Player* eventSource = nullptr) override;
 };
 
 class ZhaoYun : public Character {
@@ -129,7 +132,8 @@ public:
     SiMaYi(QObject* parent = nullptr);
     bool hasSkill() const override;
     bool triggerCondition(GameEvent event, const GameState* state, const Player* self) const override;
-    void triggerSkill(GameState* state, Player* self) override;
+    void triggerSkill(GameState* state, Player* self,
+                      Card* eventCard = nullptr, Player* eventSource = nullptr) override;
 };
 
 #endif // CHARACTER_H

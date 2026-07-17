@@ -152,6 +152,19 @@ void CardManager::discardMultiple(const std::vector<Card*>& cards)
 
 int CardManager::discardPileCount() const { return static_cast<int>(m_discardPile.size()); }
 
+bool CardManager::isInDiscardPile(const Card* card) const
+{
+    return card && std::find(m_discardPile.begin(), m_discardPile.end(), card) != m_discardPile.end();
+}
+
+bool CardManager::takeFromDiscard(Card* card)
+{
+    auto it = std::find(m_discardPile.begin(), m_discardPile.end(), card);
+    if (it == m_discardPile.end()) return false;
+    m_discardPile.erase(it);
+    return true;
+}
+
 void CardManager::reshuffleDiscardPile()
 {
     if (m_discardPile.empty()) return;

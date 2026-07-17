@@ -92,6 +92,8 @@ private:
     bool m_restrictToLocalPlayer = false;
     bool m_skillAvailable = false;
     int m_responderId = -1;       // 当前需要响应的玩家 ID
+    bool m_pendingSkillChoice = false;
+    int m_pendingSourceCardId = -1;
     int m_pendingCardId = -1;
     int m_pendingUserId = -1;
     int m_requiredDiscardCount = 0;

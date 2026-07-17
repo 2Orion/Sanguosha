@@ -312,7 +312,8 @@ ViewModel ──信号──► View 槽（SGSApp 建立直连）
 > `GameViewModel`/`ActionViewModel`，只是把 SGSApp 连接给 `GameBoardWidget` 的两端
 > 换成连接给 `GameServer`（`src/Network/GameServer.h/cpp`，QTcpServer）。
 > 客户端侧 `ClientApp`/`GameClient` 已实现并接入 `SGSApp` 的「创建房间」/「加入房间」流程。
-> 当前协议版本为 v2：PlayerData 包含主动技能可用状态和判定区，协议新增技能命令与判定结果广播。
+> 当前协议版本为 v3：PlayerData 包含主动技能可用状态和判定区；PendingActionData
+> 包含可选触发技标记，协议支持技能命令、奸雄选择与判定结果广播。
 > `NetworkTest -functions` 当前列出 63 个测试函数；本节各 Step 末尾的数字保留当时阶段性历史。
 
 ### 7.1 VM → GameServer（广播，`ServerApp::wireViewModelBroadcasts()`）

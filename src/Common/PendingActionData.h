@@ -13,6 +13,7 @@ struct PendingActionData {
     CardType requiredCardType = CardType::Kill;
     QString description;
     bool canSkip = false;
+    bool isSkillChoice = false;
     QVector<int> remainingTargetIds;
 };
 

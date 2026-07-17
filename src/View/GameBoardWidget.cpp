@@ -185,6 +185,9 @@ void GameBoardWidget::onPendingActionCreated(const PendingActionData& info)
     m_state = State::Responding;
     m_responderId = (info.requiredCardType == CardType::Peach)
             ? info.sourceId : info.targetId;
+    if (info.isSkillChoice) m_responderId = info.targetId;
+    m_pendingSkillChoice = info.isSkillChoice;
+    m_pendingSourceCardId = info.sourceCardId;
     m_actionPanel->updateForPendingAction(info);
     // 响应提示常驻，直到有结算 log 或阶段切换：清空残留结算 log 队列，立即显示响应提示
     clearLogQueue();
@@ -198,6 +201,8 @@ void GameBoardWidget::onPendingActionCleared()
     onTargetSelectionFinished();
     m_state = State::Idle;
     m_responderId = -1;
+    m_pendingSkillChoice = false;
+    m_pendingSourceCardId = -1;
     // 恢复操作面板到当前阶段应有的按钮状态
     m_actionPanel->updateForPhase(m_currentPhase, false);
     if (m_currentPhase == PhaseType::Play) {
@@ -235,6 +240,12 @@ void GameBoardWidget::onGameOver(int winnerId)
 
 void GameBoardWidget::onSkillClicked()
 {
+    if (m_state == State::Responding && m_pendingSkillChoice &&
+        m_responderId >= 0 && canControlPlayer(m_responderId)) {
+        emit skillRequested({m_pendingSourceCardId}, m_responderId);
+        return;
+    }
+
     if (m_state == State::Idle) {
         if (m_currentPhase != PhaseType::Play || !m_skillAvailable ||
             !canControlPlayer(m_currentPlayerId)) {

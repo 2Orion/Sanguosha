@@ -57,7 +57,7 @@ Sanguosha/
 │   │   └── PendingActionData.h # 待定动作值类型
 │   ├── Model/                # QObject + 信号
 │   ├── Network/              # 网络层（局域网对战，已接入主程序）
-│   │   ├── Protocol.h/cpp    # 协议 v2 + MessageType + 消息结构体 + 手牌脱敏 redactCardList
+│   │   ├── Protocol.h/cpp    # 协议 v3 + MessageType + 消息结构体 + 手牌脱敏 redactCardList
 │   │   ├── MessageSerializer.h/cpp # QDataStream 序列化 + 帧封装/解码
 │   │   ├── GameServer.h/cpp  # QTcpServer：连接管理/握手/选将/广播转发（零 Model 依赖）
 │   │   └── GameClient.h/cpp  # QTcpSocket："网络化 ViewModel"，零 Model 依赖、零规则判断
@@ -199,5 +199,5 @@ ctest --test-dir build --output-on-failure
 
 当前完整套件包含 5 个测试目标；`NetworkTest -functions` 当前列出 63 个测试函数。覆盖基本卡牌规则、
 【决斗】交替响应与无懈恢复、吕布双闪、延时锦囊判定、孙权制衡、AOE/濒死链、响应与回合权限、
-QWidget/App 组装、协议 v2 序列化/帧解码、身份伪造防护、手牌脱敏、技能与判定网络消息、
+QWidget/App 组装、协议 v3 序列化/帧解码、身份伪造防护、手牌脱敏、技能与判定网络消息、
 `GameClient`/`ClientApp` 往返、心跳保活和进程内端到端对局。

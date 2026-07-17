@@ -152,7 +152,7 @@ namespace GameRule {
 
 #### ViewModel + View 层修改
 
-- `PlayerData`（`src/Common/PlayerData.h`）实际包含 `equipCards`、`judgmentCards`、`attackRange` 和 `canUseActiveSkill`；`GameViewModel::pushPlayerData` 负责赋值，网络协议 v2 同步序列化。
+- `PlayerData`（`src/Common/PlayerData.h`）实际包含 `equipCards`、`judgmentCards`、`attackRange` 和 `canUseActiveSkill`；`GameViewModel::pushPlayerData` 负责赋值。网络协议 v3 同步序列化这些字段，并为 `PendingActionData` 增加可选触发技标记。
 - `PlayerInfoWidget` 新增装备区显示（在体力下方或右侧），从 `onPlayerDataUpdated` 收到的 `PlayerData` 里读取
 - `CardData`（`src/Common/CardData.h`）新增 `isEquipment` / `equipSlot` / `attackRange` 字段（**已落地**，比早稿多一个 `attackRange`：武器攻击距离加成），`GameViewModel` 在构造 `CardData` 时填充
 - 装备牌的手绘渲染（`CardWidget::drawCardFront`）增加"装备"分类标签和特殊边框

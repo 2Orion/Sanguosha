@@ -64,6 +64,7 @@ private:
     Card* findCard(int cardId) const;
     std::vector<Card*> getPlayableCards(Player* player) const;
     bool playsAsKill(const Card* card, const Player* player) const;
+    ActionResult playCardAsSkillKill(Card* card, Player* player, Player* target);
     void emitLog(const QString& msg);
 
     GameState* m_state = nullptr;
@@ -72,6 +73,7 @@ private:
     int m_pendingCardId = -1;
     int m_pendingUserId = -1;
     QVector<int> m_pendingTargetIds;
+    bool m_pendingSkillKill = false;
 };
 
 #endif // ACTIONVIEWMODEL_H

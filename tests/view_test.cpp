@@ -343,6 +343,17 @@ void ViewTest::actionPanelStates()
     QVERIFY(skipButton != nullptr);
     QTest::mouseClick(skipButton, Qt::LeftButton);
     QCOMPARE(skippedSpy.count(), 1);
+
+    PendingActionData skillChoice;
+    skillChoice.description = QStringLiteral("可发动奸雄");
+    skillChoice.isSkillChoice = true;
+    panel.updateForPendingAction(skillChoice);
+    QPushButton* triggeredSkillButton = buttonWithText(&panel, QStringLiteral("发动奸雄"));
+    QVERIFY(triggeredSkillButton != nullptr);
+    QVERIFY(triggeredSkillButton->isVisible());
+    QTest::mouseClick(triggeredSkillButton, Qt::LeftButton);
+    QCOMPARE(skillSpy.count(), 2);
+
     panel.setHint(QStringLiteral("Custom hint"));
     bool foundHint = false;
     for (QLabel* label : panel.findChildren<QLabel*>())

@@ -23,6 +23,7 @@ struct PendingActionInfo {
 
     // AOE 目标进入濒死时，救援完成后恢复原响应链。
     Player* continuationSource = nullptr;
+    Card* continuationSourceCard = nullptr;
     CardType continuationCardType = CardType::Kill;
     std::vector<Player*> continuationTargets;
 
@@ -35,6 +36,13 @@ struct PendingActionInfo {
 
     /// 是否为借刀杀人的响应（被借刀者出杀/交武器，不能走 AOE 或决斗分支）
     bool isBorrow = false;
+
+    /// 可选触发技（当前用于曹操【奸雄】）：发动或跳过均由当前响应者确认。
+    bool isSkillChoice = false;
+
+    /// 濒死结算完成后恢复的可选触发技。
+    Player* deferredSkillPlayer = nullptr;
+    Card* deferredSkillCard = nullptr;
 
     /// 闪响应计数（吕布无双需 2 张闪，默认 1）
     int requiredDodgeTotal = 1;

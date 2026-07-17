@@ -202,11 +202,17 @@ int main()
     p2.removeHandCard(redNonKill);
     cardManager.discard(redNonKill);
 
-    // ==================== 8. 曹操-奸雄: 受伤摸牌 ====================
+    // ==================== 8. 曹操-奸雄: 选择获得伤害牌 ====================
     int p1HandBefore = p1.handCardCount();
-    GameRule::dealDamage(&state, &p1, 1, &p2);
+    KillCard jianxiongCard(CardSuit::Spade, 4);
+    cardManager.discard(&jianxiongCard);
+    GameRule::dealDamage(&state, &p1, 1, &p2, &jianxiongCard);
     check(p1.hp() == 3, "奸雄前置: p1 受到1点伤害");
-    check(p1.handCardCount() == p1HandBefore + 1, "曹操-奸雄: 受伤后摸1张牌");
+    check(state.hasPendingAction() && state.pendingActionInfo().isSkillChoice,
+          "曹操-奸雄: 受伤后可选择是否发动");
+    check(GameRule::handleSkillChoice(&state, &p1, true), "曹操-奸雄: 发动后获得伤害牌");
+    check(p1.handCardCount() == p1HandBefore + 1 && p1.hasCard(&jianxiongCard),
+          "曹操-奸雄: 获得的是实际造成伤害的牌");
 
     // ==================== 9. 过河拆桥 / 顺手牵羊 ====================
     Card* lootA = takeOfType(pool, CardType::Bountiful);
@@ -278,8 +284,8 @@ int main()
 
     Card* peachForSave = takeOfType(pool, CardType::Peach);
     check(peachForSave != nullptr, "测试准备: 取到一张桃用于救援");
-    p1.addHandCard(peachForSave);
-    bool saved = GameRule::handleDyingPeach(&state, &p2, &p1, peachForSave);
+    p2.addHandCard(peachForSave);
+    bool saved = GameRule::handleDyingPeach(&state, &p2, &p2, peachForSave);
     check(saved, "濒死: handleDyingPeach 返回救援成功");
     check(p2.hp() == 1, "濒死: 被救玩家回复到1点血");
     check(!p2.isDying(), "濒死: 被救玩家不再处于濒死状态");
@@ -300,6 +306,8 @@ int main()
           "濒死链(回归): 跳过后询问的是不同的下一位玩家");
 
     GameRule::skipDyingResponse(&state, &p2);
+    check(state.hasPendingAction(), "濒死链: 第二名救援者跳过后继续询问最后一人");
+    GameRule::skipDyingResponse(&state, &p2);
     check(!p2.isAlive(), "濒死链: 所有人跳过后玩家死亡");
     check(!p2.isDying(), "濒死链: 死亡后不再是濒死状态");
     check(!state.hasPendingAction(), "濒死链: 死亡判定后待定动作清空");
@@ -311,6 +319,8 @@ int main()
     check(p3.hp() == 0, "终局准备: p3降至0点血");
     check(state.hasPendingAction(), "终局准备: p3进入待救援状态");
 
+    GameRule::skipDyingResponse(&state, &p3);
+    check(state.hasPendingAction(), "终局: 濒死者放弃自救后询问另一名存活玩家");
     GameRule::skipDyingResponse(&state, &p3);
     check(!p3.isAlive(), "终局: 唯一的救援者跳过后p3死亡");
     check(state.isGameOver(), "终局: 仅剩1人存活，游戏结束");

@@ -26,7 +26,7 @@ bool Character::hasSkill() const { return true; }
 
 bool Character::triggerCondition(GameEvent, const GameState*, const Player*) const { return false; }
 
-void Character::triggerSkill(GameState*, Player*) {}
+void Character::triggerSkill(GameState*, Player*, Card*, Player*) {}
 
 CardType Character::skillTransformCard(const Card* card) const {
     if (!card) return CardType::Kill; // null 安全检查
@@ -42,7 +42,7 @@ bool Character::canDiscardAndDraw() const { return false; }
 // ==================== 曹操 - 奸雄 ====================
 
 CaoCao::CaoCao(QObject* parent)
-    : Character("曹操", 4, "奸雄", "受到伤害后，摸一张牌", parent)
+    : Character("曹操", 4, "奸雄", "受到伤害后，可以获得造成伤害的牌", parent)
 {
 }
 
@@ -53,14 +53,37 @@ bool CaoCao::triggerCondition(GameEvent event, const GameState*, const Player*) 
     return event == GameEvent::OnDamage;
 }
 
-void CaoCao::triggerSkill(GameState* state, Player* self)
+void CaoCao::triggerSkill(GameState* state, Player* self,
+                          Card* eventCard, Player* eventSource)
 {
-    if (!state || !self || !state->cardManager()) return;
-    Card* card = state->cardManager()->drawCard();
-    if (card) {
-        self->addHandCard(card);
-        emit skillTriggered(QString::fromStdString(m_skillName));
+    (void)eventSource;
+    if (!state || !self || !eventCard || !state->cardManager() ||
+        !state->cardManager()->isInDiscardPile(eventCard)) {
+        return;
     }
+
+    PendingActionInfo previous;
+    if (state->hasPendingAction()) previous = state->pendingActionInfo();
+
+    PendingActionInfo info;
+    info.source = self;
+    info.target = self;
+    info.sourceCard = eventCard;
+    info.description = (self->displayName() +
+                        " 可以发动【奸雄】获得造成伤害的牌").toStdString();
+    info.canSkip = true;
+    info.isSkillChoice = true;
+
+    if (!previous.remainingTargets.empty() &&
+        (previous.requiredCardType == CardType::Kill ||
+         previous.requiredCardType == CardType::Dodge)) {
+        info.continuationSource = previous.source;
+        info.continuationSourceCard = previous.sourceCard;
+        info.continuationCardType = previous.requiredCardType;
+        info.continuationTargets = previous.remainingTargets;
+    }
+
+    state->setPendingAction(info);
 }
 
 // ==================== 关羽 - 武圣 ====================
@@ -74,6 +97,7 @@ bool GuanYu::hasSkill() const { return true; }
 
 CardType GuanYu::skillTransformCard(const Card* card) const
 {
+    if (!card) return CardType::Kill;
     if (card && card->isRed()) return CardType::Kill;
     return card->cardType();
 }
@@ -87,7 +111,7 @@ ZhangFei::ZhangFei(QObject* parent)
 
 bool ZhangFei::hasSkill() const { return true; }
 bool ZhangFei::triggerCondition(GameEvent, const GameState*, const Player*) const { return false; }
-void ZhangFei::triggerSkill(GameState*, Player*) {}
+void ZhangFei::triggerSkill(GameState*, Player*, Card*, Player*) {}
 
 // ==================== 赵云 - 龙胆 ====================
 
@@ -177,13 +201,13 @@ bool SiMaYi::triggerCondition(GameEvent event, const GameState*, const Player*) 
     return event == GameEvent::OnDamage;
 }
 
-void SiMaYi::triggerSkill(GameState* state, Player* self)
+void SiMaYi::triggerSkill(GameState* state, Player* self,
+                          Card* eventCard, Player* eventSource)
 {
+    (void)eventCard;
     if (!state || !self) return;
 
-    // 获取伤害来源（从 pending action 中推断，简化实现）
-    const PendingActionInfo& info = state->pendingActionInfo();
-    Player* source = info.source;
+    Player* source = eventSource;
     if (!source || source == self) return;
 
     // 从伤害来源获得一张手牌

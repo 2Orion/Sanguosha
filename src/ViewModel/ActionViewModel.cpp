@@ -14,8 +14,6 @@ bool isResponseType(const Card* card, const Player* player, CardType requiredTyp
 {
     if (!card) return false;
     if (card->cardType() == requiredType) return true;
-    if (requiredType == CardType::Peach && card->cardType() == CardType::Wine) return true;
-
     return player && player->character() &&
            player->character()->skillTransformCard(card) == requiredType;
 }
@@ -257,7 +255,13 @@ std::vector<int> ActionViewModel::getResponseCardIds(int playerId, CardType requ
 
     for (Card* card : player->handCards()) {
         if (!card) continue;
-        if (isResponseType(card, player, requiredType)) result.push_back(card->id());
+        const bool selfWineRescue = requiredType == CardType::Peach &&
+                card->cardType() == CardType::Wine && m_state &&
+                m_state->hasPendingAction() &&
+                m_state->pendingActionInfo().target == player;
+        if (isResponseType(card, player, requiredType) || selfWineRescue) {
+            result.push_back(card->id());
+        }
     }
     return result;
 }
@@ -280,6 +284,7 @@ void ActionViewModel::respondCard(int cardId, int playerId)
     if (!m_state || !card || !responder || !m_state->hasPendingAction()) return;
 
     const PendingActionInfo info = m_state->pendingActionInfo();
+    if (info.isSkillChoice) return;
     Player* expectedResponder = (info.requiredCardType == CardType::Peach)
             ? info.source : info.target;
     if (expectedResponder != responder ||
@@ -346,11 +351,19 @@ void ActionViewModel::skipResponse(int playerId, bool forceNoCard)
     if (!m_state || !responder || !m_state->hasPendingAction()) return;
 
     const PendingActionInfo info = m_state->pendingActionInfo();
-    Player* expectedResponder = (info.requiredCardType == CardType::Peach)
+    Player* expectedResponder = info.isSkillChoice ? info.target :
+            (info.requiredCardType == CardType::Peach)
             ? info.source : info.target;
     if (expectedResponder != responder ||
         (info.requiredCardType == CardType::Peach && !info.target)) return;
     if (!forceNoCard && !info.canSkip) return;
+
+    if (info.isSkillChoice) {
+        GameRule::handleSkillChoice(m_state, responder, false);
+        emitLog(responder->displayName() + QStringLiteral(" 放弃发动【奸雄】"));
+        emit actionCompleted();
+        return;
+    }
 
     switch (info.requiredCardType) {
     case CardType::Dodge:
@@ -430,14 +443,55 @@ bool ActionViewModel::canUseActiveSkill(int playerId) const
         m_state->currentPlayer() != player || m_state->hasPendingAction()) {
         return false;
     }
-    if (m_pendingCardId >= 0 || player->hasUsedActiveSkillThisTurn()) return false;
-    return player->character()->canDiscardAndDraw() && player->hasHandCards();
+    if (m_pendingCardId >= 0) return false;
+
+    if (player->character()->canDiscardAndDraw()) {
+        return !player->hasUsedActiveSkillThisTurn() && player->hasHandCards();
+    }
+
+    if (!GameRule::canPlayKill(m_state, player)) return false;
+    for (Card* card : player->handCards()) {
+        if (card && card->cardType() != CardType::Kill &&
+            player->character()->skillTransformCard(card) == CardType::Kill) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool ActionViewModel::useActiveSkill(int playerId, const std::vector<int>& cardIds)
 {
     Player* player = findPlayer(playerId);
     if (!canUseActiveSkill(playerId) || cardIds.empty() || !player) return false;
+
+    if (!player->character()->canDiscardAndDraw()) {
+        if (cardIds.size() != 1) return false;
+        Card* card = findCard(cardIds.front());
+        if (!card || !player->hasCard(card) || card->cardType() == CardType::Kill ||
+            player->character()->skillTransformCard(card) != CardType::Kill) {
+            return false;
+        }
+
+        QVector<int> targets;
+        for (Player* candidate : m_state->alivePlayers()) {
+            if (candidate && candidate != player &&
+                GameRule::isInAttackRange(m_state, player, candidate)) {
+                targets.push_back(candidate->playerId());
+            }
+        }
+        if (targets.isEmpty()) return false;
+        if (targets.size() == 1) {
+            playCardAsSkillKill(card, player, findPlayer(targets.front()));
+            return true;
+        }
+
+        m_pendingCardId = card->id();
+        m_pendingUserId = playerId;
+        m_pendingTargetIds = targets;
+        m_pendingSkillKill = true;
+        emit targetSelectionStarted(targets);
+        return true;
+    }
 
     std::unordered_set<int> uniqueIds;
     std::vector<Card*> cards;
@@ -496,6 +550,32 @@ bool ActionViewModel::playsAsKill(const Card* card, const Player* player) const
     return GameRule::canPlayKill(m_state, player);
 }
 
+ActionResult ActionViewModel::playCardAsSkillKill(Card* card, Player* player, Player* target)
+{
+    if (!m_state || !card || !player || !target || m_state->hasPendingAction() ||
+        m_state->currentPhase() != PhaseType::Play ||
+        m_state->currentPlayer() != player || !player->hasCard(card) ||
+        target == player || !target->isAlive() ||
+        card->cardType() == CardType::Kill || !player->character() ||
+        player->character()->skillTransformCard(card) != CardType::Kill ||
+        !GameRule::canPlayKill(m_state, player) ||
+        !GameRule::isInAttackRange(m_state, player, target)) {
+        return ActionResult::Completed;
+    }
+
+    GameRule::executeKill(m_state, player, target, card);
+    player->removeHandCard(card);
+    if (m_state->cardManager()) m_state->cardManager()->discard(card);
+
+    emitLog(player->displayName() + QStringLiteral(" 发动【") +
+            QString::fromStdString(player->character()->skillName()) +
+            QStringLiteral("】，将【") + QString::fromStdString(card->cardName()) +
+            QStringLiteral("】当【杀】使用 → ") + target->displayName());
+    emit actionCompleted();
+    return m_state->hasPendingAction() ? ActionResult::RequiresDodge
+                                       : ActionResult::Completed;
+}
+
 void ActionViewModel::emitLog(const QString& msg)
 {
     emit logMessage(msg);
@@ -537,11 +617,17 @@ void ActionViewModel::onTargetSelected(int playerIndex)
 
         const int cardId = m_pendingCardId;
         const int userId = m_pendingUserId;
+        const bool skillKill = m_pendingSkillKill;
         m_pendingCardId = -1;
         m_pendingUserId = -1;
         m_pendingTargetIds.clear();
+        m_pendingSkillKill = false;
         emit targetSelectionFinished();
-        playCard(cardId, userId, {playerIndex});
+        if (skillKill) {
+            playCardAsSkillKill(findCard(cardId), findPlayer(userId), findPlayer(playerIndex));
+        } else {
+            playCard(cardId, userId, {playerIndex});
+        }
     }
 }
 
@@ -552,5 +638,14 @@ void ActionViewModel::onRespondCardRequested(int cardId, int responderId)
 
 void ActionViewModel::onSkillRequested(const QVector<int>& cardIds, int playerId)
 {
+    if (m_state && m_state->hasPendingAction() &&
+        m_state->pendingActionInfo().isSkillChoice) {
+        Player* player = findPlayer(playerId);
+        if (GameRule::handleSkillChoice(m_state, player, true)) {
+            emitLog(player->displayName() + QStringLiteral(" 发动【奸雄】，获得造成伤害的牌"));
+            emit actionCompleted();
+        }
+        return;
+    }
     useActiveSkill(playerId, std::vector<int>(cardIds.begin(), cardIds.end()));
 }

@@ -46,7 +46,7 @@ static QPixmap loadCharacterPortrait(const QString& charName, int size)
 // createCharacterById 的 switch 与本数组下标严格对应，不能删元素只能隐藏）
 struct CharInfo { const char* name; const char* skillName; const char* skillDesc; int maxHp; bool hidden; };
 static const CharInfo CHAR_LIST[] = {
-    { "曹操", "奸雄", "受到伤害后摸1张牌", 4, false },
+    { "曹操", "奸雄", "受到伤害后可获得造成伤害的牌", 4, false },
     { "关羽", "武圣", "红色牌可当【杀】使用或打出", 4, false },
     { "张飞", "咆哮", "出牌阶段可使用任意张【杀】", 4, false },
     { "赵云", "龙胆", "【杀】可当【闪】，【闪】可当【杀】", 4, false },
