@@ -7,6 +7,7 @@ ClientApp::ClientApp(QObject* parent)
 {
     m_client = new GameClient(this);
     m_board = new GameBoardWidget();
+    connect(m_board, &QObject::destroyed, this, [this]() { m_board = nullptr; });
 
     // ==================== View → GameClient（直连，形状对齐 SGSApp::startLocalGame） ====================
     connect(m_board, &GameBoardWidget::playCardRequested,
@@ -50,6 +51,17 @@ ClientApp::ClientApp(QObject* parent)
     connect(m_client, &GameClient::connected, this, [this](int playerId) {
         m_board->setLocalPlayerId(playerId);
     });
+}
+
+ClientApp::~ClientApp()
+{
+    // 成功进入游戏后，MainWindow/QStackedWidget 会成为 board 的 QWidget
+    // 父对象并负责其生命周期；连接失败时 board 仍是无父顶层控件，需要由
+    // ClientApp 主动释放，避免每次重试都泄漏一整棵控件树。
+    if (m_board && !m_board->parent()) {
+        delete m_board;
+    }
+    m_board = nullptr;
 }
 
 void ClientApp::connectToServer(const QString& host, quint16 port)
