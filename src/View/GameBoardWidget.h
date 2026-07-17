@@ -66,12 +66,14 @@ private slots:
     void onResponseSkipped();
     void onDiscardConfirmed();
     void onSkillClicked();
+    void revertLogToPhase();
 
 private:
     void setupLayout();
     HandCardAreaWidget* handAreaForPlayer(int playerId) const;
     void exitSkillSelection();
     bool canControlPlayer(int playerId) const;
+    static QString phaseLogText(PhaseType phase);
 
     enum class State { Idle, SelectingTarget, SelectingSkill, Responding, Discarding };
     State m_state = State::Idle;
@@ -94,6 +96,7 @@ private:
     ActionPanelWidget*  m_actionPanel;
     QLabel*             m_logLabel;
     QTimer*             m_autoAdvanceTimer;
+    QTimer*             m_logRevertTimer;
 };
 
 #endif // GAMEBOARDWIDGET_H

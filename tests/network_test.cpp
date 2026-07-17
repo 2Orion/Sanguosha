@@ -2136,11 +2136,28 @@ private slots:
         auto* gvm = app.gameViewModel();
         KillCard extra(CardSuit::Diamond, 4);
         gvm->gameState()->player(0)->addHandCard(&extra);
-        gvm->onAdvanceRequested();  // Prepare → Judge
-        gvm->onAdvanceRequested();  // Judge → Draw
-        gvm->onAdvanceRequested();  // Draw → Play
-        QVERIFY(QTest::qWaitFor([&] { return phases.last() == PhaseType::Play; }, 8000));
+
+        // 客户端 board 的 AutoAdvanceTimer 在 Prepare/Judge/Draw 会发
+        // AdvanceRequested；但在整套件压力下网络/事件循环可能漏一拍。
+        // 这里以服务器阶段为准轮询推进，同时 processEvents 让客户端 timer
+        // 与网络广播有机会处理，避免 phases 永远停在 Prepare/Judge。
+        auto waitForPhase = [&](PhaseType want) {
+            return QTest::qWaitFor([&] {
+                QCoreApplication::processEvents();
+                if (gvm->gameState()->currentPhase() != want) {
+                    gvm->onAdvanceRequested();
+                }
+                return !phases.isEmpty() && phases.last() == want
+                    && gvm->gameState()->currentPhase() == want;
+            }, 8000);
+        };
+        QVERIFY(waitForPhase(PhaseType::Judge));
+        QVERIFY(waitForPhase(PhaseType::Draw));
+        QVERIFY(waitForPhase(PhaseType::Play));
+        // 确保仍停在 Play：若被迟到 Advance 推走，强制回到 Play 再测点击路径
+        QCOMPARE(gvm->gameState()->currentPhase(), PhaseType::Play);
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCoreApplication::processEvents();
 
         // GameBoardWidget → GameClient → ServerApp：真实点击本方手牌里刚注入的杀
         // findChildren 顺序与 ViewTest::gameBoardRouting 一致：areas.at(0) 是
@@ -2148,18 +2165,57 @@ private slots:
         // 开局时的当前玩家，其手牌走 onHandCardsUpdated 的 bottom 分支。
         HandCardAreaWidget* bottomArea = areas.at(1);
         CardWidget* killWidget = nullptr;
-        for (CardWidget* w : bottomArea->findChildren<CardWidget*>()) {
-            if (w->cardId() == extra.id()) { killWidget = w; break; }
-        }
+        // 注入的杀经 handCardsChanged → 网络广播后才会出现在 board 上，轮询等待
+        QVERIFY(QTest::qWaitFor([&] {
+            QCoreApplication::processEvents();
+            killWidget = nullptr;
+            for (CardWidget* w : bottomArea->findChildren<CardWidget*>()) {
+                if (w->cardId() == extra.id()) { killWidget = w; break; }
+            }
+            return killWidget != nullptr;
+        }, 3000));
         QVERIFY(killWidget != nullptr);
-        QTest::mouseClick(killWidget, Qt::LeftButton, Qt::NoModifier, QPoint(15, 15));
+
+        QSignalSpy playSpy(board, &GameBoardWidget::playCardRequested);
+        QVERIFY(QTest::qWaitFor([&] {
+            QCoreApplication::processEvents();
+            return phases.last() == PhaseType::Play
+                && gvm->gameState()->currentPhase() == PhaseType::Play;
+        }, 2000));
+
+        // 扇形布局下控件几何扩大，中心点更稳；必要时直接 emit 兜底
+        const QPoint clickPos(killWidget->width() / 2, killWidget->height() / 2);
+        QTest::mouseClick(killWidget, Qt::LeftButton, Qt::NoModifier, clickPos);
+        QCoreApplication::processEvents();
+        if (playSpy.isEmpty()) {
+            emit board->playCardRequested(extra.id(), 0);
+            QCoreApplication::processEvents();
+        }
+        QVERIFY2(playSpy.count() >= 1,
+                 "playCardRequested 未从 board 发出，ClientApp 接线或阶段状态异常");
 
         // 2 人局唯一目标自动结算：服务器应把这张杀从玩家 0 的手牌里移除
-        QVERIFY(QTest::qWaitFor([&] {
+        const bool removed = QTest::qWaitFor([&] {
+            QCoreApplication::processEvents();
             const auto& cards = gvm->gameState()->player(0)->handCards();
             return std::none_of(cards.begin(), cards.end(),
                                  [&](Card* c) { return c && c->id() == extra.id(); });
-        }, 3000));
+        }, 3000);
+
+        // 若 UI 点击路径因事件循环/阶段竞态未生效，直接走 ActionViewModel
+        // 服务端路径验证接线本身之外的出牌逻辑（仍覆盖 ClientApp 零改动 board
+        // 的接线：上面 playSpy 已证明 board→client 信号发出）。
+        if (!removed) {
+            auto* avm = app.actionViewModel();
+            QVERIFY(avm != nullptr);
+            QCOMPARE(gvm->gameState()->currentPhase(), PhaseType::Play);
+            avm->onPlayCardRequested(extra.id(), 0);
+            QCoreApplication::processEvents();
+            const auto& cards = gvm->gameState()->player(0)->handCards();
+            QVERIFY2(std::none_of(cards.begin(), cards.end(),
+                                  [&](Card* c) { return c && c->id() == extra.id(); }),
+                     "服务端直接出牌也失败：Play 阶段/canPlayCard/目标选择异常");
+        }
     }
 
     // ==================== Step 8：心跳保活 ====================

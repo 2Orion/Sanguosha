@@ -94,6 +94,7 @@ private slots:
     void duelNullifyValidation();
     void lvBuRequiresTwoDodges();
     void areaOfEffectAndDying();
+    void armorBlocksBlackKillAndQinggangIgnores();
 };
 
 void ModelTest::cardMetadata()
@@ -148,7 +149,7 @@ void ModelTest::cardManagerLifecycle()
     QSignalSpy discardedSpy(&manager, &CardManager::cardDiscarded);
 
     manager.initialize();
-    constexpr int expectedTotal = 101;
+    constexpr int expectedTotal = 95;
     QCOMPARE(manager.totalCardCount(), expectedTotal);
     QCOMPARE(manager.remainingCount(), expectedTotal);
 
@@ -169,19 +170,19 @@ void ModelTest::cardManagerLifecycle()
     QCOMPARE(counts[CardType::PeachGarden], 1);
     QCOMPARE(counts[CardType::Duel], 3);
     QCOMPARE(counts[CardType::Borrow], 2);
-    QCOMPARE(counts[CardType::Harvest], 2);
+    QCOMPARE(counts[CardType::Harvest], 0);   // 五谷丰登已从牌堆移除
     QCOMPARE(counts[CardType::Nullify], 3);
     QCOMPARE(counts[CardType::Happy], 3);
     QCOMPARE(counts[CardType::Famine], 2);
     QCOMPARE(counts[CardType::Lightning], 1);
     QCOMPARE(counts[CardType::Crossbow], 2);
     QCOMPARE(counts[CardType::QinglongBlade], 1);
-    QCOMPARE(counts[CardType::ZhangbaSnake], 1);
-    QCOMPARE(counts[CardType::KylinBow], 1);
+    QCOMPARE(counts[CardType::ZhangbaSnake], 0);   // 丈八蛇矛已从牌堆移除
+    QCOMPARE(counts[CardType::KylinBow], 0);       // 麒麟弓已从牌堆移除
     QCOMPARE(counts[CardType::QinggangSword], 1);
     QCOMPARE(counts[CardType::IceSword], 1);
     QCOMPARE(counts[CardType::DualSword], 1);
-    QCOMPARE(counts[CardType::EightDiagrams], 2);
+    QCOMPARE(counts[CardType::EightDiagrams], 0);  // 八卦阵已从牌堆移除
     QCOMPARE(counts[CardType::BenevolentShield], 1);
 
     auto drawn = manager.drawCards(expectedTotal);
@@ -654,6 +655,70 @@ void ModelTest::areaOfEffectAndDying()
                           &fatalFixture.player2);
     GameRule::handleKillResponse(&fatalFixture.state, &fatalFixture.player2, nullptr);
     QVERIFY(fatalFixture.state.hasPendingAction());
+}
+
+void ModelTest::armorBlocksBlackKillAndQinggangIgnores()
+{
+    // 仁王盾：黑色杀无效
+    {
+        DuelFixture fixture;
+        BenevolentShieldCard shield(CardSuit::Spade, 2);
+        fixture.player2.equipCard(&shield);
+        QVERIFY(fixture.player2.hasArmor());
+
+        KillCard blackKill(CardSuit::Club, 7);
+        QCOMPARE(blackKill.execute(&fixture.state, &fixture.player1, {&fixture.player2}),
+                 ActionResult::Completed);
+        QVERIFY(!fixture.state.hasPendingAction());
+        QCOMPARE(fixture.player2.hp(), fixture.player2.maxHp());
+        QVERIFY(fixture.player1.hasUsedKillThisTurn());
+    }
+
+    // 仁王盾：红色杀正常
+    {
+        DuelFixture fixture;
+        BenevolentShieldCard shield(CardSuit::Spade, 2);
+        fixture.player2.equipCard(&shield);
+
+        KillCard redKill(CardSuit::Heart, 7);
+        QCOMPARE(redKill.execute(&fixture.state, &fixture.player1, {&fixture.player2}),
+                 ActionResult::RequiresDodge);
+        QVERIFY(fixture.state.hasPendingAction());
+        QCOMPARE(fixture.state.pendingActionInfo().target, &fixture.player2);
+        QCOMPARE(fixture.state.pendingActionInfo().sourceCard, &redKill);
+
+        GameRule::handleKillResponse(&fixture.state, &fixture.player2, nullptr);
+        QCOMPARE(fixture.player2.hp(), fixture.player2.maxHp() - 1);
+    }
+
+    // 青釭剑：无视仁王盾，黑杀照样生效
+    {
+        DuelFixture fixture;
+        BenevolentShieldCard shield(CardSuit::Spade, 2);
+        QinggangSwordCard qinggang(CardSuit::Spade, 6);
+        fixture.player2.equipCard(&shield);
+        fixture.player1.equipCard(&qinggang);
+        QVERIFY(fixture.player1.equippedAt(EquipSlot::Weapon)->ignoreArmor());
+
+        KillCard blackKill(CardSuit::Spade, 8);
+        QCOMPARE(blackKill.execute(&fixture.state, &fixture.player1, {&fixture.player2}),
+                 ActionResult::RequiresDodge);
+        QVERIFY(fixture.state.hasPendingAction());
+        GameRule::handleKillResponse(&fixture.state, &fixture.player2, nullptr);
+        QCOMPARE(fixture.player2.hp(), fixture.player2.maxHp() - 1);
+    }
+
+    // armorEffectCheck 直接验证
+    {
+        DuelFixture fixture;
+        BenevolentShieldCard shield(CardSuit::Club, 2);
+        fixture.player2.equipCard(&shield);
+        KillCard black(CardSuit::Spade, 5);
+        KillCard red(CardSuit::Diamond, 5);
+        QVERIFY(GameRule::armorEffectCheck(&fixture.state, &fixture.player2, &black));
+        QVERIFY(!GameRule::armorEffectCheck(&fixture.state, &fixture.player2, &red));
+        QVERIFY(!GameRule::armorEffectCheck(&fixture.state, &fixture.player1, &black));
+    }
 }
 
 QTEST_APPLESS_MAIN(ModelTest)

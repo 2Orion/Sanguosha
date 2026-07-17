@@ -53,18 +53,18 @@ int main()
     // ==================== 1. CardManager：初始化、摸牌、回收重洗 ====================
     CardManager cardManager;
     cardManager.initialize();
-    const int TOTAL_CARDS = 101;
-    check(cardManager.totalCardCount() == TOTAL_CARDS, "CardManager: 总牌数为101");
-    check(cardManager.remainingCount() == TOTAL_CARDS, "CardManager: 初始牌堆为101");
+    const int TOTAL_CARDS = 95;
+    check(cardManager.totalCardCount() == TOTAL_CARDS, "CardManager: 总牌数为95");
+    check(cardManager.remainingCount() == TOTAL_CARDS, "CardManager: 初始牌堆为95");
 
     std::vector<Card*> tempBatch = cardManager.drawCards(5);
     check(tempBatch.size() == 5, "CardManager: drawCards(5) 取到5张");
-    check(cardManager.remainingCount() == TOTAL_CARDS - 5, "CardManager: 摸5张后剩96张");
+    check(cardManager.remainingCount() == TOTAL_CARDS - 5, "CardManager: 摸5张后剩90张");
     cardManager.discardMultiple(tempBatch);
     check(cardManager.discardPileCount() == 5, "CardManager: 弃牌堆有5张");
 
     std::vector<Card*> restOfDeck = cardManager.drawCards(TOTAL_CARDS - 5);
-    check(restOfDeck.size() == (size_t)(TOTAL_CARDS - 5), "CardManager: 摸空剩余96张");
+    check(restOfDeck.size() == (size_t)(TOTAL_CARDS - 5), "CardManager: 摸空剩余90张");
     check(cardManager.remainingCount() == 0, "CardManager: 牌堆摸空后剩0张");
 
     Card* afterReshuffle = cardManager.drawCard();
@@ -74,7 +74,7 @@ int main()
     std::vector<Card*> pool;
     pool.insert(pool.end(), restOfDeck.begin(), restOfDeck.end());
     pool.insert(pool.end(), tempBatch.begin(), tempBatch.end());
-    check(pool.size() == (size_t)TOTAL_CARDS, "测试准备: pool 汇总了全部101张牌（含重洗的一张已在tempBatch中）");
+    check(pool.size() == (size_t)TOTAL_CARDS, "测试准备: pool 汇总了全部95张牌（含重洗的一张已在tempBatch中）");
 
     // ==================== 2. GameState / Player / Character 基础状态 ====================
     GameState state;
@@ -133,6 +133,18 @@ int main()
     GameRule::handleKillResponse(&state, &p2, nullptr);
     check(p2.hp() == 3, "接口测试: p2 未闪避，扣1点血");
     p1.resetTurnState();
+
+    // 仁王盾：黑色杀直接无效
+    BenevolentShieldCard shield(CardSuit::Spade, 2);
+    p2.equipCard(&shield);
+    KillCard blackKill(CardSuit::Club, 9);
+    ActionResult blocked = blackKill.execute(&state, &p1, {&p2});
+    check(blocked == ActionResult::Completed, "仁王盾: 黑杀 execute 返回 Completed");
+    check(!state.hasPendingAction(), "仁王盾: 黑杀不进入出闪");
+    check(p2.hp() == 3, "仁王盾: 黑杀不掉血");
+    p1.resetTurnState();
+    // 卸下防具，避免影响后续测试
+    p2.unequipSlot(EquipSlot::Armor);
 
     PeachCard samplePeach(CardSuit::Heart, 3);
     check(!samplePeach.canUse(&state, &p1), "PeachCard: 满血时不可使用");

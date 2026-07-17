@@ -10,17 +10,19 @@
 #include <QGroupBox>
 #include <QFrame>
 
-struct CharInfo { const char* name; const char* skillName; const char* skillDesc; int maxHp; };
+// hidden=true 的武将暂时从选将页隐藏（但保留 charId 索引，Model 层
+// createCharacterById 的 switch 与本数组下标严格对应，不能删元素只能隐藏）
+struct CharInfo { const char* name; const char* skillName; const char* skillDesc; int maxHp; bool hidden; };
 static const CharInfo CHAR_LIST[] = {
-    { "曹操", "奸雄", "受到伤害后摸1张牌", 4 },
-    { "关羽", "武圣", "红色牌可当【杀】使用或打出", 4 },
-    { "张飞", "咆哮", "出牌阶段可使用任意张【杀】", 4 },
-    { "赵云", "龙胆", "【杀】可当【闪】，【闪】可当【杀】", 4 },
-    { "孙权", "制衡", "出牌阶段可弃任意张牌并摸等量的牌", 4 },
-    { "周瑜", "英姿", "摸牌阶段多摸一张", 3 },
-    { "吕布", "无双", "【杀】需两张【闪】才能抵消", 4 },
-    { "大乔", "流离", "【杀】可转移给其他玩家", 3 },
-    { "司马懿", "反馈", "受到伤害后可获得伤害来源一张牌", 3 },
+    { "曹操", "奸雄", "受到伤害后摸1张牌", 4, false },
+    { "关羽", "武圣", "红色牌可当【杀】使用或打出", 4, false },
+    { "张飞", "咆哮", "出牌阶段可使用任意张【杀】", 4, false },
+    { "赵云", "龙胆", "【杀】可当【闪】，【闪】可当【杀】", 4, false },
+    { "孙权", "制衡", "出牌阶段可弃任意张牌并摸等量的牌", 4, false },
+    { "周瑜", "英姿", "摸牌阶段多摸一张", 3, false },
+    { "吕布", "无双", "【杀】需两张【闪】才能抵消", 4, false },
+    { "大乔", "流离", "【杀】可转移给其他玩家", 3, true },   // 两人局无第三人可转移，暂时隐藏
+    { "司马懿", "反馈", "受到伤害后可获得伤害来源一张牌", 3, false },
 };
 static constexpr int CHAR_COUNT = 9;
 
@@ -90,18 +92,21 @@ void MainWindow::setupSelectionPage()
         group = new QButtonGroup(this); group->setExclusive(true);
         auto* grid = new QGridLayout; grid->setSpacing(8);
 
+        int slot = 0;   // 网格位置计数器，跳过隐藏武将后仍紧凑排列
         for (int i = 0; i < CHAR_COUNT; ++i) {
+            if (CHAR_LIST[i].hidden) continue;
             auto* card = new QGroupBox(m_selectionPage);
             card->setStyleSheet(Theme::charCard());
 
             auto* cl = new QVBoxLayout(card); cl->setSpacing(4); cl->setContentsMargins(8, 8, 8, 8);
             auto* radio = new QRadioButton(CHAR_LIST[i].name, card);
-            group->addButton(radio, i);
+            group->addButton(radio, i);   // button id = charId，与 Model 索引对齐
 
             cl->addWidget(radio);
             cl->addWidget(new QLabel(QStringLiteral("体力: %1").arg(CHAR_LIST[i].maxHp), card));
             cl->addWidget(new QLabel(QStringLiteral("【%1】%2").arg(CHAR_LIST[i].skillName, CHAR_LIST[i].skillDesc), card));
-            grid->addWidget(card, i / 2, i % 2);
+            grid->addWidget(card, slot / 2, slot % 2);
+            ++slot;
         }
         col->addLayout(grid);
 
@@ -229,7 +234,9 @@ void MainWindow::showCharacterSelection(int playerId, const QString& playerName,
     auto* group = new QButtonGroup(page);
     group->setExclusive(true);
 
+    int slot = 0;   // 网格位置计数器，跳过隐藏武将后仍紧凑排列
     for (int i = 0; i < CHAR_COUNT; ++i) {
+        if (CHAR_LIST[i].hidden) continue;
         auto* card = new QGroupBox(page);
         card->setStyleSheet(Theme::charCard());
 
@@ -238,13 +245,14 @@ void MainWindow::showCharacterSelection(int playerId, const QString& playerName,
         cl->setContentsMargins(8, 8, 8, 8);
 
         auto* radio = new QRadioButton(CHAR_LIST[i].name, card);
-        group->addButton(radio, i);
+        group->addButton(radio, i);   // button id = charId，与 Model 索引对齐
 
         cl->addWidget(radio);
         cl->addWidget(new QLabel(QStringLiteral("体力: %1").arg(CHAR_LIST[i].maxHp), card));
         cl->addWidget(new QLabel(
             QStringLiteral("【%1】%2").arg(CHAR_LIST[i].skillName, CHAR_LIST[i].skillDesc), card));
-        grid->addWidget(card, i / 3, i % 3);
+        grid->addWidget(card, slot / 3, slot % 3);
+        ++slot;
     }
     main->addLayout(grid);
 

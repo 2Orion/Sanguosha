@@ -36,7 +36,8 @@ namespace GameRule {
 
     // ==================== 卡牌执行 ====================
 
-    void executeKill(GameState* state, Player* user, Player* target);
+    /// killCard 用于防具判定（仁王盾需判黑/红杀）；nullptr 时跳过防具判定
+    void executeKill(GameState* state, Player* user, Player* target, Card* killCard = nullptr);
     void handleKillResponse(GameState* state, Player* responder, Card* dodgeCard);
     void executePeach(GameState* state, Player* user, Player* target);
     void executeWine(GameState* state, Player* user);

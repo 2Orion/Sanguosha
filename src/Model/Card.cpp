@@ -266,9 +266,11 @@ ActionResult KillCard::execute(GameState* state,
     }
 
     Player* target = targets.front();
-    GameRule::executeKill(state, user, target);
+    GameRule::executeKill(state, user, target, this);
 
-    return ActionResult::RequiresDodge;
+    // 仁王盾等防具可能直接抵消杀，此时无 pending
+    return state->hasPendingAction() ? ActionResult::RequiresDodge
+                                     : ActionResult::Completed;
 }
 
 // ==================== 基本牌：闪 ====================
