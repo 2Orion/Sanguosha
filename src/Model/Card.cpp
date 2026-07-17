@@ -1027,7 +1027,7 @@ bool CrossbowCard::canExtraKill() const { return true; }
 QinglongBladeCard::QinglongBladeCard(CardSuit suit, int number)
     : EquipmentCard(CardType::QinglongBlade, suit, number, EquipSlot::Weapon)
 {
-    setDescription("攻击距离+2");
+    setDescription("当你使用的【杀】被目标用【闪】抵消时，可以立刻再对同一目标出一张【杀】");
 }
 
 int QinglongBladeCard::attackRangeBonus() const { return 2; }
@@ -1035,7 +1035,7 @@ int QinglongBladeCard::attackRangeBonus() const { return 2; }
 ZhangbaSnakeCard::ZhangbaSnakeCard(CardSuit suit, int number)
     : EquipmentCard(CardType::ZhangbaSnake, suit, number, EquipSlot::Weapon)
 {
-    setDescription("攻击距离+3");
+    setDescription("可以用两张牌当作一张普通【杀】打出");
 }
 
 int ZhangbaSnakeCard::attackRangeBonus() const { return 3; }
@@ -1043,7 +1043,7 @@ int ZhangbaSnakeCard::attackRangeBonus() const { return 3; }
 KylinBowCard::KylinBowCard(CardSuit suit, int number)
     : EquipmentCard(CardType::KylinBow, suit, number, EquipSlot::Weapon)
 {
-    setDescription("攻击距离+5");
+    setDescription("你的【杀】造成伤害时可以获得对方的坐骑");
 }
 
 int KylinBowCard::attackRangeBonus() const { return 5; }
@@ -1051,7 +1051,7 @@ int KylinBowCard::attackRangeBonus() const { return 5; }
 QinggangSwordCard::QinggangSwordCard(CardSuit suit, int number)
     : EquipmentCard(CardType::QinggangSword, suit, number, EquipSlot::Weapon)
 {
-    setDescription("攻击距离+2，无视防具");
+    setDescription("你的【杀】无视防具");
 }
 
 int QinggangSwordCard::attackRangeBonus() const { return 2; }
@@ -1060,7 +1060,7 @@ bool QinggangSwordCard::ignoreArmor() const { return true; }
 IceSwordCard::IceSwordCard(CardSuit suit, int number)
     : EquipmentCard(CardType::IceSword, suit, number, EquipSlot::Weapon)
 {
-    setDescription("攻击距离+2");
+    setDescription("当你使用【杀】对目标造成伤害时，你可以防止此次伤害，改为弃置其两张牌");
 }
 
 int IceSwordCard::attackRangeBonus() const { return 2; }
@@ -1068,7 +1068,7 @@ int IceSwordCard::attackRangeBonus() const { return 2; }
 DualSwordCard::DualSwordCard(CardSuit suit, int number)
     : EquipmentCard(CardType::DualSword, suit, number, EquipSlot::Weapon)
 {
-    setDescription("攻击距离+2");
+    setDescription("攻击距离+2，这个暂时不管");
 }
 
 int DualSwordCard::attackRangeBonus() const { return 2; }
