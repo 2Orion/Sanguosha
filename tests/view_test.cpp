@@ -77,6 +77,7 @@ private slots:
     void gameBoardRouting();
     void logQueueSequentialPlayback();
     void logQueueClearedOnPhaseChange();
+    void logRevertsToPendingDescriptionWhileResponding();
     void gameBoardSkillSelection();
     void targetSelectionState();
     void gameBoardGameOverResult();
@@ -343,6 +344,17 @@ void ViewTest::actionPanelStates()
     QVERIFY(skipButton != nullptr);
     QTest::mouseClick(skipButton, Qt::LeftButton);
     QCOMPARE(skippedSpy.count(), 1);
+
+    PendingActionData skillChoice;
+    skillChoice.description = QStringLiteral("可发动奸雄");
+    skillChoice.isSkillChoice = true;
+    panel.updateForPendingAction(skillChoice);
+    QPushButton* triggeredSkillButton = buttonWithText(&panel, QStringLiteral("发动奸雄"));
+    QVERIFY(triggeredSkillButton != nullptr);
+    QVERIFY(triggeredSkillButton->isVisible());
+    QTest::mouseClick(triggeredSkillButton, Qt::LeftButton);
+    QCOMPARE(skillSpy.count(), 2);
+
     panel.setHint(QStringLiteral("Custom hint"));
     bool foundHint = false;
     for (QLabel* label : panel.findChildren<QLabel*>())
@@ -504,6 +516,36 @@ void ViewTest::logQueueClearedOnPhaseChange()
     // 等待超过一条 log 的播放间隔，确认队列已被清空、不再弹出残留 log
     QTest::qWait(1500);
     QCOMPARE(logLabel->text(), QStringLiteral("出牌阶段"));
+}
+
+void ViewTest::logRevertsToPendingDescriptionWhileResponding()
+{
+    GameBoardWidget board;
+    board.resize(900, 700);
+    board.show();
+    QCoreApplication::processEvents();
+
+    QLabel* logLabel = board.findChild<QLabel*>(QStringLiteral("logLabel"));
+    QVERIFY(logLabel != nullptr);
+
+    // 建立待响应动作：提示应立即显示
+    PendingActionData pending;
+    pending.sourceId = 0;
+    pending.targetId = 1;
+    pending.requiredCardType = CardType::Dodge;
+    pending.description = QStringLiteral("玩家二需要打出【闪】");
+    board.onPendingActionCreated(pending);
+    QCOMPARE(logLabel->text(), QStringLiteral("玩家二需要打出【闪】"));
+
+    // 响应期间来一条结算 log：先显示 log，播完+回退后恢复响应提示（非阶段提示）
+    board.onLogMessage(QStringLiteral("玩家一 使用了【杀】 → 玩家二"));
+    QCOMPARE(logLabel->text(), QStringLiteral("玩家一 使用了【杀】 → 玩家二"));
+    QTRY_COMPARE_WITH_TIMEOUT(logLabel->text(),
+                              QStringLiteral("玩家二需要打出【闪】"), 5000);
+
+    // pending 清除后，回退目标恢复为阶段提示
+    board.onPendingActionCleared();
+    QTRY_COMPARE_WITH_TIMEOUT(logLabel->text(), QStringLiteral("准备阶段"), 4000);
 }
 
 void ViewTest::gameBoardSkillSelection()

@@ -20,7 +20,8 @@ namespace Protocol {
 ///     PlayerData 含 equipCards 装备区。
 /// v2：PlayerData 新增 canUseActiveSkill/judgmentCards，并新增主动技能命令
 ///     与判定结果广播。
-constexpr quint16 kProtocolVersion = 2;
+/// v3：PendingActionData 新增 isSkillChoice，用于联网确认可选触发技。
+constexpr quint16 kProtocolVersion = 3;
 
 /// 默认监听端口
 constexpr quint16 kDefaultPort = 9527;

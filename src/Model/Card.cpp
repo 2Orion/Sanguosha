@@ -356,7 +356,7 @@ bool WineCard::canUse(const GameState* state, const Player* user) const
     if (!user->isAlive()) return false;
     if (state->currentPhase() != PhaseType::Play) return false;
 
-    return !user->isWineEnhanced();
+    return !user->hasUsedWineThisTurn() && !user->isWineEnhanced();
 }
 
 std::vector<Player*> WineCard::getValidTargets(const GameState* state,
@@ -581,7 +581,7 @@ ActionResult BarbarianCard::execute(GameState* state,
         return ActionResult::Completed;
     }
 
-    GameRule::executeBarbarianInvasion(state, user);
+    GameRule::executeBarbarianInvasion(state, user, this);
 
     return ActionResult::RequiresKill;
 }
@@ -628,7 +628,7 @@ ActionResult VolleyCard::execute(GameState* state,
         return ActionResult::Completed;
     }
 
-    GameRule::executeVolley(state, user);
+    GameRule::executeVolley(state, user, this);
 
     return ActionResult::RequiresDodge;
 }
@@ -725,11 +725,17 @@ LightningCard::LightningCard(CardSuit suit, int number)
     setDescription("判定：黑桃2-9则受到3点雷电伤害，否则移至下家");
 }
 
+bool LightningCard::canUse(const GameState* state, const Player* user) const
+{
+    return StrategyCard::canUse(state, user) &&
+           !user->hasJudgmentCard(CardType::Lightning);
+}
+
 std::vector<Player*> LightningCard::getValidTargets(const GameState* state,
                                                       const Player* user) const
 {
     std::vector<Player*> targets;
-    if (state && user) {
+    if (state && user && !user->hasJudgmentCard(CardType::Lightning)) {
         targets.push_back(const_cast<Player*>(user));
     }
     return targets;
@@ -875,7 +881,7 @@ bool HappyCard::canTarget(const GameState* state,
 {
     if (!state || !user || !target) return false;
     if (user == target) return false;
-    return target->isAlive();
+    return target->isAlive() && !target->hasJudgmentCard(CardType::Happy);
 }
 
 std::vector<Player*> HappyCard::getValidTargets(const GameState* state,
@@ -925,7 +931,7 @@ bool FamineCard::canTarget(const GameState* state,
 {
     if (!state || !user || !target) return false;
     if (user == target) return false;
-    return target->isAlive();
+    return target->isAlive() && !target->hasJudgmentCard(CardType::Famine);
 }
 
 std::vector<Player*> FamineCard::getValidTargets(const GameState* state,

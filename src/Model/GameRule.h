@@ -56,8 +56,8 @@ namespace GameRule {
     void executeDismantle(GameState* state, Player* user, Player* target);
     void executeSteal(GameState* state, Player* user, Player* target);
     void executeBountiful(GameState* state, Player* user);
-    void executeBarbarianInvasion(GameState* state, Player* user);
-    void executeVolley(GameState* state, Player* user);
+    void executeBarbarianInvasion(GameState* state, Player* user, Card* sourceCard = nullptr);
+    void executeVolley(GameState* state, Player* user, Card* sourceCard = nullptr);
     void executePeachGarden(GameState* state);
 
     // 新锦囊
@@ -93,12 +93,14 @@ namespace GameRule {
 
     // ==================== 伤害与濒死 ====================
 
-    void dealDamage(GameState* state, Player* target, int value, Player* source);
+    void dealDamage(GameState* state, Player* target, int value, Player* source,
+                    Card* damageCard = nullptr);
     void startDyingProcess(GameState* state, Player* dyingPlayer);
     bool handleDyingPeach(GameState* state, Player* dyingPlayer, Player* peachUser, Card* peachCard);
     void skipDyingResponse(GameState* state, Player* dyingPlayer);
     void checkDeath(GameState* state, Player* player);
     void checkGameOver(GameState* state);
+    bool handleSkillChoice(GameState* state, Player* player, bool accept);
 
     // ==================== 弃牌阶段 ====================
 

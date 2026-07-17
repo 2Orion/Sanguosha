@@ -39,7 +39,7 @@ ViewModel/Model，`ClientApp` 直连 `GameBoardWidget` 与 `GameClient`。
 - 孙权【制衡】：出牌阶段「发动技能」弃任意手牌摸等量，每回合一次。关羽【武圣】：出牌阶段直接点红牌当杀（转化路径，非技能按钮）。吕布【无双】需连续两张闪。大乔【流离】Model 分支仍在，选将暂隐。
 - 【借刀杀人】两人局简化结算：目标须对使用者出【杀】，否则交出武器给使用者（响应路由已修正，早期版本曾误按南蛮语义结算）；五谷丰登逻辑保留但不入牌堆。
 - 装备：按槽位装备/替换/界面展示；诸葛连弩无限出杀；**仁王盾挡黑色杀**、**青釭剑无视防具**已接入 `GameRule::executeKill`；武器攻击距离加成已计入 `Player::attackRange`。hover 看牌显示 `description`（如「黑色【杀】对你无效」）。
-- 对局中间 log：结算类消息按队列逐条顺序播放（每条停留约 1.2 秒），播完后自动切回当前阶段提示；同一结算连发多条 log 不再互相覆盖，阶段切换/新响应/游戏结束时立即清空队列。
+- 对局中间 log：出牌、响应、无响应受伤、弃牌、判定等（装备牌打出除外）均有提示，按队列逐条顺序播放（每条停留约 1.2 秒）；播完后若仍在等待响应则恢复常驻的响应提示，否则切回当前阶段提示；同一结算连发多条 log 不再互相覆盖，阶段切换/新响应/游戏结束时立即清空队列。
 
 ---
 
@@ -57,7 +57,7 @@ Sanguosha/
 │   │   └── PendingActionData.h # 待定动作值类型
 │   ├── Model/                # QObject + 信号
 │   ├── Network/              # 网络层（局域网对战，已接入主程序）
-│   │   ├── Protocol.h/cpp    # 协议 v2 + MessageType + 消息结构体 + 手牌脱敏 redactCardList
+│   │   ├── Protocol.h/cpp    # 协议 v3 + MessageType + 消息结构体 + 手牌脱敏 redactCardList
 │   │   ├── MessageSerializer.h/cpp # QDataStream 序列化 + 帧封装/解码
 │   │   ├── GameServer.h/cpp  # QTcpServer：连接管理/握手/选将/广播转发（零 Model 依赖）
 │   │   └── GameClient.h/cpp  # QTcpSocket："网络化 ViewModel"，零 Model 依赖、零规则判断
@@ -199,5 +199,5 @@ ctest --test-dir build --output-on-failure
 
 当前完整套件包含 5 个测试目标；`NetworkTest -functions` 当前列出 63 个测试函数。覆盖基本卡牌规则、
 【决斗】交替响应与无懈恢复、吕布双闪、延时锦囊判定、孙权制衡、AOE/濒死链、响应与回合权限、
-QWidget/App 组装、协议 v2 序列化/帧解码、身份伪造防护、手牌脱敏、技能与判定网络消息、
+QWidget/App 组装、协议 v3 序列化/帧解码、身份伪造防护、手牌脱敏、技能与判定网络消息、
 `GameClient`/`ClientApp` 往返、心跳保活和进程内端到端对局。

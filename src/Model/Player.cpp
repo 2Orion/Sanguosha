@@ -50,7 +50,7 @@ int Player::hp() const { return m_hp; }
 void Player::setHp(int value)
 {
     int oldHp = m_hp;
-    m_hp = std::max(0, value);
+    m_hp = value;
     if (m_hp > 0 && oldHp <= 0) {
         m_deathNotified = false;
     }
@@ -264,9 +264,17 @@ const std::vector<Card*>& Player::judgmentCards() const { return m_judgmentCards
 
 bool Player::hasJudgmentCards() const { return !m_judgmentCards.empty(); }
 
+bool Player::hasJudgmentCard(CardType type) const
+{
+    return std::any_of(m_judgmentCards.begin(), m_judgmentCards.end(),
+                       [type](const Card* card) {
+        return card && card->cardType() == type;
+    });
+}
+
 void Player::addJudgmentCard(Card* card)
 {
-    if (card && std::find(m_judgmentCards.begin(), m_judgmentCards.end(), card) == m_judgmentCards.end()) {
+    if (card && !hasJudgmentCard(card->cardType())) {
         m_judgmentCards.push_back(card);
         emit stateChanged();
     }
@@ -285,10 +293,12 @@ void Player::removeJudgmentCard(Card* card)
 
 void Player::resetTurnState()
 {
-    const bool changed = m_usedKillThisTurn || m_usedActiveSkillThisTurn || m_wineEnhanced;
+    const bool changed = m_usedKillThisTurn || m_usedActiveSkillThisTurn ||
+                         m_wineEnhanced || m_usedWineThisTurn;
     m_usedKillThisTurn = false;
     m_usedActiveSkillThisTurn = false;
     m_wineEnhanced = false;
+    m_usedWineThisTurn = false;
     if (changed) emit stateChanged();
 }
 
@@ -308,6 +318,10 @@ void Player::setUsedActiveSkillThisTurn(bool used)
 bool Player::isWineEnhanced() const { return m_wineEnhanced; }
 
 void Player::setWineEnhanced(bool enhanced) { m_wineEnhanced = enhanced; }
+
+bool Player::hasUsedWineThisTurn() const { return m_usedWineThisTurn; }
+
+void Player::setUsedWineThisTurn(bool used) { m_usedWineThisTurn = used; }
 
 // ==================== 工具 ====================
 

@@ -6,7 +6,7 @@
 #include "Protocol.h"
 
 /// Common 值类型的 QDataStream 序列化运算符
-/// （协议版本 v2 字段集；字段增删时递增 Protocol::kProtocolVersion 并同步这里）
+/// （协议版本 v3 字段集；字段增删时递增 Protocol::kProtocolVersion 并同步这里）
 QDataStream& operator<<(QDataStream& out, const CardData& d);
 QDataStream& operator>>(QDataStream& in, CardData& d);
 QDataStream& operator<<(QDataStream& out, const PlayerData& d);

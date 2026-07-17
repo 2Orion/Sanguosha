@@ -8,6 +8,52 @@
 
 namespace GameRule {
 
+namespace {
+
+std::vector<Player*> dyingSaviors(GameState* state, Player* dyingPlayer)
+{
+    std::vector<Player*> saviors;
+    if (!state || !dyingPlayer) return saviors;
+
+    // 濒死者即使体力不大于 0 也仍未死亡，必须先获得自救机会。
+    saviors.push_back(dyingPlayer);
+    for (Player* player : state->allPlayers()) {
+        if (player && player != dyingPlayer && player->isAlive()) {
+            saviors.push_back(player);
+        }
+    }
+    return saviors;
+}
+
+void resumeAoeContinuation(GameState* state, const PendingActionInfo& info)
+{
+    if (!state || !info.continuationSource) return;
+
+    std::vector<Player*> remaining;
+    for (Player* player : info.continuationTargets) {
+        if (player && player->isAlive()) remaining.push_back(player);
+    }
+    if (remaining.empty()) return;
+
+    Player* nextTarget = remaining.front();
+    PendingActionInfo next;
+    next.source = info.continuationSource;
+    next.target = nextTarget;
+    next.sourceCard = info.continuationSourceCard;
+    next.requiredCardType = info.continuationCardType;
+    next.description = (info.continuationSource->displayName() +
+            (info.continuationCardType == CardType::Kill
+                 ? " 使用了【南蛮入侵】，" : " 使用了【万箭齐发】，") +
+            nextTarget->displayName() +
+            (info.continuationCardType == CardType::Kill
+                 ? " 需打出【杀】" : " 需打出【闪】")).toStdString();
+    next.canSkip = true;
+    next.remainingTargets = std::vector<Player*>(remaining.begin() + 1, remaining.end());
+    state->setPendingAction(next);
+}
+
+} // namespace
+
 // ==================== 规则判断 ====================
 
 bool canPlayKill(const GameState* state, const Player* player)
@@ -87,7 +133,7 @@ bool hasPeachToSave(const Player* player, const Player* dyingPlayer)
 
     for (Card* card : player->handCards()) {
         if (card && (card->cardType() == CardType::Peach ||
-                     card->cardType() == CardType::Wine)) {
+                     (player == dyingPlayer && card->cardType() == CardType::Wine))) {
             return true;
         }
     }
@@ -111,6 +157,7 @@ void executeKill(GameState* state, Player* user, Player* target, Card* killCard)
     }
     if (!ignoreArmor && killCard && armorEffectCheck(state, target, killCard)) {
         // 防具生效，杀直接无效，不进入出闪流程
+        user->setWineEnhanced(false);
         return;
     }
 
@@ -183,6 +230,7 @@ void handleKillResponse(GameState* state, Player* responder, Card* dodgeCard)
             return;
         }
 
+        if (attacker) attacker->setWineEnhanced(false);
         state->clearPendingAction();
     } else {
         int damageValue = 1;
@@ -191,7 +239,7 @@ void handleKillResponse(GameState* state, Player* responder, Card* dodgeCard)
             attacker->setWineEnhanced(false);
         }
 
-        dealDamage(state, responder, damageValue, attacker);
+        dealDamage(state, responder, damageValue, attacker, info.sourceCard);
         // dealDamage() may replace the kill response with the dying response.
         // Only clear the original response when the target remains alive.
         if (!responder->isDying() && state->hasPendingAction()) {
@@ -219,6 +267,7 @@ void executeWine(GameState* state, Player* user)
     if (!state || !user) return;
 
     user->setWineEnhanced(true);
+    user->setUsedWineThisTurn(true);
 }
 
 // ==================== 锦囊执行 ====================
@@ -276,7 +325,7 @@ void executeBountiful(GameState* state, Player* user)
     }
 }
 
-void executeBarbarianInvasion(GameState* state, Player* user)
+void executeBarbarianInvasion(GameState* state, Player* user, Card* sourceCard)
 {
     if (!state || !user) return;
 
@@ -294,7 +343,7 @@ void executeBarbarianInvasion(GameState* state, Player* user)
     PendingActionInfo info;
     info.source = user;
     info.target = firstTarget;
-    info.sourceCard = nullptr;
+    info.sourceCard = sourceCard;
     info.requiredCardType = CardType::Kill;
     info.description = (user->displayName() + " 使用了【南蛮入侵】，" + firstTarget->displayName() + " 需打出【杀】").toStdString();
     info.canSkip = true;
@@ -303,7 +352,7 @@ void executeBarbarianInvasion(GameState* state, Player* user)
     state->setPendingAction(info);
 }
 
-void executeVolley(GameState* state, Player* user)
+void executeVolley(GameState* state, Player* user, Card* sourceCard)
 {
     if (!state || !user) return;
 
@@ -321,7 +370,7 @@ void executeVolley(GameState* state, Player* user)
     PendingActionInfo info;
     info.source = user;
     info.target = firstTarget;
-    info.sourceCard = nullptr;
+    info.sourceCard = sourceCard;
     info.requiredCardType = CardType::Dodge;
     info.description = (user->displayName() + " 使用了【万箭齐发】，" + firstTarget->displayName() + " 需打出【闪】").toStdString();
     info.canSkip = true;
@@ -364,8 +413,13 @@ void handleAoeKillResponse(GameState* state, Player* responder, Card* killCard)
             state->cardManager()->discard(killCard);
         }
     } else {
-        dealDamage(state, responder, 1, info.source);
+        dealDamage(state, responder, 1, info.source, info.sourceCard);
         if (responder->isDying() || !state->hasPendingAction()) return;
+        const PendingActionInfo& current = state->pendingActionInfo();
+        if (current.source != info.source || current.target != info.target ||
+            current.requiredCardType != info.requiredCardType || current.isSkillChoice) {
+            return;
+        }
     }
 
     state->clearPendingAction();
@@ -382,7 +436,7 @@ void handleAoeKillResponse(GameState* state, Player* responder, Card* killCard)
         PendingActionInfo nextInfo;
         nextInfo.source = info.source;
         nextInfo.target = nextTarget;
-        nextInfo.sourceCard = nullptr;
+        nextInfo.sourceCard = info.sourceCard;
         nextInfo.requiredCardType = CardType::Kill;
         nextInfo.description = (info.source->displayName() + " 使用了【南蛮入侵】，" + nextTarget->displayName() + " 需打出【杀】").toStdString();
         nextInfo.canSkip = true;
@@ -413,8 +467,13 @@ void handleAoeDodgeResponse(GameState* state, Player* responder, Card* dodgeCard
             state->cardManager()->discard(dodgeCard);
         }
     } else {
-        dealDamage(state, responder, 1, info.source);
+        dealDamage(state, responder, 1, info.source, info.sourceCard);
         if (responder->isDying() || !state->hasPendingAction()) return;
+        const PendingActionInfo& current = state->pendingActionInfo();
+        if (current.source != info.source || current.target != info.target ||
+            current.requiredCardType != info.requiredCardType || current.isSkillChoice) {
+            return;
+        }
     }
 
     state->clearPendingAction();
@@ -431,7 +490,7 @@ void handleAoeDodgeResponse(GameState* state, Player* responder, Card* dodgeCard
         PendingActionInfo nextInfo;
         nextInfo.source = info.source;
         nextInfo.target = nextTarget;
-        nextInfo.sourceCard = nullptr;
+        nextInfo.sourceCard = info.sourceCard;
         nextInfo.requiredCardType = CardType::Dodge;
         nextInfo.description = (info.source->displayName() + " 使用了【万箭齐发】，" + nextTarget->displayName() + " 需打出【闪】").toStdString();
         nextInfo.canSkip = true;
@@ -456,16 +515,17 @@ void handleAoeSkipResponse(GameState* state, Player* responder)
 
 // ==================== 伤害与濒死 ====================
 
-void dealDamage(GameState* state, Player* target, int value, Player* source)
+void dealDamage(GameState* state, Player* target, int value, Player* source,
+                Card* damageCard)
 {
     if (!state || !target || value <= 0) return;
 
     target->damage(value);
 
-    if (target->character() && source) {
+    if (target->character()) {
         Character* character = target->character();
         if (character->triggerCondition(GameEvent::OnDamage, state, target)) {
-            character->triggerSkill(state, target);
+            character->triggerSkill(state, target, damageCard, source);
         }
     }
 
@@ -480,16 +540,21 @@ void startDyingProcess(GameState* state, Player* dyingPlayer)
     if (!state || !dyingPlayer) return;
 
     PendingActionInfo previousAction;
+    const bool hasDeferredSkill = state->hasPendingAction() &&
+            state->pendingActionInfo().isSkillChoice &&
+            state->pendingActionInfo().target == dyingPlayer;
     const bool hasAoeContinuation = state->hasPendingAction() &&
-            state->pendingActionInfo().target == dyingPlayer &&
-            !state->pendingActionInfo().remainingTargets.empty() &&
-            (state->pendingActionInfo().requiredCardType == CardType::Kill ||
-             state->pendingActionInfo().requiredCardType == CardType::Dodge);
-    if (hasAoeContinuation) {
+            ((state->pendingActionInfo().target == dyingPlayer &&
+              !state->pendingActionInfo().remainingTargets.empty() &&
+              (state->pendingActionInfo().requiredCardType == CardType::Kill ||
+               state->pendingActionInfo().requiredCardType == CardType::Dodge)) ||
+             (hasDeferredSkill &&
+              !state->pendingActionInfo().continuationTargets.empty()));
+    if (hasAoeContinuation || hasDeferredSkill) {
         previousAction = state->pendingActionInfo();
     }
 
-    std::vector<Player*> saviors = state->alivePlayers();
+    std::vector<Player*> saviors = dyingSaviors(state, dyingPlayer);
     if (saviors.empty()) {
         checkDeath(state, dyingPlayer);
         return;
@@ -502,12 +567,27 @@ void startDyingProcess(GameState* state, Player* dyingPlayer)
     info.target = dyingPlayer;
     info.sourceCard = nullptr;
     info.requiredCardType = CardType::Peach;
-    info.description = (dyingPlayer->displayName() + " 濒死，" + firstSavior->displayName() + " 可以使用【桃】或【酒】").toStdString();
+    info.description = (dyingPlayer->displayName() + " 濒死，" +
+            firstSavior->displayName() +
+            (firstSavior == dyingPlayer ? " 可以使用【桃】或【酒】"
+                                        : " 可以使用【桃】")).toStdString();
     info.canSkip = true;
     if (hasAoeContinuation) {
-        info.continuationSource = previousAction.source;
-        info.continuationCardType = previousAction.requiredCardType;
-        info.continuationTargets = previousAction.remainingTargets;
+        if (hasDeferredSkill) {
+            info.continuationSource = previousAction.continuationSource;
+            info.continuationSourceCard = previousAction.continuationSourceCard;
+            info.continuationCardType = previousAction.continuationCardType;
+            info.continuationTargets = previousAction.continuationTargets;
+        } else {
+            info.continuationSource = previousAction.source;
+            info.continuationSourceCard = previousAction.sourceCard;
+            info.continuationCardType = previousAction.requiredCardType;
+            info.continuationTargets = previousAction.remainingTargets;
+        }
+    }
+    if (hasDeferredSkill) {
+        info.deferredSkillPlayer = dyingPlayer;
+        info.deferredSkillCard = previousAction.sourceCard;
     }
 
     state->setPendingAction(info);
@@ -523,7 +603,7 @@ bool handleDyingPeach(GameState* state, Player* dyingPlayer, Player* peachUser, 
         info.source != peachUser || info.target != dyingPlayer ||
         !peachUser->hasCard(peachCard) ||
         (peachCard->cardType() != CardType::Peach &&
-         peachCard->cardType() != CardType::Wine)) {
+         (peachCard->cardType() != CardType::Wine || peachUser != dyingPlayer))) {
         return false;
     }
 
@@ -542,27 +622,24 @@ bool handleDyingPeach(GameState* state, Player* dyingPlayer, Player* peachUser, 
         dyingPlayer->setDying(false);
         state->clearPendingAction();
 
-        std::vector<Player*> remainingTargets;
-        for (Player* player : info.continuationTargets) {
-            if (player && player->isAlive()) remainingTargets.push_back(player);
-        }
-        if (info.continuationSource && !remainingTargets.empty()) {
-            Player* nextTarget = remainingTargets.front();
-            PendingActionInfo nextInfo;
-            nextInfo.source = info.continuationSource;
-            nextInfo.target = nextTarget;
-            nextInfo.sourceCard = nullptr;
-            nextInfo.requiredCardType = info.continuationCardType;
-            nextInfo.description = (info.continuationSource->displayName() +
-                    (info.continuationCardType == CardType::Kill
-                         ? " 使用了【南蛮入侵】，" : " 使用了【万箭齐发】，") +
-                    nextTarget->displayName() +
-                    (info.continuationCardType == CardType::Kill
-                         ? " 需打出【杀】" : " 需打出【闪】")).toStdString();
-            nextInfo.canSkip = true;
-            nextInfo.remainingTargets = std::vector<Player*>(remainingTargets.begin() + 1,
-                                                               remainingTargets.end());
-            state->setPendingAction(nextInfo);
+        if (info.deferredSkillPlayer && info.deferredSkillCard &&
+            state->cardManager() &&
+            state->cardManager()->isInDiscardPile(info.deferredSkillCard)) {
+            PendingActionInfo skill;
+            skill.source = info.deferredSkillPlayer;
+            skill.target = info.deferredSkillPlayer;
+            skill.sourceCard = info.deferredSkillCard;
+            skill.description = (info.deferredSkillPlayer->displayName() +
+                    " 可以发动【奸雄】获得造成伤害的牌").toStdString();
+            skill.canSkip = true;
+            skill.isSkillChoice = true;
+            skill.continuationSource = info.continuationSource;
+            skill.continuationSourceCard = info.continuationSourceCard;
+            skill.continuationCardType = info.continuationCardType;
+            skill.continuationTargets = info.continuationTargets;
+            state->setPendingAction(skill);
+        } else {
+            resumeAoeContinuation(state, info);
         }
         return true;
     }
@@ -579,7 +656,7 @@ void skipDyingResponse(GameState* state, Player* dyingPlayer)
     if (info.requiredCardType != CardType::Peach || info.target != dyingPlayer) return;
     Player* currentSavior = info.source;
 
-    std::vector<Player*> allPlayers = state->alivePlayers();
+    std::vector<Player*> allPlayers = dyingSaviors(state, dyingPlayer);
     auto it = std::find(allPlayers.begin(), allPlayers.end(), currentSavior);
     int currentIndex = (it != allPlayers.end())
                         ? static_cast<int>(std::distance(allPlayers.begin(), it))
@@ -593,8 +670,17 @@ void skipDyingResponse(GameState* state, Player* dyingPlayer)
         nextInfo.target = dyingPlayer;
         nextInfo.sourceCard = nullptr;
         nextInfo.requiredCardType = CardType::Peach;
-        nextInfo.description = (dyingPlayer->displayName() + " 濒死，" + nextSavior->displayName() + " 可以使用【桃】或【酒】").toStdString();
+        nextInfo.description = (dyingPlayer->displayName() + " 濒死，" +
+                nextSavior->displayName() +
+                (nextSavior == dyingPlayer ? " 可以使用【桃】或【酒】"
+                                           : " 可以使用【桃】")).toStdString();
         nextInfo.canSkip = true;
+        nextInfo.continuationSource = info.continuationSource;
+        nextInfo.continuationSourceCard = info.continuationSourceCard;
+        nextInfo.continuationCardType = info.continuationCardType;
+        nextInfo.continuationTargets = info.continuationTargets;
+        nextInfo.deferredSkillPlayer = info.deferredSkillPlayer;
+        nextInfo.deferredSkillCard = info.deferredSkillCard;
 
         state->setPendingAction(nextInfo);
     } else {
@@ -627,6 +713,29 @@ void checkGameOver(GameState* state)
     } else if (alive.empty()) {
         state->setGameOver(nullptr);
     }
+}
+
+bool handleSkillChoice(GameState* state, Player* player, bool accept)
+{
+    if (!state || !player || !state->hasPendingAction()) return false;
+
+    const PendingActionInfo info = state->pendingActionInfo();
+    if (!info.isSkillChoice || info.target != player || !info.sourceCard) return false;
+
+    state->clearPendingAction();
+    bool obtained = false;
+    if (accept && state->cardManager() &&
+        state->cardManager()->takeFromDiscard(info.sourceCard)) {
+        player->addHandCard(info.sourceCard);
+        obtained = true;
+        if (player->character()) {
+            emit player->character()->skillTriggered(
+                    QString::fromStdString(player->character()->skillName()));
+        }
+    }
+
+    resumeAoeContinuation(state, info);
+    return obtained;
 }
 
 // ==================== 弃牌阶段 ====================
@@ -714,7 +823,7 @@ void handleDuelResponse(GameState* state, Player* responder, Card* killCard)
     }
 
     if (!killCard) {
-        dealDamage(state, responder, 1, info.source);
+        dealDamage(state, responder, 1, info.source, info.sourceCard);
         // dealDamage() may replace the duel response with a dying response.
         if (!responder->isDying() && state->hasPendingAction()) {
             const PendingActionInfo& current = state->pendingActionInfo();
@@ -877,7 +986,7 @@ void handleBorrowResponse(GameState* state, Player* responder, Card* killCard)
         if (state->cardManager()) {
             state->cardManager()->discard(killCard);
         }
-        dealDamage(state, info.source, 1, responder);
+        dealDamage(state, info.source, 1, responder, killCard);
     } else {
         // 不出杀：将武器交给借刀使用者（无武器则无事发生）
         EquipmentCard* weapon = responder->equippedAt(EquipSlot::Weapon);

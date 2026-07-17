@@ -275,6 +275,7 @@ class LightningCard : public StrategyCard {
 public:
     LightningCard(CardSuit suit, int number);
 
+    bool canUse(const GameState* state, const Player* user) const override;
     std::vector<Player*> getValidTargets(const GameState* state,
                                           const Player* user) const override;
     ActionResult execute(GameState* state,

@@ -81,6 +81,7 @@ public:
 
     const std::vector<Card*>& judgmentCards() const;
     bool hasJudgmentCards() const;
+    bool hasJudgmentCard(CardType type) const;
     void addJudgmentCard(Card* card);
     void removeJudgmentCard(Card* card);
 
@@ -93,6 +94,8 @@ public:
     void setUsedActiveSkillThisTurn(bool used);
     bool isWineEnhanced() const;
     void setWineEnhanced(bool enhanced);
+    bool hasUsedWineThisTurn() const;
+    void setUsedWineThisTurn(bool used);
 
     // ==================== 工具 ====================
 
@@ -130,6 +133,7 @@ private:
     bool m_usedKillThisTurn = false;
     bool m_usedActiveSkillThisTurn = false;
     bool m_wineEnhanced = false;
+    bool m_usedWineThisTurn = false;
 };
 
 #endif // PLAYER_H

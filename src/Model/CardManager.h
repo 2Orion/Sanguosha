@@ -22,6 +22,8 @@ public:
     void discard(Card* card);
     void discardMultiple(const std::vector<Card*>& cards);
     int discardPileCount() const;
+    bool isInDiscardPile(const Card* card) const;
+    bool takeFromDiscard(Card* card);
     void reshuffleDiscardPile();
     Card* findCardById(int id) const;
     const std::vector<Card*>& getDrawPile() const { return m_drawPile; }

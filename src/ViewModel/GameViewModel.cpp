@@ -11,6 +11,7 @@ namespace {
 
 Player* pendingResponder(const PendingActionInfo& info)
 {
+    if (info.isSkillChoice) return info.target;
     return info.requiredCardType == CardType::Peach ? info.source : info.target;
 }
 
@@ -24,6 +25,11 @@ GameViewModel::GameViewModel(QObject* parent)
     m_actionVM = std::make_unique<ActionViewModel>(this);
     m_state->setCardManager(m_cardManager.get());
     m_actionVM->setGameState(m_state.get());
+
+    // 出牌/响应/弃牌等结算日志由 ActionViewModel 发出，统一转发到本类的
+    // logMessage，组合根（SGSApp/ServerApp）只需连接 GameViewModel 一处。
+    connect(m_actionVM.get(), &ActionViewModel::logMessage,
+            this, &GameViewModel::logMessage);
 
     // 判定展示定时器（1.5s 后自动推进）
     m_judgeTimer = new QTimer(this);
@@ -186,9 +192,9 @@ void GameViewModel::executePhaseJudge()
     const auto& cards = player->judgmentCards();
     if (cards.empty()) return; // 无判定牌，正常推进
 
-    // 处理当前玩家判定区的第一张判定牌
+    // 判定区按后置入先判定处理。
     m_judgeTargetPlayerId = player->playerId();
-    Card* judgeCard = cards.front();
+    Card* judgeCard = cards.back();
     if (!judgeCard) return;
 
     // 从牌堆顶摸判定牌
@@ -261,7 +267,8 @@ void GameViewModel::executePhaseJudge()
         for (int i = 1; i <= count; ++i) {
             int nextIdx = (curIdx + i) % count;
             Player* next = m_state->player(nextIdx);
-            if (next && next->isAlive()) {
+            if (next && next->isAlive() &&
+                !next->hasJudgmentCard(CardType::Lightning)) {
                 next->addJudgmentCard(judgeCard);
                 judgmentCardMoved = true;
                 emitLog(QStringLiteral("【闪电】移至 ") + next->displayName());
@@ -275,7 +282,7 @@ void GameViewModel::executePhaseJudge()
     }
 
     if (judgeType == CardType::Lightning && effective) {
-        GameRule::dealDamage(m_state.get(), player, 3, nullptr);
+        GameRule::dealDamage(m_state.get(), player, 3, nullptr, judgeCard);
     }
 
     // 发射判定信号（onJudgmentPerformed 会带判定色入队展示，无需再 emitLog 重复）
@@ -538,6 +545,7 @@ void GameViewModel::onModelPendingActionCreated(const PendingActionInfo& info)
     vm.requiredCardType = info.requiredCardType;
     vm.description = QString::fromStdString(info.description);
     vm.canSkip = info.canSkip;
+    vm.isSkillChoice = info.isSkillChoice;
     for (Player* p : info.remainingTargets)
         if (p) vm.remainingTargetIds.push_back(p->playerId());
 
@@ -547,7 +555,7 @@ void GameViewModel::onModelPendingActionCreated(const PendingActionInfo& info)
 
     // 自动跳过：当前响应者没有可用响应牌
     auto responseCards = m_actionVM->getResponseCardIds(responderId, vm.requiredCardType);
-    if (responseCards.empty()) {
+    if (!info.isSkillChoice && responseCards.empty()) {
         m_actionVM->skipResponse(responderId, true);
         return;
     }

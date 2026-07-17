@@ -116,6 +116,7 @@ PendingActionData makePendingActionData()
     d.requiredCardType = CardType::Dodge;
     d.description = QStringLiteral("请打出一张闪");
     d.canSkip = true;
+    d.isSkillChoice = true;
     d.remainingTargetIds = {1, 0};
     return d;
 }
@@ -331,6 +332,7 @@ private slots:
         QCOMPARE(dst.requiredCardType, src.requiredCardType);
         QCOMPARE(dst.description, src.description);
         QCOMPARE(dst.canSkip, src.canSkip);
+        QCOMPARE(dst.isSkillChoice, src.isSkillChoice);
         QCOMPARE(dst.remainingTargetIds, src.remainingTargetIds);
     }
 

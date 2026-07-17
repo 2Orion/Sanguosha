@@ -88,7 +88,7 @@ QDataStream& operator<<(QDataStream& out, const PendingActionData& d)
 {
     out << qint32(d.sourceId) << qint32(d.targetId) << qint32(d.sourceCardId);
     writeEnum(out, d.requiredCardType);
-    out << d.description << d.canSkip << d.remainingTargetIds;
+    out << d.description << d.canSkip << d.isSkillChoice << d.remainingTargetIds;
     return out;
 }
 
@@ -97,7 +97,7 @@ QDataStream& operator>>(QDataStream& in, PendingActionData& d)
     qint32 sourceId = 0, targetId = 0, sourceCardId = 0;
     in >> sourceId >> targetId >> sourceCardId;
     readEnum(in, d.requiredCardType);
-    in >> d.description >> d.canSkip >> d.remainingTargetIds;
+    in >> d.description >> d.canSkip >> d.isSkillChoice >> d.remainingTargetIds;
     d.sourceId = sourceId;
     d.targetId = targetId;
     d.sourceCardId = sourceCardId;
