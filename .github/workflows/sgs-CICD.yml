@@ -17,7 +17,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # 2. 安装 Qt 和官方匹配的 MinGW 编译器（内含兼容的 GCC 13+）
+    # 2. 安装 Qt 和官方匹配的 MinGW 编译器
     - name: Install Qt and Compatible MinGW
       uses: jurplel/install-qt-action@v4
       with:
@@ -25,20 +25,28 @@ jobs:
         host: 'windows'
         target: 'desktop'
         arch: 'win64_mingw'
-        tools: 'tools_mingw'   # 自动下载并配置官方 MinGW
+        tools: 'tools_mingw'   # 自动下载官方配套的 MinGW
 
-    # 3. 配置 CMake 
-    # （移除了 shell: bash，使其在默认的 pwsh 下安全运行）
+    # 3. 核心修复：动态寻找官方配套 MinGW 并将其强制置于 PATH 最前端
+    - name: Prioritize Qt MinGW in PATH
+      run: |
+        # 寻找 Qt/Tools 目录下的 MinGW 编译器路径
+        $mingwPath = Get-ChildItem -Path "${{ env.QT_ROOT_DIR }}\..\..\Tools" -Filter "mingw*" | Select-Object -ExpandProperty FullName
+        $mingwBin = "${mingwPath}\bin"
+        Write-Host "Prioritizing Qt MinGW Bin Path: $mingwBin"
+        # 写入 GITHUB_PATH 会使其在后续所有步骤中处于最高优先级
+        echo "$mingwBin" >> $env:GITHUB_PATH
+
+    # 4. 配置 CMake（此时 CMake 能够 100% 优先找到 Qt 官方最新的 GCC 13+ 编译器）
     - name: Configure CMake
       run: |
         cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=${{ env.QT_ROOT_DIR }}"
 
-    # 4. 执行编译
+    # 5. 执行编译
     - name: Build Project
       run: cmake --build build --config Release --parallel
 
-    # 5. 运行测试
-    # （移除了 shell: bash，并在本地环境中运行 ctest）
+    # 6. 运行测试
     - name: Run Tests
       env:
         QT_QPA_PLATFORM: offscreen
@@ -46,7 +54,7 @@ jobs:
         cd build
         ctest --output-on-failure
 
-    # 6. 收集并上传构建产物（仅在推送 Tag 时触发）
+    # 7. 收集并上传构建产物（仅在推送 Tag 时触发）
     - name: Upload Artifacts
       if: startsWith(github.ref, 'refs/tags/')
       uses: actions/upload-artifact@v4
