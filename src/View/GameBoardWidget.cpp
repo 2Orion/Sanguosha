@@ -20,6 +20,10 @@ GameBoardWidget::GameBoardWidget(QWidget* parent) : QWidget(parent)
     m_logRevertTimer->setSingleShot(true);
     connect(m_logRevertTimer, &QTimer::timeout, this, &GameBoardWidget::revertLogToPhase);
 
+    m_logPlayTimer = new QTimer(this);
+    m_logPlayTimer->setSingleShot(true);
+    connect(m_logPlayTimer, &QTimer::timeout, this, &GameBoardWidget::onPlayNextLog);
+
     setupLayout();
 
     // 子控件信号
@@ -46,6 +50,7 @@ void GameBoardWidget::setupLayout()
     m_topHandArea = new HandCardAreaWidget(this); m_topHandArea->setMinimumHeight(120); main->addWidget(m_topHandArea);
 
     m_logLabel = new QLabel(this);
+    m_logLabel->setObjectName(QStringLiteral("logLabel"));
     m_logLabel->setWordWrap(true); m_logLabel->setAlignment(Qt::AlignCenter); m_logLabel->setMinimumHeight(32);
     m_logLabel->setStyleSheet(Theme::hintBar(12));
     main->addWidget(m_logLabel);
@@ -92,8 +97,8 @@ void GameBoardWidget::onPhaseChanged(PhaseType phase)
     m_currentPhase = phase;
     m_actionPanel->updateForPhase(phase, false);
 
-    // 阶段切换：取消结算 log 回退，直接显示阶段提示
-    m_logRevertTimer->stop();
+    // 阶段切换：结算 log 已在此之前播完/失去意义，清空队列直接显示阶段提示
+    clearLogQueue();
     m_logLabel->setStyleSheet(Theme::hintBar(12));
     m_logLabel->setText(phaseLogText(phase));
 
@@ -181,8 +186,8 @@ void GameBoardWidget::onPendingActionCreated(const PendingActionData& info)
     m_responderId = (info.requiredCardType == CardType::Peach)
             ? info.sourceId : info.targetId;
     m_actionPanel->updateForPendingAction(info);
-    // 响应提示常驻，直到有结算 log 或阶段切换
-    m_logRevertTimer->stop();
+    // 响应提示常驻，直到有结算 log 或阶段切换：清空残留结算 log 队列，立即显示响应提示
+    clearLogQueue();
     m_autoAdvanceTimer->stop();  // 响应中禁止自动推进
     m_logLabel->setStyleSheet(Theme::hintBar(12));
     m_logLabel->setText(info.description);
@@ -199,8 +204,9 @@ void GameBoardWidget::onPendingActionCleared()
         m_actionPanel->setSkillAvailable(
             m_skillAvailable && canControlPlayer(m_currentPlayerId));
     }
-    // 若没有后续结算 log 覆盖，2s 后回退到阶段提示
-    if (!m_logRevertTimer->isActive()) {
+    // 若队列中仍有结算 log 在播放，交给 onPlayNextLog 播完后自然回退；
+    // 否则（无 log 播放且队列空）2s 后回退到阶段提示
+    if (!m_logPlaying && m_logQueue.isEmpty() && !m_logRevertTimer->isActive()) {
         m_logRevertTimer->start(2000);
     }
 }
@@ -209,7 +215,7 @@ void GameBoardWidget::onGameOver(int winnerId)
 {
     exitSkillSelection();
     m_autoAdvanceTimer->stop();
-    m_logRevertTimer->stop();
+    clearLogQueue();
     m_state = State::Idle;
     QString msg = (winnerId >= 0)
         ? QStringLiteral("游戏结束！获胜！")
@@ -253,23 +259,52 @@ void GameBoardWidget::onSkillClicked()
 
 void GameBoardWidget::onLogMessage(const QString& msg)
 {
-    m_logLabel->setStyleSheet(Theme::hintBar(12));
-    m_logLabel->setText(msg);
-    // 结算类 log 停留约 2 秒后切回阶段提示
-    m_logRevertTimer->start(2000);
+    // 结算类 log 入队顺序播放，避免同一调用栈内多条 log 互相覆盖
+    enqueueLog({msg, QString()});
 }
 
 void GameBoardWidget::onJudgmentPerformed(const CardData& judgeCard, const QString& resultText, bool effective)
 {
-    // 在日志区域显示判定结果，格式如: "判定牌: ♠7  结果: 【乐不思蜀】判定: 非♥，跳过出牌阶段"
+    // 在日志区域显示判定结果，格式如: "判定牌: ♠7  【乐不思蜀】判定: 非♥，跳过出牌阶段"
     QString display = QStringLiteral("判定牌: ") + judgeCard.suitSymbol + judgeCard.numberString
                     + QStringLiteral("  ") + judgeCard.cardName
                     + QStringLiteral("  →  ") + resultText;
-    m_logLabel->setText(display);
-
     // 生效时高亮日志区域（红色），否则绿色（深色主题变体）
-    m_logLabel->setStyleSheet(Theme::judgmentBar(effective));
-    m_logRevertTimer->start(2000);
+    enqueueLog({display, Theme::judgmentBar(effective)});
+}
+
+void GameBoardWidget::enqueueLog(const LogEntry& entry)
+{
+    m_logQueue.enqueue(entry);
+    // 若当前没有 log 正在停留展示，立即开始播放队首
+    if (!m_logPlaying) {
+        onPlayNextLog();
+    }
+}
+
+void GameBoardWidget::onPlayNextLog()
+{
+    if (m_logQueue.isEmpty()) {
+        // 队列播放完毕：短暂停留后回退到当前阶段提示
+        m_logPlaying = false;
+        m_logRevertTimer->start(2000);
+        return;
+    }
+
+    const LogEntry entry = m_logQueue.dequeue();
+    m_logLabel->setStyleSheet(entry.style.isEmpty() ? Theme::hintBar(12) : entry.style);
+    m_logLabel->setText(entry.text);
+    m_logPlaying = true;
+    m_logRevertTimer->stop();       // 展示期间不回退
+    m_logPlayTimer->start(1200);    // 每条至少停留约 1.2s
+}
+
+void GameBoardWidget::clearLogQueue()
+{
+    m_logQueue.clear();
+    m_logPlaying = false;
+    m_logPlayTimer->stop();
+    m_logRevertTimer->stop();
 }
 
 void GameBoardWidget::revertLogToPhase()

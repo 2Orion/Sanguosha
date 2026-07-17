@@ -64,6 +64,8 @@ namespace GameRule {
     void executeDuel(GameState* state, Player* user, Player* target, Card* duelCard);
     void handleDuelResponse(GameState* state, Player* responder, Card* killCard);
     void executeBorrow(GameState* state, Player* user, Player* target);
+    /// 借刀杀人响应：被借刀者出杀则伤害使用者；不出杀（killCard==nullptr）则武器移交使用者
+    void handleBorrowResponse(GameState* state, Player* responder, Card* killCard);
     void executeHarvest(GameState* state, Player* user);
 
     // ==================== 无懈可击 ====================

@@ -278,9 +278,8 @@ void GameViewModel::executePhaseJudge()
         GameRule::dealDamage(m_state.get(), player, 3, nullptr);
     }
 
-    // 发射判定信号 + 日志
+    // 发射判定信号（onJudgmentPerformed 会带判定色入队展示，无需再 emitLog 重复）
     emit judgmentPerformed(resultData, resultText, effective);
-    emitLog(resultText);
 
     // 设置阶段跳过标记（由 setNextPhase 检查）
     m_skipDrawPhase = m_skipDrawPhase || (judgeType == CardType::Famine && effective);
@@ -290,6 +289,7 @@ void GameViewModel::executePhaseJudge()
 
     // 启动1.5s定时器展示判定结果，之后推进阶段
     m_judgePending = true;
+    m_judgeTimerRetries = 0;
     m_judgeTimer->start(1500);
 }
 
@@ -302,11 +302,17 @@ void GameViewModel::onJudgeTimerFired()
 {
     // 闪电伤害可能开启濒死响应；先等该响应链结束，再继续判定阶段。
     if (m_state && m_state->hasPendingAction()) {
-        m_judgeTimer->start(100);
-        return;
+        if (++m_judgeTimerRetries <= JUDGE_TIMER_MAX_RETRIES) {
+            m_judgeTimer->start(100);
+            return;
+        }
+        // 兜底：pending 异常残留超过上限，强制清除后继续推进，避免判定阶段卡死。
+        emitLog(QStringLiteral("[诊断] 判定后待定动作长时间未清除，已强制清除"));
+        m_state->clearPendingAction();
     }
 
     m_judgePending = false;
+    m_judgeTimerRetries = 0;
     m_judgeTargetPlayerId = -1;
 
     // 判定展示结束，推进阶段

@@ -72,6 +72,8 @@ private slots:
     void playerInfoDisplayAndClick();
     void actionPanelStates();
     void gameBoardRouting();
+    void logQueueSequentialPlayback();
+    void logQueueClearedOnPhaseChange();
     void gameBoardSkillSelection();
     void targetSelectionState();
     void mainWindowAndAppComposition();
@@ -446,6 +448,57 @@ void ViewTest::gameBoardRouting()
     QSignalSpy advanceSpy(&board, &GameBoardWidget::advanceRequested);
     board.onPhaseChanged(PhaseType::Prepare);
     QTRY_COMPARE_WITH_TIMEOUT(advanceSpy.count(), 1, 1000);
+}
+
+void ViewTest::logQueueSequentialPlayback()
+{
+    GameBoardWidget board;
+    board.resize(900, 700);
+    board.show();
+    QCoreApplication::processEvents();
+
+    QLabel* logLabel = board.findChild<QLabel*>(QStringLiteral("logLabel"));
+    QVERIFY(logLabel != nullptr);
+
+    // 同一调用栈连发 3 条结算 log：应逐条显示，而非只剩最后一条
+    board.onLogMessage(QStringLiteral("A 使用了【杀】"));
+    board.onLogMessage(QStringLiteral("B 打出了【闪】"));
+    board.onLogMessage(QStringLiteral("A 的【杀】被抵消"));
+
+    // 队首立即显示
+    QCOMPARE(logLabel->text(), QStringLiteral("A 使用了【杀】"));
+
+    // 约 1.2s 后播放第二条
+    QTRY_COMPARE_WITH_TIMEOUT(logLabel->text(), QStringLiteral("B 打出了【闪】"), 2000);
+    // 再约 1.2s 后播放第三条
+    QTRY_COMPARE_WITH_TIMEOUT(logLabel->text(), QStringLiteral("A 的【杀】被抵消"), 2000);
+
+    // 播完后回退到当前阶段提示（默认 Prepare）
+    QTRY_COMPARE_WITH_TIMEOUT(logLabel->text(), QStringLiteral("准备阶段"), 4000);
+}
+
+void ViewTest::logQueueClearedOnPhaseChange()
+{
+    GameBoardWidget board;
+    board.resize(900, 700);
+    board.show();
+    QCoreApplication::processEvents();
+
+    QLabel* logLabel = board.findChild<QLabel*>(QStringLiteral("logLabel"));
+    QVERIFY(logLabel != nullptr);
+
+    board.onLogMessage(QStringLiteral("结算 log 1"));
+    board.onLogMessage(QStringLiteral("结算 log 2"));
+    board.onLogMessage(QStringLiteral("结算 log 3"));
+    QCOMPARE(logLabel->text(), QStringLiteral("结算 log 1"));
+
+    // 阶段切换应立即清空队列并显示新阶段提示
+    board.onPhaseChanged(PhaseType::Play);
+    QCOMPARE(logLabel->text(), QStringLiteral("出牌阶段"));
+
+    // 等待超过一条 log 的播放间隔，确认队列已被清空、不再弹出残留 log
+    QTest::qWait(1500);
+    QCOMPARE(logLabel->text(), QStringLiteral("出牌阶段"));
 }
 
 void ViewTest::gameBoardSkillSelection()

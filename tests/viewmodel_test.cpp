@@ -1,4 +1,5 @@
 #include <QtTest>
+#include <QCoreApplication>
 
 #include <algorithm>
 #include <vector>
@@ -75,6 +76,7 @@ private slots:
     void gameViewModelPendingDto();
     void dyingResponseRouting();
     void phaseNames();
+    void judgeTimerMaxRetriesProtection(); // 末位：内部临时 QCoreApplication，置于最后避免影响其他用例的定时器
 };
 
 void ViewModelTest::actionQueriesAndPlay()
@@ -438,6 +440,48 @@ void ViewModelTest::gameViewModelJudgmentResolution()
     QCOMPARE(effectiveResults.front(), expectedEffective);
     QVERIFY(!current->hasJudgmentCards());
     QCOMPARE(viewModel.gameState()->cardManager()->discardPileCount(), 2);
+}
+
+void ViewModelTest::judgeTimerMaxRetriesProtection()
+{
+    // 判定后若 pending 异常长期残留，onJudgeTimerFired 以 100ms 重挂但受
+    // JUDGE_TIMER_MAX_RETRIES 上限保护：到达上限后强制清 pending 并继续推进阶段，
+    // 不会卡死在判定阶段。
+    // 本套件用 QTEST_APPLESS_MAIN（无事件循环），此测试依赖 QTimer 触发，
+    // 故在本作用域内临时建一个 QCoreApplication 驱动定时器。
+    int argc = 0;
+    char* argv[] = { nullptr };
+    QCoreApplication app(argc, argv);
+
+    GameViewModel viewModel;
+    QVERIFY(viewModel.startGame(0, 1));
+    Player* current = viewModel.gameState()->player(0);
+    HappyCard delayed(CardSuit::Spade, 6);
+    current->addJudgmentCard(&delayed);
+
+    bool sawDiagnostic = false;
+    connect(&viewModel, &GameViewModel::logMessage, this,
+            [&](const QString& msg) {
+        if (msg.contains(QStringLiteral("强制清除"))) sawDiagnostic = true;
+    });
+
+    viewModel.advancePhase(); // Prepare -> Judge
+    viewModel.advancePhase(); // 执行判定，启动 1500ms 展示定时器
+    QCOMPARE(viewModel.gameState()->currentPhase(), PhaseType::Judge);
+
+    // 注入一个不会被自动清除的 pending，模拟异常残留
+    PendingActionInfo stuck;
+    stuck.source = current;
+    stuck.target = viewModel.gameState()->player(1);
+    stuck.requiredCardType = CardType::Kill;
+    stuck.canSkip = false;
+    viewModel.gameState()->setPendingAction(stuck);
+    QVERIFY(viewModel.gameState()->hasPendingAction());
+
+    // 展示定时器(1500ms) + 最多 10 次 100ms 重挂 ≈ 2.5s；给足余量等待强制清除+推进
+    QTRY_VERIFY_WITH_TIMEOUT(!viewModel.gameState()->hasPendingAction(), 5000);
+    QVERIFY(sawDiagnostic);
+    QVERIFY(viewModel.gameState()->currentPhase() != PhaseType::Judge);
 }
 
 void ViewModelTest::gameViewModelPhaseProgression()
