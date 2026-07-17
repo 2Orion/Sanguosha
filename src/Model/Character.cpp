@@ -29,7 +29,10 @@ bool Character::triggerCondition(GameEvent, const GameState*, const Player*) con
 
 void Character::triggerSkill(GameState*, Player*) {}
 
-CardType Character::skillTransformCard(const Card* card) const { return card->cardType(); }
+CardType Character::skillTransformCard(const Card* card) const {
+    if (!card) return CardType::Kill; // null 安全检查
+    return card->cardType();
+}
 
 int Character::onDrawPhaseBonus() const { return 0; }
 bool Character::requireExtraDodge() const { return false; }

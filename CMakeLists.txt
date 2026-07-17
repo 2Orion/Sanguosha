@@ -175,6 +175,9 @@ add_executable(SanguoshaQt
     ${CLIENT_APP_HEADERS}
 )
 
+# 复制图片到构建目录（Qt资源系统对中文文件名支持不良，直接文件系统加载）
+file(COPY ${CMAKE_SOURCE_DIR}/images/ DESTINATION ${CMAKE_BINARY_DIR}/images/)
+
 target_include_directories(SanguoshaQt PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/Common

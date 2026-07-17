@@ -2,6 +2,34 @@
 #include "Theme.h"
 #include <QFont>
 #include <QMouseEvent>
+#include <QPixmap>
+#include <QPainter>
+#include <QPainterPath>
+#include <QApplication>
+
+/// 加载武将头像（返回圆形裁剪），同 MainWindow 中的版本一致
+static QPixmap loadCharacterPortrait(const QString& charName, int size)
+{
+    QString base = QApplication::applicationDirPath() + QStringLiteral("/images/%1").arg(charName);
+    QPixmap px(base + QStringLiteral(".png"));
+    if (px.isNull()) px = QPixmap(base + QStringLiteral(".jpg"));
+    if (px.isNull()) return {};
+    px = px.scaled(size, size, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+    int x = (px.width() - size) / 2;
+    int y = (px.height() - size) / 2;
+    px = px.copy(x, y, size, size);
+
+    QPixmap rounded(size, size);
+    rounded.fill(Qt::transparent);
+    QPainter painter(&rounded);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QPainterPath clipPath;
+    clipPath.addEllipse(0, 0, size, size);
+    painter.setClipPath(clipPath);
+    painter.drawPixmap(0, 0, px);
+    painter.end();
+    return rounded;
+}
 
 static const QString FULL_HEART  = QStringLiteral("❤");
 static const QString EMPTY_HEART = QStringLiteral("❌");   // 带×的心表示已损失体力
@@ -14,7 +42,18 @@ void PlayerInfoWidget::setDisplayData(const PlayerData& data)
 {
     m_playerId = data.playerId;
 
-    m_avatarLabel->setText(data.characterName.isEmpty() ? data.displayName.left(1) : data.characterName.left(1));
+    // 设置武将头像（优先加载图片，无图片时显示首字符）
+    if (!data.characterName.isEmpty()) {
+        QPixmap portrait = loadCharacterPortrait(data.characterName, 48);
+        if (!portrait.isNull()) {
+            m_avatarLabel->setPixmap(portrait);
+        } else {
+            m_avatarLabel->setText(data.characterName.left(1));
+            m_avatarLabel->setPixmap(QPixmap()); // 清除 pixmap，回到文本模式
+        }
+    } else {
+        m_avatarLabel->setText(data.displayName.left(1));
+    }
 
     QString name = data.displayName;
     if (!data.characterName.isEmpty())

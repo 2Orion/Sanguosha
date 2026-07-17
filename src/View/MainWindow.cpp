@@ -9,6 +9,38 @@
 #include <QFont>
 #include <QGroupBox>
 #include <QFrame>
+#include <QPixmap>
+#include <QPainter>
+#include <QPainterPath>
+#include <QApplication>
+
+/// 加载武将头像 QPixmap，返回裁剪为圆形的版本（若无图片则返回空）
+static QPixmap loadCharacterPortrait(const QString& charName, int size)
+{
+    // 从 images/ 目录加载（优先 .png 再 .jpg）
+    QString base = QApplication::applicationDirPath() + QStringLiteral("/images/%1").arg(charName);
+    QPixmap px(base + QStringLiteral(".png"));
+    if (px.isNull()) px = QPixmap(base + QStringLiteral(".jpg"));
+    if (px.isNull()) return {};
+
+    // 等比缩放至至少填满 size×size 区域
+    px = px.scaled(size, size, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+    // 居中裁剪至 size×size
+    int x = (px.width() - size) / 2;
+    int y = (px.height() - size) / 2;
+    px = px.copy(x, y, size, size);
+
+    QPixmap rounded(size, size);
+    rounded.fill(Qt::transparent);
+    QPainter painter(&rounded);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QPainterPath clipPath;
+    clipPath.addEllipse(0, 0, size, size);
+    painter.setClipPath(clipPath);
+    painter.drawPixmap(0, 0, px);
+    painter.end();
+    return rounded;
+}
 
 struct CharInfo { const char* name; const char* skillName; const char* skillDesc; int maxHp; };
 static const CharInfo CHAR_LIST[] = {
@@ -99,6 +131,17 @@ void MainWindow::setupSelectionPage()
             group->addButton(radio, i);
 
             cl->addWidget(radio);
+            // 武将头像
+            QPixmap portrait = loadCharacterPortrait(CHAR_LIST[i].name, 60);
+            if (!portrait.isNull()) {
+                auto* avatar = new QLabel(card);
+                avatar->setPixmap(portrait);
+                avatar->setFixedSize(60, 60);
+                avatar->setAlignment(Qt::AlignCenter);
+                avatar->setStyleSheet("QLabel { background: qlineargradient(x1:0,y1:0,x2:1,y2:1,"
+                "stop:0 #8C2B22, stop:1 #5A1611); border-radius: 30px; }");
+                cl->addWidget(avatar);
+            }
             cl->addWidget(new QLabel(QStringLiteral("体力: %1").arg(CHAR_LIST[i].maxHp), card));
             cl->addWidget(new QLabel(QStringLiteral("【%1】%2").arg(CHAR_LIST[i].skillName, CHAR_LIST[i].skillDesc), card));
             grid->addWidget(card, i / 2, i % 2);
@@ -241,12 +284,24 @@ void MainWindow::showCharacterSelection(int playerId, const QString& playerName,
         group->addButton(radio, i);
 
         cl->addWidget(radio);
+        // 武将头像
+        QPixmap portrait = loadCharacterPortrait(CHAR_LIST[i].name, 60);
+        if (!portrait.isNull()) {
+            auto* avatar = new QLabel(card);
+            avatar->setPixmap(portrait);
+            avatar->setFixedSize(60, 60);
+            avatar->setAlignment(Qt::AlignCenter);
+            avatar->setStyleSheet("QLabel { background: qlineargradient(x1:0,y1:0,x2:1,y2:1,"
+                "stop:0 #8C2B22, stop:1 #5A1611); border-radius: 30px; }");
+            cl->addWidget(avatar);
+        }
         cl->addWidget(new QLabel(QStringLiteral("体力: %1").arg(CHAR_LIST[i].maxHp), card));
         cl->addWidget(new QLabel(
             QStringLiteral("【%1】%2").arg(CHAR_LIST[i].skillName, CHAR_LIST[i].skillDesc), card));
         grid->addWidget(card, i / 3, i % 3);
     }
     main->addLayout(grid);
+    // 3列网格宽度可能不够，加stretch保持居中
 
     // 确认选择按钮（暗松绿）
     auto* confirmBtn = new QPushButton(QStringLiteral("确认选择"), page);

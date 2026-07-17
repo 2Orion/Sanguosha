@@ -1,0 +1,12 @@
+<RCC>
+    <qresource prefix="/">
+        <file alias="曹操">images/曹操.png</file>
+        <file alias="关羽">images/关羽.png</file>
+        <file alias="张飞">images/张飞.jpg</file>
+        <file alias="赵云">images/赵云.png</file>
+        <file alias="孙权">images/孙权.jpg</file>
+        <file alias="大乔">images/大乔.png</file>
+        <file alias="周瑜">images/周瑜.png</file>
+        <file alias="司马懿">images/司马懿.jpg</file>
+    </qresource>
+</RCC>

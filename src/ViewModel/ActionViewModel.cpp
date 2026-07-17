@@ -415,17 +415,11 @@ bool ActionViewModel::canUseActiveSkill(int playerId) const
 
     // 关羽武圣：有红色牌可转化为杀
     if (player->character()->hasActiveSkill()) {
-        // 检查武将是否可将牌转化为杀（关羽武圣）
-        bool canTransformToKill = false;
-        if (!player->handCards().empty()) {
-            CardType transformed = player->character()->skillTransformCard(player->handCards().front());
-            canTransformToKill = (transformed == CardType::Kill);
-        }
-        if (canTransformToKill) {
-            for (Card* card : player->handCards()) {
-                if (card && card->isRed() && GameRule::canPlayKill(m_state, player))
-                    return true;
-            }
+        for (Card* card : player->handCards()) {
+            if (!card) continue;
+            auto t = player->character()->skillTransformCard(card);
+            if (t == CardType::Kill && card->isRed() && GameRule::canPlayKill(m_state, player))
+                return true;
         }
     }
 
@@ -450,7 +444,8 @@ bool ActionViewModel::useActiveSkill(int playerId, const std::vector<int>& cardI
     player->setUsedActiveSkillThisTurn(true);
 
     // 关羽武圣：将红色牌当【杀】使用
-    if (player->character()->skillTransformCard(nullptr) != CardType::Kill && cards.size() == 1) {
+    if (cards.size() == 1 && player->handCards().size() == 1 &&
+        player->character()->skillTransformCard(cards.front()) == CardType::Kill) {
         Card* card = cards.front();
         QString skillName = QString::fromStdString(player->character()->skillName());
         emitLog(player->displayName() + QStringLiteral(" 发动【") + skillName +

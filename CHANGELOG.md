@@ -53,6 +53,13 @@
 - `NetworkTest -functions` 当前为 63 个；按 README 方案二使用 Qt 6.11.1 + MinGW 13.1 在 `D:\tmp` 构建，CTest 5/5 通过。
 - 同步 README、connection.md、interface.md、plan2.0.md；`docs/` 加入 `.gitignore`，已跟踪文件仅从 Git 索引移除，磁盘内容不改。
 
+## [2026-07-17] 武将头像图片显示（#8）
+
+- 新增 `images.qrc` Qt 资源文件，注册 `images/` 下所有武将头像图片
+- `CMakeLists.txt` `SanguoshaQt` 目标加入 `images.qrc`，编译嵌入 exe
+- `MainWindow` 选将页：每个武将卡片增加 60×60 圆形头像（从资源加载，裁剪为圆形），无图片武将回退首字符显示
+- `PlayerInfoWidget` 信息面板：48×48 圆形头像替换纯文字首字符，渐变背景圆框不变
+
 ## Bug Fixes
 
 ### [2026-07-16] 无懈可击（Nullify）无法响应锦囊牌
