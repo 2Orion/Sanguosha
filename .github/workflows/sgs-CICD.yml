@@ -10,60 +10,50 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: windows-latest  # 使用 Windows 最新环境
+    runs-on: windows-latest  # 使用 Windows 环境
 
     steps:
     # 1. 拉取代码
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # 2. 安装 MSYS2 MinGW（与 Qt win64_mingw 的 ABI 一致）
-    - name: Set up MSYS2
-      uses: msys2/setup-msys2@v2
-      with:
-        msystem: MINGW64
-        update: true
-        install: >-
-          mingw-w64-x86_64-gcc
-          mingw-w64-x86_64-cmake
-          mingw-w64-x86_64-make
-
-    # 3. 安装 Qt 6.8.2 (针对 MinGW 架构)
-    - name: Install Qt
+    # 2. 安装 Qt 和官方匹配的 MinGW 编译器（一键完成，无需手动配置 MinGW）
+    - name: Install Qt and Compatible MinGW
       uses: jurplel/install-qt-action@v4
       with:
-        version: '6.8.2'
+        version: '6.8.2'       # 如果使用 6.11.1，请加 aqtsource: 'git+https://github.com/miurahr/aqtinstall.git'
         host: 'windows'
         target: 'desktop'
         arch: 'win64_mingw'
+        tools: 'tools_mingw'   # 核心：自动下载并配置与当前 Qt 版本完全兼容的官方 MinGW 工具链
 
-    # 4. 配置 CMake（使用 MSYS2 的 MinGW 编译器）
+    # 3. 配置 CMake (此时 CMake 会自动识别上一步安装的官方 MinGW)
     - name: Configure CMake
-      shell: msys2 {0}
+      shell: bash
       run: |
         cmake -S . -B build \
-              -G "MSYS Makefiles" \
+              -G "MinGW Makefiles" \
               -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+              -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}"
 
-    # 5. 执行编译
+    # 4. 执行编译
     - name: Build Project
-      shell: msys2 {0}
-      run: cmake --build build --parallel
+      run: cmake --build build --config Release --parallel
 
-    # 6. 运行测试
+    # 5. 运行测试（解决 GUI 崩溃与动态库查找问题）
     - name: Run Tests
-      shell: msys2 {0}
+      shell: bash
+      env:
+        # 核心：强制 Qt 在虚拟的“离屏”状态下运行，防止在无显示器的 CI 上发生 GUI 初始化崩溃
+        QT_QPA_PLATFORM: offscreen
       run: |
         cd build
         ctest --output-on-failure
 
-    # 7. 收集并上传构建产物（仅在推送 Tag 时触发）
+    # 6. 收集并上传构建产物（仅在推送 Tag 时触发）
     - name: Upload Artifacts
       if: startsWith(github.ref, 'refs/tags/')
       uses: actions/upload-artifact@v4
       with:
         name: cpp-binary-mingw
-        # 注意：使用 MinGW 生成的 Release 程序，通常直接在 build 文件夹根目录下，
-        # 而不是像 MSVC 那样生成在 build/Release 目录下。
         path: build/your_executable_name.exe
