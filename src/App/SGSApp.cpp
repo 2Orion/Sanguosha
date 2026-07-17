@@ -7,7 +7,6 @@
 #include "ClientApp.h"
 #include "GameClient.h"
 #include <QMessageBox>
-#include <QNetworkInterface>
 
 SGSApp::SGSApp(QObject* parent)
     : QObject(parent)
@@ -104,22 +103,6 @@ void SGSApp::onGameFinished()
 // ==================== 联网模式 ====================
 
 namespace {
-
-/// 收集所有非回环 IPv4 地址（可能有多个网卡：Wi-Fi、有线、虚拟网卡等）
-QStringList localIpAddresses()
-{
-    QStringList ips;
-    for (const QHostAddress& addr : QNetworkInterface::allAddresses()) {
-        if (addr != QHostAddress::LocalHost
-            && addr.protocol() == QAbstractSocket::IPv4Protocol) {
-            ips.append(addr.toString());
-        }
-    }
-    if (ips.isEmpty())
-        ips.append(QStringLiteral("127.0.0.1"));
-    return ips;
-}
-
 } // namespace
 
 void SGSApp::onCreateRoom()
@@ -139,24 +122,22 @@ void SGSApp::onCreateRoom()
         return;
     }
 
-    // 2. 显示本机所有可用 IP（连接成功后才切换到选将页）
-    QStringList ips = localIpAddresses();
-    QString ipText = ips.join(QStringLiteral(", "));
+    // 2. 显示端口和等待提示（连接成功后才切换到选将页）
     static_cast<MainWindow*>(m_mainWindow)->setNetworkStatusText(
-        QStringLiteral("本机 IP: %1   端口: %2\n等待对手连接...")
-            .arg(ipText).arg(Protocol::kDefaultPort));
+        QStringLiteral("端口: %1   等待对手连接...")
+            .arg(Protocol::kDefaultPort));
 
     // 3. 创建本地客户端并连接服务器
     m_clientApp = new ClientApp(this);
     connect(m_clientApp->gameClient(), &GameClient::connected,
-            this, [this, ipText](int playerId) {
+            this, [this](int playerId) {
         m_myPlayerId = playerId;
         m_clientApp->boardWidget()->setLocalPlayerId(playerId);
         // TCP 连接完成后再显示选将页，确保 SelectCharacter 不会排在 Handshake 之前
         static_cast<MainWindow*>(m_mainWindow)->showCharacterSelection(
             playerId, QStringLiteral("房主"),
-            QStringLiteral("本机 IP: %1   端口: %2\n等待对手连接...")
-                .arg(ipText).arg(Protocol::kDefaultPort));
+            QStringLiteral("端口: %1   等待对手连接...")
+                .arg(Protocol::kDefaultPort));
     });
     connect(m_clientApp->gameClient(), &GameClient::gameStarted,
             this, &SGSApp::onClientGameStarted);

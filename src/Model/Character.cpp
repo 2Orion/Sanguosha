@@ -23,6 +23,7 @@ std::string Character::skillName() const { return m_skillName; }
 std::string Character::skillDescription() const { return m_skillDescription; }
 
 bool Character::hasSkill() const { return true; }
+bool Character::hasActiveSkill() const { return false; }
 
 bool Character::triggerCondition(GameEvent, const GameState*, const Player*) const { return false; }
 
@@ -68,10 +69,12 @@ GuanYu::GuanYu(QObject* parent)
 }
 
 bool GuanYu::hasSkill() const { return true; }
+bool GuanYu::hasActiveSkill() const { return true; }
 
 CardType GuanYu::skillTransformCard(const Card* card) const
 {
-    if (card && card->isRed()) return CardType::Kill;
+    if (!card) return CardType::Kill; // skillTransformCard 判断：关羽可将牌当杀用
+    if (card->isRed()) return CardType::Kill;
     return card->cardType();
 }
 
@@ -112,6 +115,7 @@ SunQuan::SunQuan(QObject* parent)
 }
 
 bool SunQuan::hasSkill() const { return true; }
+bool SunQuan::hasActiveSkill() const { return true; }
 
 bool SunQuan::canDiscardAndDraw() const { return true; }
 
@@ -145,6 +149,7 @@ DaQiao::DaQiao(QObject* parent)
 }
 
 bool DaQiao::hasSkill() const { return true; }
+bool DaQiao::hasActiveSkill() const { return true; }
 
 bool DaQiao::canRedirectKill() const { return true; }
 

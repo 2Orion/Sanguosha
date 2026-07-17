@@ -58,10 +58,6 @@ void CardManager::initialize()
     addOne(CardType::Borrow, CardSuit::Spade, 12);
     addOne(CardType::Borrow, CardSuit::Club, 13);
 
-    // 五谷丰登（♥3, ♥4）
-    addOne(CardType::Harvest, CardSuit::Heart, 3);
-    addOne(CardType::Harvest, CardSuit::Heart, 4);
-
     // 无懈可击（♠K, ♣Q, ♣K）
     addOne(CardType::Nullify, CardSuit::Spade, 13);
     addOne(CardType::Nullify, CardSuit::Club, 12);
@@ -88,12 +84,6 @@ void CardManager::initialize()
     // 青龙偃月刀（♠5）
     addOne(CardType::QinglongBlade, CardSuit::Spade, 5);
 
-    // 丈八蛇矛（♠Q）
-    addOne(CardType::ZhangbaSnake, CardSuit::Spade, 12);
-
-    // 麒麟弓（♥5）
-    addOne(CardType::KylinBow, CardSuit::Heart, 5);
-
     // 青釭剑（♠6）
     addOne(CardType::QinggangSword, CardSuit::Spade, 6);
 
@@ -102,10 +92,6 @@ void CardManager::initialize()
 
     // 雌雄双股剑（♠2）
     addOne(CardType::DualSword, CardSuit::Spade, 2);
-
-    // 八卦阵（♠2 ×2）
-    addOne(CardType::EightDiagrams, CardSuit::Spade, 2);
-    addOne(CardType::EightDiagrams, CardSuit::Spade, 2);
 
     // 仁王盾（♠2）
     addOne(CardType::BenevolentShield, CardSuit::Spade, 2);

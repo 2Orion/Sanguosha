@@ -408,7 +408,28 @@ bool ActionViewModel::canUseActiveSkill(int playerId) const
         return false;
     }
     if (m_pendingCardId >= 0 || player->hasUsedActiveSkillThisTurn()) return false;
-    return player->character()->canDiscardAndDraw() && player->hasHandCards();
+
+    // 孙权制衡：手中有牌即可发动
+    if (player->character()->canDiscardAndDraw() && player->hasHandCards())
+        return true;
+
+    // 关羽武圣：有红色牌可转化为杀
+    if (player->character()->hasActiveSkill()) {
+        // 检查武将是否可将牌转化为杀（关羽武圣）
+        bool canTransformToKill = false;
+        if (!player->handCards().empty()) {
+            CardType transformed = player->character()->skillTransformCard(player->handCards().front());
+            canTransformToKill = (transformed == CardType::Kill);
+        }
+        if (canTransformToKill) {
+            for (Card* card : player->handCards()) {
+                if (card && card->isRed() && GameRule::canPlayKill(m_state, player))
+                    return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 bool ActionViewModel::useActiveSkill(int playerId, const std::vector<int>& cardIds)
@@ -427,6 +448,35 @@ bool ActionViewModel::useActiveSkill(int playerId, const std::vector<int>& cardI
     }
 
     player->setUsedActiveSkillThisTurn(true);
+
+    // 关羽武圣：将红色牌当【杀】使用
+    if (player->character()->skillTransformCard(nullptr) != CardType::Kill && cards.size() == 1) {
+        Card* card = cards.front();
+        QString skillName = QString::fromStdString(player->character()->skillName());
+        emitLog(player->displayName() + QStringLiteral(" 发动【") + skillName +
+                QStringLiteral("】，将【") + QString::fromStdString(card->cardName()) +
+                QStringLiteral("】当【杀】使用"));
+
+        // 用 playsAsKill 路径执行（选择目标后走杀的结算流程）
+        player->removeHandCard(card);
+        std::vector<Player*> targets;
+        for (Player* p : m_state->alivePlayers()) {
+            if (p && p != player && p->isAlive())
+                targets.push_back(p);
+        }
+        if (targets.empty()) {
+            if (m_state->cardManager()) m_state->cardManager()->discard(card);
+            emit actionCompleted();
+            return true;
+        }
+        // 选择第一个活着的玩家作为目标并执行杀
+        GameRule::executeKill(m_state, player, targets.front());
+        if (m_state->cardManager()) m_state->cardManager()->discard(card);
+        emit actionCompleted();
+        return true;
+    }
+
+    // 孙权制衡：弃牌摸牌
     for (Card* card : cards) player->removeHandCard(card);
     if (m_state->cardManager()) m_state->cardManager()->discardMultiple(cards);
 

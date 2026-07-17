@@ -103,6 +103,26 @@ void executeKill(GameState* state, Player* user, Player* target)
 
     user->setUsedKillThisTurn(true);
 
+    // 大乔流离：可以将杀转移给其他角色
+    if (target->character() && target->character()->canRedirectKill()) {
+        Player* redirectTarget = target->character()->getRedirectTarget(state, target, user);
+        if (redirectTarget && redirectTarget->isAlive() && redirectTarget != target) {
+            PendingActionInfo info;
+            info.source = user;
+            info.target = redirectTarget;
+            info.sourceCard = nullptr;
+            info.requiredCardType = CardType::Dodge;
+            info.description = (user->displayName() + " 对 " + target->displayName()
+                            + " 使用了【杀】，被【流离】转移至 " + redirectTarget->displayName()
+                            + "，请打出【闪】").toStdString();
+            info.canSkip = false;
+            if (user->character() && user->character()->requireExtraDodge())
+                info.requiredDodgeTotal = 2;
+            state->setPendingAction(info);
+            return;
+        }
+    }
+
     PendingActionInfo info;
     info.source = user;
     info.target = target;

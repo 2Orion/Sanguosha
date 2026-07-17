@@ -4,7 +4,7 @@
 #include <QMouseEvent>
 
 static const QString FULL_HEART  = QStringLiteral("❤");
-static const QString EMPTY_HEART = QStringLiteral("🤍");   // 深色面板上黑心不可见，改用白心表示已损失体力
+static const QString EMPTY_HEART = QStringLiteral("❌");   // 带×的心表示已损失体力
 static const QString WEAPON_ICON = QStringLiteral("⚔");
 static const QString ARMOR_ICON  = QStringLiteral("🛡");
 
