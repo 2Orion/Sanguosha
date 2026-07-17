@@ -28,10 +28,10 @@ jobs:
     - name: Install Qt
       uses: jurplel/install-qt-action@v4
       with:
-        version: '6.11.1'
+        version: '6.8.2'  # 改为极其稳定的 6.8 LTS 版本
         host: 'windows'
         target: 'desktop'
-        arch: 'win64_mingw'  # 修改为 win64_mingw，以匹配您的 MinGW 编译器
+        arch: 'win64_mingw'
 
     # 4. 配置 CMake (对应您的 cmake .. -G "MinGW Makefiles")
     # 使用由 install-qt-action 自动设置的 QT_ROOT_DIR 环境变量来定位 Qt
