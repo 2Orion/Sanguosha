@@ -161,7 +161,8 @@ Sanguosha/
 
 我们使用GitHub Actions搭建了CI/CD流程，相关脚本配置位于`.github/workflows`目录下，每次提交代码后都会自动编译和测试。测试文件位于`test`目录，涵盖了Model、ViewModel、View和Network模块的测试。通过CI/CD流程，我们可以及时发现代码中的问题，提高了开发效率和代码质量。
 = 智能体使用说明
-
+#figure(image("image/智能体配置.png", width: 80%), caption: "智能体配置")
+#figure(image("image/智能体vm.jpg", width: 80%), caption: "智能体ViewModel")
 
 = 学习回顾与个人总结
 
