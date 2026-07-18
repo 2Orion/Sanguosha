@@ -309,6 +309,13 @@ void GameViewModel::onJudgeTimerFired()
 {
     // 闪电伤害可能开启濒死响应；先等该响应链结束，再继续判定阶段。
     if (m_state && m_state->hasPendingAction()) {
+        // 濒死响应（桃/酒）：由濒死流程自行管理，不在此处强制清除，
+        // 否则会放弃濒死结算导致玩家血量≤0但游戏不结束。
+        const PendingActionInfo& pendingInfo = m_state->pendingActionInfo();
+        if (pendingInfo.requiredCardType == CardType::Peach) {
+            m_judgeTimer->start(100);
+            return;
+        }
         if (++m_judgeTimerRetries <= JUDGE_TIMER_MAX_RETRIES) {
             m_judgeTimer->start(100);
             return;
