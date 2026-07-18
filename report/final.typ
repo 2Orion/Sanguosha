@@ -162,11 +162,30 @@ Sanguosha/
 我们使用GitHub Actions搭建了CI/CD流程，相关脚本配置位于`.github/workflows`目录下，每次提交代码后都会自动编译和测试。测试文件位于`test`目录，涵盖了Model、ViewModel、View和Network模块的测试。通过CI/CD流程，我们可以及时发现代码中的问题，提高了开发效率和代码质量。
 = 智能体使用说明
 
+
 = 学习回顾与个人总结
 
 - *孙一斐*：
 
-- *刘耘希*：
+- *刘耘希*：我在项目前期主要负责ViewModel层的实现和部分debug，后期负责Model和ViewModel层的卡牌扩展部分。
+
+*ViewModel层的工作概括：*
+
+ViewModel层是本项目MVVM架构的中央枢纽，由`GameViewModel`和`ActionViewModel`两个QObject子类组成，承担四重核心职责：
+
+1. *Model的拥有者*：通过`std::unique_ptr`持有`GameState`、`CardManager`等Model对象，全权管理游戏数据的生命周期，View完全不知晓Model的存在。
+2. *数据翻译器*：将Model层的内部指针结构（如`PendingActionInfo*`）转换为View可安全消费的值类型结构体（`CardData`、`PlayerData`、`PendingActionData`），View层只include `Common/`头文件，零编译依赖Model和ViewModel。
+3. *逻辑协调器*：管理游戏阶段推进（准备→判定→摸牌→出牌→弃牌→结束）、判定牌展示与定时器控制、自动跳过机制（乐不思蜀/兵粮寸断跳阶段、无响应牌时自动跳过pending action）、多目标选择状态机、武将技能转化（关羽红牌当杀、赵云闪当杀、孙权制衡）等全部流程控制。
+4. *安全边界*：所有玩家操作（出牌、响应、弃牌、技能）必须经过ViewModel的权限校验——验证是否为当前回合玩家、是否有未决响应阻塞、目标是否合法。网络模式下使用连接层分配的可信`playerId`而忽略消息体内字段，防止作弊。
+
+*核心理念：*
+
+- *编译期隔离*：View只依赖`Common/`中的值类型，View与ViewModel之间通过Qt信号/槽通信，不直接在代码中引用对方的头文件。这使得View可以在本地模式（直连GameViewModel）和网络模式（直连GameClient）之间无差别切换。
+- *显式组合根*：所有信号/槽的`connect()`集中在`SGSApp::startLocalGame()`中完成，依赖关系一目了然，避免了依赖注入框架的引入。
+- *类型安全优先*：相比于经典MVVM中的`ICommand::exec(std::any)`模式，本项目采用Qt类型安全信号/槽——每个信号参数类型在编译期确定，避免了`std::any_cast`的运行时开销和类型错误风险。对于卡牌游戏这种操作类型可穷举、不需要undo/redo的场景，这是更务实的选择。
+- *逻辑上移*：View层只负责”画什么”，ViewModel层决定”能做什么”——卡牌可玩性判断（`isPlayable`）、目标合法性、技能可用性等全部由ViewModel计算后通过值类型推送，View仅根据收到的数据渲染UI，不包含任何游戏逻辑。
+
+在前期ViewModel实现中，由于对架构的理解不足，View曾直接依赖ViewModel类，导致耦合过紧。中期验收后我们重构为纯信号/槽通信，将View中的游戏逻辑全部上移至ViewModel，使各层职责清晰、可独立测试。在后期扩展中，我负责为Model层新增武将技能（借刀杀人、仁王盾等复杂交互）并在ViewModel层实现对应的仲裁逻辑和UI交互流程。整个过程中，我深刻体会到分层架构的核心不在于”用了什么模式”，而在于”每一层只做自己的事，对跨层的东西一无所知”——这是本课程要求的MVVM架构中最严格的准则。
 
 - *徐常喻*：
 
