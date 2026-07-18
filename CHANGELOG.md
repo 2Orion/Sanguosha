@@ -1,5 +1,21 @@
 # Changelog
 
+## [2026-07-18] 闪电致死不结束 + 仁王盾日志误报（确认 bug）
+
+用户反馈本地对战时两个问题：
+
+**Bug 1：被闪电劈死（血量≤0）后游戏继续运行**
+
+- **根因**：`GameViewModel::onJudgeTimerFired()` 的兜底逻辑在判定后待定动作超过 ~2.5s 未清除时无条件 `clearPendingAction()`。闪电伤害触发濒死流程后，桃/酒 rescue pending 被此逻辑强制清除，濒死结算被放弃，`checkDeath` → `checkGameOver` 永不调用，游戏以"僵尸玩家"继续运行。
+- **修复**：`onJudgeTimerFired` 在 pending 类型为 `Peach`（濒死救援）时跳过计数和强制清除，仅重新挂定时器等待濒死流程自然完成。其他类型 pending 的兜底行为不变。
+
+**Bug 2：未装备仁王盾时 log 异常显示"仁王盾生效"**
+
+- **根因**：`ActionViewModel::playCard()` 两处以 `!m_state->hasPendingAction()` 作为"防具抵消了杀"的判定条件。但当目标无【闪】自动跳过响应时，`handleKillResponse` 同步造成伤害并清除 pending，`hasPendingAction()` 同样为 false——此时打出的是"命中并造成伤害的杀"，却被日志误报为"被仁王盾无效的杀"。
+- **修复**：两处仁王盾日志发射前增加 `GameRule::armorEffectCheck()` 实际判定（同时兼容青釭剑 `ignoreArmor` 场景），只在防具确实生效时才输出日志。
+
+**测试**：全套件 5/5 通过。
+
 ## [2026-07-17] 修复出牌/响应日志从未到达界面的问题（确认 bug）
 
 用户反馈：出杀后对面没有闪会直接掉血，全程无日志提示。核实后发现是比"log 队列播放"更深的问题——**出牌/响应类日志的信号根本没有连接到界面**。

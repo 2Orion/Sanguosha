@@ -183,9 +183,16 @@ ActionResult ActionViewModel::playCard(int cardId, int playerId,
                 QStringLiteral("】，将【") + QString::fromStdString(card->cardName()) +
                 QStringLiteral("】当【杀】使用 → ") + targets.front()->displayName());
 
+        // 仁王盾判定：只有在防具确实生效时才提示（而非 pending 被自动跳过等其他原因）
         if (!m_state->hasPendingAction()) {
-            emitLog(QStringLiteral("【仁王盾】生效，【杀】对 ") +
-                    targets.front()->displayName() + QStringLiteral(" 无效"));
+            bool ignoreArmor = false;
+            if (EquipmentCard* weapon = user->equippedAt(EquipSlot::Weapon)) {
+                if (weapon->ignoreArmor()) ignoreArmor = true;
+            }
+            if (!ignoreArmor && GameRule::armorEffectCheck(m_state, targets.front(), card)) {
+                emitLog(QStringLiteral("【仁王盾】生效，【杀】对 ") +
+                        targets.front()->displayName() + QStringLiteral(" 无效"));
+            }
         }
 
         emit actionCompleted();
@@ -240,8 +247,16 @@ ActionResult ActionViewModel::playCard(int cardId, int playerId,
         result == ActionResult::Completed &&
         !m_state->hasPendingAction() &&
         !targets.empty()) {
-        emitLog(QStringLiteral("【仁王盾】生效，【杀】对 ") +
-                targets.front()->displayName() + QStringLiteral(" 无效"));
+        // 必须在防具确实生效时才提示；pending 被自动跳过（目标无闪直接掉血）也会
+        // 导致 hasPendingAction()==false，此时不应误报仁王盾。
+        bool ignoreArmor = false;
+        if (EquipmentCard* weapon = user->equippedAt(EquipSlot::Weapon)) {
+            if (weapon->ignoreArmor()) ignoreArmor = true;
+        }
+        if (!ignoreArmor && GameRule::armorEffectCheck(m_state, targets.front(), card)) {
+            emitLog(QStringLiteral("【仁王盾】生效，【杀】对 ") +
+                    targets.front()->displayName() + QStringLiteral(" 无效"));
+        }
     }
 
     emit actionCompleted();
